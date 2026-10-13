@@ -1,0 +1,72 @@
+name: fraud.check
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted to trigger fraud check on an order
+fields:
+  check_id:
+    type: string
+    description: Unique fraud check identifier
+    required: true
+  order_id:
+    type: string
+    description: Associated order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer to check
+    required: true
+  amount:
+    type: number
+    description: Order amount in cents
+    required: true
+  currency:
+    type: string
+    description: Currency code
+    required: true
+    default: "USD"
+  payment_method:
+    type: string
+    description: Payment method used
+    required: true
+  ip_address:
+    type: string
+    description: Customer IP address
+    required: false
+  billing_address:
+    type: object
+    description: Billing address for verification
+    required: false
+    properties:
+      street:
+        type: string
+      city:
+        type: string
+      state:
+        type: string
+      postal_code:
+        type: string
+      country:
+        type: string
+  shipping_address:
+    type: object
+    description: Shipping address for verification
+    required: false
+    properties:
+      street:
+        type: string
+      city:
+        type: string
+      state:
+        type: string
+      postal_code:
+        type: string
+      country:
+        type: string
+  created_at:
+    type: string
+    format: date-time
+    description: Fraud check request timestamp
+    required: true
+compatibility: BACKWARD
+owner: fraud-team
+deprecated: false

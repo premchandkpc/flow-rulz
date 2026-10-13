@@ -1,0 +1,38 @@
+name: payment.completed
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when payment is successfully completed
+fields:
+  payment_id:
+    type: string
+    description: Unique payment identifier
+    required: true
+  order_id:
+    type: string
+    description: Associated order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer who made the payment
+    required: true
+  amount:
+    type: number
+    description: Payment amount in cents
+    required: true
+  currency:
+    type: string
+    description: Currency code
+    required: true
+    default: "USD"
+  transaction_id:
+    type: string
+    description: External payment processor transaction ID
+    required: true
+  completed_at:
+    type: string
+    format: date-time
+    description: Payment completion timestamp
+    required: true
+compatibility: BACKWARD
+owner: payments-team
+deprecated: false

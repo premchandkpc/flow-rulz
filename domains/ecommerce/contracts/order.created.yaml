@@ -1,0 +1,66 @@
+name: order.created
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when a new order is created
+fields:
+  order_id:
+    type: string
+    description: Unique order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer who placed the order
+    required: true
+  total_amount:
+    type: number
+    description: Order total amount in cents
+    required: true
+  currency:
+    type: string
+    description: Currency code (USD, EUR, etc.)
+    required: true
+    default: "USD"
+  items:
+    type: array
+    description: Order line items
+    required: true
+    items:
+      type: object
+      properties:
+        product_id:
+          type: string
+          required: true
+        quantity:
+          type: integer
+          required: true
+        unit_price:
+          type: number
+          required: true
+  shipping_address:
+    type: object
+    description: Shipping address
+    required: true
+    properties:
+      street:
+        type: string
+        required: true
+      city:
+        type: string
+        required: true
+      state:
+        type: string
+        required: true
+      postal_code:
+        type: string
+        required: true
+      country:
+        type: string
+        required: true
+  created_at:
+    type: string
+    format: date-time
+    description: Order creation timestamp
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

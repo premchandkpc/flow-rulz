@@ -1,0 +1,63 @@
+workflow_type: food-delivery
+version: 1
+states:
+  - name: pending
+    type: start
+    rule_sets:
+      - order.placed
+    on_enter: []
+    on_exit: []
+  - name: restaurant_accepted
+    type: intermediate
+    rule_sets:
+      - restaurant.accepted
+    on_enter: []
+    on_exit: []
+  - name: food_prepared
+    type: intermediate
+    rule_sets:
+      - food.prepared
+    on_enter: []
+    on_exit: []
+  - name: driver_assigned
+    type: intermediate
+    rule_sets:
+      - driver.assigned
+    on_enter: []
+    on_exit: []
+  - name: delivered
+    type: end
+    rule_sets:
+      - delivered
+    on_enter: []
+    on_exit: []
+  - name: cancelled
+    type: end
+    rule_sets: []
+    on_enter: []
+    on_exit: []
+transitions:
+  - from: pending
+    to: restaurant_accepted
+    event_type: restaurant.accepted
+  - from: restaurant_accepted
+    to: food_prepared
+    event_type: food.prepared
+  - from: food_prepared
+    to: driver_assigned
+    event_type: driver.assigned
+  - from: driver_assigned
+    to: delivered
+    event_type: delivered
+  - from: pending
+    to: cancelled
+    event_type: order.cancelled
+  - from: restaurant_accepted
+    to: cancelled
+    event_type: order.cancelled
+rules:
+  order.placed: order.placed
+  restaurant.accepted: restaurant.accepted
+  food.prepared: food.prepared
+  driver.assigned: driver.assigned
+  delivered: delivered

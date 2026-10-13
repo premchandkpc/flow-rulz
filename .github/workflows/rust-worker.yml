@@ -1,0 +1,41 @@
+name: Rust worker
+
+on:
+  pull_request:
+    paths:
+      - "rust-worker/**"
+      - "Dockerfile.worker-rust"
+      - "docker-compose.yml"
+      - ".github/workflows/rust-worker.yml"
+  push:
+    branches: [main, "feat/**"]
+    paths:
+      - "rust-worker/**"
+      - "Dockerfile.worker-rust"
+      - "docker-compose.yml"
+      - ".github/workflows/rust-worker.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  rust-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust-worker
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-worker
+      - name: Format Rust sources
+        run: cargo fmt --all
+      - name: Run Rust unit tests
+        run: cargo test --all-targets
+      - name: Build standalone Rust worker image
+        working-directory: .
+        run: docker build -f Dockerfile.worker-rust -t flow-rulz-rust-worker:test .

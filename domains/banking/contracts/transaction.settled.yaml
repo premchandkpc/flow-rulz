@@ -1,0 +1,30 @@
+name: transaction.settled
+version: "1.0"
+namespace: com.example.banking
+description: Event emitted when transaction is settled
+fields:
+  transaction_id:
+    type: string
+    description: Transaction identifier
+    required: true
+  account_id:
+    type: string
+    description: Account involved
+    required: true
+  amount:
+    type: number
+    description: Settled amount in cents
+    required: true
+  currency:
+    type: string
+    description: Currency code
+    required: true
+    default: "USD"
+  settled_at:
+    type: string
+    format: date-time
+    description: Settlement timestamp
+    required: true
+compatibility: BACKWARD
+owner: settlement-team
+deprecated: false

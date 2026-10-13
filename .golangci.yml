@@ -1,0 +1,57 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - errcheck
+    - govet
+    - staticcheck
+    - gosec
+    - errorlint
+    - contextcheck
+    - bodyclose
+    - gocritic
+    - revive
+  settings:
+    depguard:
+      rules:
+        domain-pure:
+          files:
+            - "**/internal/domain/**"
+          deny:
+            - pkg: "github.com/flowrulz/flow-rulz/internal"
+              desc: "domain imports stdlib only"
+        core-no-drivers:
+          files:
+            - "**/internal/services/**"
+            - "**/internal/ports/**"
+            - "**/internal/rules/**"
+            - "**/internal/runtime/**"
+          deny:
+            - pkg: "github.com/jackc/pgx"
+              desc: "driver in core"
+            - pkg: "github.com/nats-io"
+              desc: "driver in core"
+            - pkg: "go.mongodb.org"
+              desc: "driver in core"
+            - pkg: "github.com/redis"
+              desc: "driver in core"
+            - pkg: "github.com/flowrulz/flow-rulz/internal/adapters"
+              desc: "core must not see adapters"
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+      - path: cmd/
+        linters:
+          - gosec
+      # The generator writes through small void helper functions; migrate these
+      # helpers to return and propagate write errors in a dedicated refactor.
+      - path: internal/codegen/generator\.go
+        linters:
+          - errcheck
+
+run:
+  timeout: 5m

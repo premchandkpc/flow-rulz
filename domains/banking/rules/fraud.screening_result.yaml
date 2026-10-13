@@ -1,0 +1,78 @@
+rule_set: fraud.screening_result
+revision: 1
+mode: first_match
+rules:
+  - id: fraud_deny
+    name: "Deny on fraud"
+    description: "Block transactions the fraud model denies"
+    priority: 100
+    when:
+      path: "$.decision"
+      op: "eq"
+      value: "deny"
+    then:
+      - emit_event:
+          type: "transaction.blocked"
+          partition_key_policy: "inherit"
+          data:
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            reason: "fraud_suspected"
+            blocked_at: "{{now}}"
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            account_id: "{{$.account_id}}"
+            transaction_id: "{{$.transaction_id}}"
+            template: "blocked"
+            requested_at: "{{now}}"
+  - id: fraud_review
+    name: "Review on fraud"
+    description: "Queue borderline scores for manual review"
+    priority: 90
+    when:
+      path: "$.decision"
+      op: "eq"
+      value: "review"
+    then:
+      - emit_event:
+          type: "transaction.review_required"
+          partition_key_policy: "inherit"
+          data:
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            reason: "fraud_review"
+            queued_at: "{{now}}"
+  - id: fraud_approve
+    name: "Approve clean domestic"
+    description: "Authorize approved domestic transactions below $10,000; others wait for compliance"
+    priority: 80
+    when:
+      all:
+        - path: "$.decision"
+          op: "eq"
+          value: "approve"
+        - path: "$.amount"
+          op: "lt"
+          value: 1000000
+        - any:
+            - path: "$.counterparty_country"
+              op: "not_exists"
+            - path: "$.counterparty_country"
+              op: "eq"
+              value: "US"
+    then:
+      - emit_event:
+          type: "transaction.authorized"
+          partition_key_policy: "inherit"
+          data:
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            authorized_by: "fraud_screening"
+            authorized_at: "{{now}}"

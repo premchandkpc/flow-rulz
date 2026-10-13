@@ -1,0 +1,34 @@
+flowchart TB
+    %% Design view: worker scaling, ordering guarantees, and current constraints.
+    classDef event fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef store fill:#fefce8,stroke:#a16207,color:#422006
+    classDef worker fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef lever fill:#fff7ed,stroke:#c2410c,color:#431407
+    classDef planned fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-dasharray: 5 5
+
+    Event["Event<br/>tenant ID + partition key"]:::event
+    Hash["fnv32a hash into one of<br/>4096 virtual shards"]:::event
+    Lease[("shard_leases<br/>owner + fencing token")]:::store
+    W1["Worker A"]:::worker
+    W2["Worker B"]:::worker
+    W3["Worker C"]:::worker
+    Ordered["Same partition key:<br/>sequential order per owner"]:::event
+    Parallel["Different partition keys:<br/>parallel processing"]:::event
+
+    Event --> Hash
+    Hash --> Lease
+    Lease --> W1
+    Lease --> W2
+    Lease --> W3
+    Hash --> Ordered
+    Hash --> Parallel
+
+    Current["Current implementation:<br/>shard tables and domain types exist,<br/>worker-side shard ownership is not enforced yet"]:::planned
+    Current -. roadmap constraint .-> Lease
+
+    Levers["Scaling levers today:<br/>more workers share the NATS consumer,<br/>publisher batch size 10 every 5s,<br/>PostgreSQL pool and SKIP LOCKED claims"]:::lever
+    Parallel -.-> Levers
+    Ordered -.-> Levers
+
+    Hot["A hot partition key stays serial.<br/>Pick the smallest entity that<br/>needs ordering as the key."]:::lever
+    Ordered -.-> Hot

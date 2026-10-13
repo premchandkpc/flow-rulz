@@ -1,0 +1,70 @@
+flowchart TB
+    %% Design view: hexagonal layers, dependency direction, ports, and adapters.
+    classDef entry fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef service fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef core fill:#f5f3ff,stroke:#6d28d9,color:#2e1065
+    classDef port fill:#fff1f2,stroke:#be123c,color:#4c0519
+    classDef adapter fill:#f0fdfa,stroke:#0f766e,color:#134e4a
+    classDef note fill:#f8fafc,stroke:#334155,color:#0f172a
+
+    subgraph Entrypoints["Entrypoints"]
+        API["cmd/api<br/>HTTP server, runs migrations"]:::entry
+        Worker["cmd/worker<br/>NATS consumer plus publisher loop"]:::entry
+    end
+
+    subgraph Application["Runtime"]
+        Loop["application.Worker<br/>fetch loop and 5s publish loop"]:::service
+    end
+
+    subgraph Services["Application services"]
+        RuleSvc["services/rules<br/>compile, save, activate, query"]:::service
+        EventSvc["services/events<br/>deduplicate, evaluate, persist"]:::service
+        EffectSvc["services/effects<br/>claim, send, retry, quarantine"]:::service
+    end
+
+    subgraph Core["Domain and rules"]
+        Domain["domain<br/>entities, state machines, errors"]:::core
+        Rules["rules<br/>compiler and pure evaluator"]:::core
+    end
+
+    subgraph Ports["Ports: interfaces owned by the application"]
+        Repos["Repositories: rule, activation,<br/>inbox, execution, outbox,<br/>quarantine, shard lease"]:::port
+        Broker["Broker consumer and delivery"]:::port
+        Sender["Effect sender"]:::port
+        Tx["Transaction factory and clock"]:::port
+        Contracts["Contract registry"]:::port
+    end
+
+    subgraph Adapters["Adapters: implementations"]
+        SQL["adapters/sql<br/>PostgreSQL repositories"]:::adapter
+        NATS["adapters/nats<br/>JetStream consumer and publisher"]:::adapter
+        Eff["adapters/effects<br/>HTTP or fake destination"]:::adapter
+        Mem["adapters/memory<br/>contract fakes"]:::adapter
+    end
+
+    API --> RuleSvc
+    API --> EventSvc
+    Worker --> Loop
+    Loop --> EventSvc
+    Loop --> EffectSvc
+
+    RuleSvc --> Rules
+    EventSvc --> Rules
+    RuleSvc --> Repos
+    EventSvc --> Repos
+    EffectSvc --> Repos
+    Loop --> Broker
+    EffectSvc --> Sender
+    RuleSvc --> Tx
+    EventSvc --> Tx
+    EffectSvc --> Tx
+    Rules --> Domain
+
+    Repos -. implemented by .-> SQL
+    Tx -. implemented by .-> SQL
+    Broker -. implemented by .-> NATS
+    Sender -. implemented by .-> Eff
+    Contracts -. implemented by .-> Mem
+
+    Note["Repositories are built per transaction from<br/>the open pgx.Tx, so inbox, execution and outbox<br/>writes commit or roll back together."]:::note
+    Loop -.-> Note

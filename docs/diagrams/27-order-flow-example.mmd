@@ -1,0 +1,23 @@
+flowchart LR
+    classDef event fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef rule fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef target fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-dasharray: 5 5
+
+    Order[OrderCreated<br/>key: order-123]:::event
+    OrderRules[order.created rules]:::rule
+    Payment[PaymentRequested<br/>key: order-123]:::target
+    Restaurant[RestaurantSearch<br/>key: restaurant-456]:::target
+    Notify[CustomerNotification<br/>key: customer-789]:::target
+    PaymentRules[payment.requested rules]:::rule
+    RestaurantRules[restaurant.search rules]:::rule
+    NotifyRules[customer.notification rules]:::rule
+
+    Order --> OrderRules
+    OrderRules -->|emit_event action| Payment --> PaymentRules
+    OrderRules -->|emit_event action| Restaurant --> RestaurantRules
+    OrderRules -->|emit_event action| Notify --> NotifyRules
+    Same[Same key: ordering can be enforced only after<br/>per-key sequencing and shard ownership are implemented.]:::target
+    Different[Different keys: flows may run concurrently<br/>and may be handled by different workers.]:::target
+    Payment -.-> Same
+    Restaurant -.-> Different
+    Notify -.-> Different

@@ -1,0 +1,45 @@
+flowchart TD
+    %% Scenario: how an error is classified and which recovery path it takes.
+    classDef proc fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef failure fill:#fef2f2,stroke:#dc2626,color:#7f1d1d
+    classDef retry fill:#fff7ed,stroke:#c2410c,color:#431407
+    classDef store fill:#fefce8,stroke:#a16207,color:#422006
+    classDef note fill:#f8fafc,stroke:#334155,color:#0f172a
+
+    Err["error returned by Process or Send"]:::proc
+    Classify["domain.ClassifyError"]:::proc
+    Err --> Classify
+
+    Classify --> V["validation<br/>missing id, type, tenant,<br/>partition key, occurred_at"]:::failure
+    Classify --> R["rule<br/>not active, not found,<br/>invalid source, limits"]:::failure
+    Classify --> A["authorization<br/>unauthorized, forbidden"]:::failure
+    Classify --> E["evaluation<br/>bad path, timeout"]:::failure
+    Classify --> B["broker<br/>fetch, ack, retry failed"]:::retry
+    Classify --> EF["effect<br/>send failed, max attempts"]:::retry
+    Classify --> D["database<br/>tx, lease, inbox failures"]:::retry
+    Classify --> I["internal<br/>anything unclassified"]:::retry
+
+    V --> Permanent["IsPermanent = true"]:::proc
+    R --> Permanent
+    A --> Permanent
+    B --> Retryable["IsRetryable = true"]:::proc
+    EF --> Retryable
+    D --> Retryable
+
+    Permanent --> P1["quarantine row written<br/>source_type = event"]:::store
+    Permanent --> P2["delivery.Ack<br/>poison message stops looping"]:::proc
+
+    Retryable --> T1["delivery.Retry after 5s<br/>NakWithDelay, MaxDeliver = 10"]:::retry
+    Retryable --> T2["broker redelivers<br/>attempts kept in outbox_effects"]:::retry
+
+    E --> Both["not retryable and not permanent"]:::note
+    I --> Both
+    Both --> T1
+
+    EffectFail["effect send failed"]:::failure
+    EF -.-> EffectFail
+    EffectFail --> Q1{"attempts below max_attempts?"}:::proc
+    Q1 -->|yes| Q2["ScheduleRetry<br/>backoff 2^(n-1) seconds, cap 60s"]:::retry
+    Q1 -->|no| Q3["quarantine row and outbox status quarantined"]:::store
+
+    Q2 --> T2

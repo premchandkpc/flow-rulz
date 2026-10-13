@@ -1,0 +1,230 @@
+name: Go CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build, test, vet, and lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      - name: Check Go formatting
+        run: make check-fmt
+
+      - name: Validate schemas, scripts, and Compose configuration
+        run: |
+          python -m json.tool api/envelope-schema.json > /dev/null
+          python -m json.tool api/rule-schema.json > /dev/null
+          bash -n domains/*/deploy.sh
+          cp .env.example .env
+          docker compose config --quiet
+
+      - name: Build root-module commands
+        run: go build ./cmd/...
+
+      - name: Download and verify dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Run root-module unit tests with statement coverage
+        run: |
+          go test -race -count=1 -covermode=atomic -coverprofile=coverage-unit.out ./internal/...
+
+      - name: Run root-module example tests with race detector
+        run: go test -race -count=1 ./examples/random-producer/...
+
+      - name: Run root-module integration tests with statement coverage
+        run: |
+          go test -race -count=1 -tags=integration -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage-integration.out ./tests/integration/...
+
+      - name: Run Postgres and NATS end-to-end tests with statement coverage
+        run: |
+          go test -race -tags=e2e -count=1 -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage-e2e.out ./tests/e2e/...
+
+      - name: Publish Go coverage summaries
+        if: always()
+        run: |
+          {
+            echo "## Go test coverage"
+            echo
+            for suite in unit integration e2e; do
+              profile="coverage-${suite}.out"
+              echo "### ${suite}"
+              if [ -f "${profile}" ]; then
+                summary="$(go tool cover -func="${profile}" | tail -n 1)"
+                echo "- ${summary}"
+              else
+                echo "- Coverage not produced (suite did not complete or did not run)."
+              fi
+              echo
+            done
+            echo 'Coverage is collected over ./internal/.... Integration and E2E numbers measure internal code exercised by their tagged test suites; they are separate from unit coverage.'
+            echo "No coverage threshold is enforced."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload Go coverage profiles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            coverage-unit.out
+            coverage-integration.out
+            coverage-e2e.out
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Vet root-module packages
+        run: go vet ./...
+
+      - name: Lint root-module packages
+        run: golangci-lint run ./...
+
+      - name: Test standalone Go SDK
+        working-directory: sdk/go
+        run: go test -race -count=1 ./...
+
+      - name: Test client SDK module
+        working-directory: sdk/go/flow-rulz
+        run: go test -race -count=1 ./...
+
+      - name: Test banking example module
+        working-directory: examples/banking
+        run: go test -race -count=1 ./...
+
+      - name: Test ecommerce example module
+        working-directory: examples/ecommerce
+        run: go test -race -count=1 ./...
+
+      - name: Test food-delivery example module
+        working-directory: examples/food-delivery
+        run: go test -race -count=1 ./...
+
+  console:
+    name: Build React operations console
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/console
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install console dependencies
+        run: npm install
+
+      - name: Test console flow logic
+        run: npm test
+
+      - name: Build React console
+        run: npm run build
+
+  container-images:
+    name: Build Docker images and validate Compose
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate Compose configuration
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+
+      - name: Build application images
+        run: docker compose build api worker console
+
+      - name: Build code generation utility
+        run: docker compose --profile tools build codegen
+
+      - name: Build random-producer example image
+        run: docker compose --profile examples build random-producer
+
+      - name: Build Rust worker image
+        run: docker build -f Dockerfile.worker-rust -t flow-rulz-rust-worker:test .
+
+  verify-generated:
+    name: Verify generated code compiles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify generated code compiles
+        run: |
+          for dir in domains/*/builds/go; do
+            if [ -f "$dir/go.mod" ]; then
+              echo "Checking $dir..."
+              (cd "$dir" && go build ./...) || exit 1
+            fi
+          done
+        shell: bash
+
+  release:
+    name: Release pipeline
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [test, console, container-images, verify-generated]
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build release binaries
+        run: |
+          make build
+          make build-random-producer
+
+      - name: Create release artifacts
+        run: |
+          mkdir -p dist
+          cp bin/* dist/
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

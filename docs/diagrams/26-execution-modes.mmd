@@ -1,0 +1,23 @@
+flowchart TB
+    classDef input fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef current fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef planned fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-dasharray: 5 5
+
+    Event[Incoming event]:::input
+    Select{Execution policy}:::input
+    Immediate[Immediate, per-event evaluation]:::current
+    Fetch[Broker fetch batch:<br/>up to 10 deliveries]:::current
+    PerEvent[Evaluate each delivery independently;<br/>ACK/NACK is per delivery]:::current
+    Accumulate[Accumulate one partition key:<br/>until N events or T elapsed]:::planned
+    Batch[Create a durable batch run;<br/>evaluate one batch event]:::planned
+    Schedule[Persist event for a future time]:::planned
+    Timer[Scheduler releases eligible events]:::planned
+    Outbox[Outbox publish batch:<br/>claim up to 10 effects]:::current
+
+    Event --> Select
+    Select -->|default| Immediate
+    Fetch --> PerEvent --> Immediate
+    Select -->|accumulate| Accumulate --> Batch
+    Select -->|scheduled| Schedule --> Timer --> Immediate
+    Immediate --> Outbox
+    Note[Fetch batching groups broker retrieval; it does not batch rule evaluation.<br/>Outbox batching groups effect publication; it does not batch event processing.]:::input

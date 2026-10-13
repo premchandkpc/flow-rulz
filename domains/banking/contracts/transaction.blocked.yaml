@@ -1,0 +1,29 @@
+name: transaction.blocked
+version: "1.0"
+namespace: com.example.banking
+description: Transaction rejected by a control
+fields:
+  transaction_id:
+    type: string
+    description: Transaction identifier
+    required: true
+  account_id:
+    type: string
+    description: Source account
+    required: true
+  amount:
+    type: number
+    description: Amount in cents
+    required: true
+  reason:
+    type: string
+    description: fraud_suspected or compliance_failed
+    required: true
+  blocked_at:
+    type: string
+    description: Block timestamp
+    required: true
+    format: date-time
+compatibility: BACKWARD
+owner: banking-team
+deprecated: false

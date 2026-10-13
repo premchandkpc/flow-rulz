@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+bin/
+*.exe
+*.test
+
+# Generated code
+generated/
+*.pb.go
+*_grpc.pb.go
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test output
+coverage.out
+coverage.html
+
+# Local config
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+Dockerfile*
+.dockerignore
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Examples (source only, not binaries)
+examples/*/backend/
+examples/*/producer
+examples/*/consumer
+
+# Temporary files
+.tmp/
+.temp/
+*.tmp
+
+# Vendored dependencies (if any)
+vendor/

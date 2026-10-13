@@ -1,0 +1,24 @@
+# Standalone Rust worker image. Does not build or modify the existing Go worker.
+FROM rust:alpine AS builder
+RUN apk add --no-cache build-base musl-dev
+WORKDIR /build/rust-worker
+COPY rust-worker/Cargo.toml ./Cargo.toml
+COPY rust-worker/src ./src
+RUN cargo build --release
+
+FROM alpine:3.24
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /build/rust-worker/target/release/flow-rulz-rust-worker ./worker-rust
+ENV APP_ENV=production \
+    NUM_SHARDS=4096 \
+    WORKER_REPLICAS=3 \
+    LEASE_TTL_MS=30000 \
+    LEASE_RENEWAL_INTERVAL_MS=10000 \
+    NATS_ACK_WAIT_MS=30000 \
+    EVENT_RETRY_DELAY_MS=5000 \
+    FETCH_BATCH_SIZE=100 \
+    EFFECT_PUBLISH_INTERVAL_MS=5000 \
+    SCHEDULER_POLL_MS=5000 \
+    SCHEDULER_BATCH_SIZE=100
+ENTRYPOINT ["./worker-rust"]

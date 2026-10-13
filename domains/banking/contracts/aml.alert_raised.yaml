@@ -1,0 +1,33 @@
+name: aml.alert_raised
+version: "1.0"
+namespace: com.example.banking
+description: Anti-money-laundering alert for investigators
+fields:
+  alert_id:
+    type: string
+    description: Alert identifier
+    required: true
+  transaction_id:
+    type: string
+    description: Related transaction
+    required: true
+  account_id:
+    type: string
+    description: Account under watch
+    required: true
+  amount:
+    type: number
+    description: Amount in cents
+    required: true
+  reason:
+    type: string
+    description: structuring or compliance_failure
+    required: true
+  raised_at:
+    type: string
+    description: Alert timestamp
+    required: true
+    format: date-time
+compatibility: BACKWARD
+owner: aml-team
+deprecated: false

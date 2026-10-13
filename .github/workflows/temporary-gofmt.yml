@@ -1,0 +1,34 @@
+name: Temporary Go formatter
+
+on:
+  push:
+    branches:
+      - refactor/repo-small-focused-methods
+
+permissions:
+  contents: write
+
+jobs:
+  gofmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/repo-small-focused-methods
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Format Go files
+        run: gofmt -w $(git ls-files '*.go')
+      - name: Commit formatting
+        run: |
+          if git diff --quiet; then
+            echo "All Go files are formatted."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add '*.go'
+          git commit -m "style: apply gofmt to Go sources"
+          git push origin HEAD:refactor/repo-small-focused-methods

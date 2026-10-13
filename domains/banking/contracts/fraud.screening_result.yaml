@@ -1,0 +1,45 @@
+name: fraud.screening_result
+version: "1.0"
+namespace: com.example.banking
+description: Fraud decision for a screened transaction
+fields:
+  screening_id:
+    type: string
+    description: Screening identifier
+    required: true
+  transaction_id:
+    type: string
+    description: Transaction screened
+    required: true
+  account_id:
+    type: string
+    description: Source account
+    required: true
+  amount:
+    type: number
+    description: Amount in cents
+    required: true
+  currency:
+    type: string
+    description: ISO currency code
+    required: true
+  counterparty_country:
+    type: string
+    description: ISO country of the destination
+    required: false
+  score:
+    type: number
+    description: Fraud score from 0 to 100
+    required: true
+  decision:
+    type: string
+    description: approve, review or deny
+    required: true
+  screened_at:
+    type: string
+    description: Decision timestamp
+    required: true
+    format: date-time
+compatibility: BACKWARD
+owner: fraud-team
+deprecated: false

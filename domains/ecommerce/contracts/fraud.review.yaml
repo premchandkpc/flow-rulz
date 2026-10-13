@@ -1,0 +1,35 @@
+name: fraud.review
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when order requires manual fraud review
+fields:
+  order_id:
+    type: string
+    description: Order requiring review
+    required: true
+  customer_id:
+    type: string
+    description: Customer associated with order
+    required: true
+  check_id:
+    type: string
+    description: Fraud check that triggered review
+    required: true
+  risk_score:
+    type: number
+    description: Risk score (0-100)
+    required: true
+  flags:
+    type: array
+    description: Fraud flags detected
+    required: false
+    items:
+      type: string
+  created_at:
+    type: string
+    format: date-time
+    description: Review creation timestamp
+    required: true
+compatibility: BACKWARD
+owner: fraud-team
+deprecated: false

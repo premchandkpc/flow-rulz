@@ -1,0 +1,29 @@
+flowchart TD
+    %% Scenario: claim outbox effects, deliver them, retry with backoff, or quarantine.
+    classDef process fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef store fill:#fefce8,stroke:#a16207,color:#422006
+    classDef failure fill:#fef2f2,stroke:#dc2626,color:#7f1d1d
+    classDef external fill:#fff7ed,stroke:#c2410c,color:#431407
+    classDef note fill:#f8fafc,stroke:#334155,color:#0f172a
+
+    Start["Publish loop every 5s<br/>claims up to 10 effects"]:::process
+    Outbox[("outbox_effects")]:::store
+    Claim["ClaimPending SKIP LOCKED<br/>pending and available_at passed,<br/>or claimed lease expired,<br/>order by available_at, created_at"]:::process
+    Send["Send effect<br/>effect_id is the idempotency key"]:::process
+    Destination["HTTP or fake destination"]:::external
+    Success{"Delivered?"}:::process
+    Delivered["MarkDelivered<br/>claim columns cleared"]:::process
+    Retry{"attempts below<br/>max_attempts?"}:::process
+    Schedule["ScheduleRetry<br/>backoff 2^(attempts-1) seconds,<br/>capped at 60s, status back to pending"]:::failure
+    Quarantine["Quarantine effect<br/>status quarantined"]:::failure
+    Q[("quarantine")]:::store
+
+    Start --> Claim
+    Outbox --> Claim
+    Claim --> Send --> Destination --> Success
+    Success -->|yes| Delivered --> Outbox
+    Success -->|no| Retry
+    Retry -->|yes| Schedule --> Outbox
+    Retry -->|no| Quarantine --> Q
+
+    Note["The outbox commits with the execution.<br/>effect_id is sha256 of tenant, event, rule set,<br/>revision, rule id and action index, so a retry<br/>carries the same key the destination already saw."]:::note

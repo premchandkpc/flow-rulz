@@ -1,0 +1,76 @@
+workflow_type: order-processing
+version: 1
+states:
+  - name: pending
+    type: start
+    rule_sets:
+      - order.created
+    on_enter: []
+    on_exit: []
+  - name: payment_pending
+    type: intermediate
+    rule_sets:
+      - payment.requested
+    on_enter: []
+    on_exit: []
+  - name: payment_completed
+    type: intermediate
+    rule_sets:
+      - payment.completed
+    on_enter: []
+    on_exit: []
+  - name: fraud_check
+    type: intermediate
+    rule_sets:
+      - fraud.check
+    on_enter: []
+    on_exit: []
+  - name: fraud_review
+    type: intermediate
+    rule_sets:
+      - fraud.review
+    on_enter: []
+    on_exit: []
+  - name: confirmed
+    type: end
+    rule_sets:
+      - order.confirmed
+    on_enter: []
+    on_exit: []
+  - name: shipped
+    type: end
+    rule_sets:
+      - shipment.requested
+    on_enter: []
+    on_exit: []
+transitions:
+  - from: pending
+    to: payment_pending
+    event_type: payment.requested
+  - from: pending
+    to: confirmed
+    event_type: order.confirmed
+  - from: payment_pending
+    to: payment_completed
+    event_type: payment.completed
+  - from: payment_completed
+    to: fraud_check
+    event_type: fraud.check
+  - from: fraud_check
+    to: fraud_review
+    event_type: fraud.review
+  - from: fraud_check
+    to: shipped
+    event_type: shipment.requested
+  - from: fraud_review
+    to: shipped
+    event_type: shipment.requested
+rules:
+  order.created: order.created
+  payment.requested: payment.requested
+  payment.completed: payment.completed
+  fraud.check: fraud.check
+  fraud.result: fraud.result
+  fraud.review: fraud.review
+  order.confirmed: order.confirmed
+  shipment.requested: shipment.requested

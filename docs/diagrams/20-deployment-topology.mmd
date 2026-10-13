@@ -1,0 +1,33 @@
+flowchart LR
+    %% Design view: processes, infrastructure, ports, and configuration.
+    classDef entry fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef store fill:#fefce8,stroke:#a16207,color:#422006
+    classDef ext fill:#fff7ed,stroke:#c2410c,color:#431407
+    classDef note fill:#f8fafc,stroke:#334155,color:#0f172a
+
+    subgraph Host["host processes"]
+        API["cmd/api<br/>LISTEN :8080<br/>runs migrations on boot"]:::entry
+        Worker["cmd/worker<br/>consumer flowrulz-worker<br/>publishes every 5s"]:::entry
+    end
+
+    subgraph Infra["infrastructure"]
+        PG[("PostgreSQL 14+<br/>port 5432<br/>8 versioned migrations")]:::store
+        NATS["NATS JetStream<br/>port 4222, monitor 8222<br/>stream flowrulz, subjects events.all"]:::ext
+        Dest["effect destination<br/>HTTP endpoint or fake"]:::ext
+    end
+
+    Client["rule and execution clients"]:::ext
+    Producer["event producers"]:::ext
+
+    Client -->|HTTP rules and executions| API
+    Producer -->|publish order events| NATS
+
+    API -->|DATABASE_URL, MIGRATIONS_DIR| PG
+    Worker -->|DATABASE_URL, MIGRATIONS_DIR| PG
+    Worker -->|NATS_URL| NATS
+    Worker -->|EffectSender| Dest
+
+    Env["Environment: DATABASE_URL, NATS_URL,<br/>MIGRATIONS_DIR, API_LISTEN"]:::note
+    Code["Fixed in code: STREAM flowrulz,<br/>CONSUMER flowrulz-worker, SUBJECTS events.all,<br/>ACK_WAIT 30s, MAX_DELIVER 10,<br/>PUBLISH_INTERVAL 5s, BATCH 10"]:::note
+    Env -.-> Host
+    Code -.-> Worker

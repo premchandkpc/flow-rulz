@@ -1,0 +1,44 @@
+flowchart TD
+    %% Operations flow: investigate stalled events, delivery failures, and latency.
+    classDef check fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef action fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef failure fill:#fef2f2,stroke:#dc2626,color:#7f1d1d
+    classDef note fill:#f8fafc,stroke:#334155,color:#0f172a
+
+    Start[Observed problem]:::check
+    Type{What is failing?}:::check
+
+    Event[Event is not processed]:::failure
+    E1["Check worker logs<br/>and NATS consumer flowrulz-worker"]:::action
+    E2["Check inbox for stuck<br/>processing entries"]:::action
+    E3{"Rule activation exists<br/>for the tenant and rule set?"}:::check
+    E4["Deploy the rule revision,<br/>then redeliver the event"]:::action
+    E5["Check quarantine for<br/>validation and rule errors"]:::action
+
+    Effect[Effect is not delivered]:::failure
+    O1["Check outbox status<br/>pending or claimed"]:::action
+    O2["Check available_at in the future<br/>means a retry is scheduled"]:::action
+    O3["Check destination reachability"]:::action
+    O4["Inspect quarantine for<br/>effect errors and error class"]:::action
+    O5["Confirm claimed_by is null<br/>so the claim was released"]:::action
+
+    Latency[High latency]:::failure
+    L1["Check PostgreSQL pool saturation"]:::action
+    L2["Check NATS fetch batch size<br/>and per-delivery goroutines"]:::action
+    L3["Inspect long-running transactions"]:::action
+    L4["Check event size against<br/>compiler limits and payload size"]:::action
+
+    Start --> Type
+    Type -->|Event| Event
+    Type -->|Effect| Effect
+    Type -->|Latency| Latency
+
+    Event --> E1 --> E2 --> E3
+    E3 -->|yes| E5
+    E3 -->|no| E4
+    Effect --> O1 --> O2 --> O3 --> O4 --> O5
+    Latency --> L1 --> L2 --> L3 --> L4
+
+    Replay["Quarantine Replay only records<br/>the operator action timestamp.<br/>Source republishing is not built yet."]:::note
+    O4 -.-> Replay
+    E5 -.-> Replay

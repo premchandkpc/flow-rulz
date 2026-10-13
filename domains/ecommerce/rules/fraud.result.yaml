@@ -1,0 +1,49 @@
+rule_set: fraud.result
+revision: 1
+mode: first_match
+rules:
+  - id: fraud_passed
+    name: "Fraud Check Passed"
+    description: "Process order when fraud check passes"
+    priority: 100
+    when:
+      path: "$.passed"
+      op: "eq"
+      value: true
+    then:
+      - emit_event:
+          type: "shipment.requested"
+          partition_key_policy: "inherit"
+          data:
+            shipment_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            warehouse_id: "warehouse-primary"
+            items: []
+            shipping_address:
+              street: "123 Main St"
+              city: "San Francisco"
+              state: "CA"
+              postal_code: "94102"
+              country: "US"
+            shipping_method: "standard"
+            requested_at: "{{now}}"
+  - id: fraud_failed
+    name: "Fraud Check Failed"
+    description: "Trigger manual review when fraud check fails"
+    priority: 50
+    when:
+      path: "$.passed"
+      op: "eq"
+      value: false
+    then:
+      - emit_event:
+          type: "fraud.review"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            check_id: "{{$.check_id}}"
+            risk_score: "{{$.risk_score}}"
+            flags: "{{$.flags}}"
+            created_at: "{{now}}"

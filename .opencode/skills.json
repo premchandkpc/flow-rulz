@@ -1,0 +1,60 @@
+{
+  "skills": [
+    {
+      "name": "execution-context",
+      "description": "Add ExecutionContext struct to VM — MessageID, CorrelationID, TraceID, Partition, Offset, Headers, Deadline, Tenant, RetryCount, local vars"
+    },
+    {
+      "name": "message-envelope",
+      "description": "Replace raw JSON body with structured Envelope containing Headers, Body, Metadata, Topic, Partition, Offset, Timestamp, Key"
+    },
+    {
+      "name": "vm-scheduler",
+      "description": "Add Executor → Scheduler → WorkerQueue → ThreadPool → VM layer for async/parallel dispatch"
+    },
+    {
+      "name": "work-stealing",
+      "description": "Work-stealing deques for parallel execution via crossbeam-deque"
+    },
+    {
+      "name": "vm-continuations",
+      "description": "Suspend/resume VM when service calls block; continuations for async opcode"
+    },
+    {
+      "name": "bytecode-version",
+      "description": "Header with Magic, Version, Checksum on serialized plans; reject incompatible versions"
+    },
+    {
+      "name": "rule-cache",
+      "description": "LRU cache in Go engine for compiled plans; avoid recompilation on hot path"
+    },
+    {
+      "name": "snapshotting",
+      "description": "Save/load compiled plans as binary snapshots; mmap for cold-start"
+    },
+    {
+      "name": "plugin-system",
+      "description": "Plugin interface for service calls: Builtin, WASM, Remote (HTTP/gRPC)"
+    },
+    {
+      "name": "kafka-transport",
+      "description": "Full Kafka semantics: consumer groups, offset commit, batch poll, backpressure, poison messages, DLQ, rebalance"
+    },
+    {
+      "name": "dsl-extensions",
+      "description": "Add loop, window, aggregate, filter, merge, join, cache, state, timer, delay, await, race, try/catch DSL tokens"
+    },
+    {
+      "name": "vm-optimizations",
+      "description": "Optimizer passes: constant folding, DCE, CSE, jump optimization, tail merging, instruction fusion"
+    },
+    {
+      "name": "ffi-extensions",
+      "description": "ABI version handshake, panic isolation, timeout/cancellation, streaming API, batch execute"
+    },
+    {
+      "name": "memory-pools",
+      "description": "Typed object pools: Expression Pool, Context Pool, Plan Pool, JSON Arena, thread-local arenas"
+    }
+  ]
+}

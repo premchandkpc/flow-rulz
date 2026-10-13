@@ -1,0 +1,131 @@
+rule_set: transaction.initiated
+revision: 2
+mode: all_matches
+rules:
+  - id: fraud_screen
+    name: "Screen for fraud"
+    description: "Request a fraud score for every transaction of $500 or more"
+    priority: 100
+    when:
+      path: "$.amount"
+      op: "gte"
+      value: 50000
+    then:
+      - emit_event:
+          type: "fraud.screening_requested"
+          partition_key_policy: "inherit"
+          data:
+            screening_id: "{{new_id}}"
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            channel: "{{$.channel}}"
+            counterparty_country: "{{$.counterparty_country}}"
+            requested_at: "{{now}}"
+  - id: high_value_compliance
+    name: "High value compliance"
+    description: "Compliance check for transfers and payments of $10,000 or more"
+    priority: 90
+    when:
+      all:
+        - path: "$.amount"
+          op: "gte"
+          value: 1000000
+        - path: "$.transaction_type"
+          op: "in"
+          value: ["transfer", "payment", "wire_transfer"]
+    then:
+      - emit_event:
+          type: "compliance.check"
+          partition_key_policy: "inherit"
+          data:
+            check_id: "{{new_id}}"
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            transaction_type: "{{$.transaction_type}}"
+            counterparty_country: "{{$.counterparty_country}}"
+            risk_factors: ["high_value"]
+            initiated_at: "{{now}}"
+  - id: international_compliance
+    name: "International compliance"
+    description: "Compliance check for cross-border transfers below the high value threshold"
+    priority: 80
+    when:
+      all:
+        - path: "$.amount"
+          op: "lt"
+          value: 1000000
+        - path: "$.transaction_type"
+          op: "in"
+          value: ["transfer", "wire_transfer"]
+        - path: "$.counterparty_country"
+          op: "exists"
+        - path: "$.counterparty_country"
+          op: "neq"
+          value: "US"
+    then:
+      - emit_event:
+          type: "compliance.check"
+          partition_key_policy: "inherit"
+          data:
+            check_id: "{{new_id}}"
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            transaction_type: "{{$.transaction_type}}"
+            counterparty_country: "{{$.counterparty_country}}"
+            risk_factors: ["international"]
+            initiated_at: "{{now}}"
+  - id: structuring_watch
+    name: "Structuring watch"
+    description: "Raise an AML alert for amounts just under the $10,000 reporting threshold"
+    priority: 70
+    when:
+      all:
+        - path: "$.amount"
+          op: "gte"
+          value: 900000
+        - path: "$.amount"
+          op: "lt"
+          value: 1000000
+    then:
+      - emit_event:
+          type: "aml.alert_raised"
+          partition_key_policy: "inherit"
+          data:
+            alert_id: "{{new_id}}"
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            reason: "structuring"
+            raised_at: "{{now}}"
+  - id: low_risk_authorize
+    name: "Authorize low risk"
+    description: "Skip screening for domestic transactions under $500"
+    priority: 60
+    when:
+      all:
+        - path: "$.amount"
+          op: "lt"
+          value: 50000
+        - any:
+            - path: "$.counterparty_country"
+              op: "not_exists"
+            - path: "$.counterparty_country"
+              op: "eq"
+              value: "US"
+    then:
+      - emit_event:
+          type: "transaction.authorized"
+          partition_key_policy: "inherit"
+          data:
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            authorized_by: "low_risk_policy"
+            authorized_at: "{{now}}"

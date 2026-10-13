@@ -1,0 +1,25 @@
+flowchart TB
+    %% Start here: a small map of the focused diagrams in this directory.
+    classDef entry fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef service fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef store fill:#fefce8,stroke:#a16207,color:#422006
+    classDef external fill:#fff7ed,stroke:#c2410c,color:#431407
+
+    Client[API client]:::external
+    Producer[Event producer]:::external
+    Target[Effect destination]:::external
+    API[cmd/api]:::entry
+    Worker[cmd/worker]:::entry
+    Rules[Rule service]:::service
+    Events[Event service]:::service
+    Effects[Effect service]:::service
+    DB[(PostgreSQL)]:::store
+    NATS[NATS JetStream]:::external
+
+    Client -->|deploy rules, read executions| API --> Rules --> DB
+    Producer -->|publish order events| NATS --> Worker --> Events
+    Events --> DB
+    Worker --> Effects --> DB
+    Effects --> Target
+
+    Note["Read diagrams in order:<br/>01-04 design, dependencies, API, rule shape<br/>05-07 rules: lifecycle, modes, evaluator<br/>08-11 runtime: events, worker, delivery, claims<br/>12-16 reliability: state machines, errors, recovery<br/>17-23 scaling, data model, ops, testing, business<br/>24-27 target business-event runtime<br/><br/>See docs/README.md for the complete catalog."]:::entry

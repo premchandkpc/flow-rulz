@@ -1,0 +1,44 @@
+# Build stage
+FROM golang:1.26-alpine AS builder
+
+RUN apk add --no-cache git make
+
+WORKDIR /app
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build binary
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /worker ./cmd/worker
+
+# Final stage
+FROM alpine:3.24
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+
+COPY --from=builder /worker .
+COPY --from=builder /app/migrations ./migrations
+
+ENV APP_ENV=production \
+    LOG_LEVEL=info \
+    SHUTDOWN_TIMEOUT=30s \
+    MIGRATIONS_DIR=/app/migrations \
+    NUM_SHARDS=4096 \
+    MAX_GLOBAL_IN_FLIGHT=100 \
+    MAX_PER_KEY_QUEUE=100 \
+    KEY_QUEUE_WORKERS=1 \
+    BATCH_MODE=none \
+    BATCH_MAX=100 \
+    BATCH_WINDOW_MS=30000 \
+    SCHEDULER_POLL_MS=5000 \
+    SCHEDULER_BATCH_SIZE=100 \
+    LEASE_TTL_MS=30000 \
+    LEASE_RENEWAL_INTERVAL_MS=10000
+
+ENTRYPOINT ["./worker"]

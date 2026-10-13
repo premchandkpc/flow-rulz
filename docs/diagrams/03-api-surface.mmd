@@ -1,0 +1,49 @@
+flowchart LR
+    %% Design view: HTTP routes to handlers to services and repositories.
+    classDef entry fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef svc fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef core fill:#f5f3ff,stroke:#6d28d9,color:#2e1065
+    classDef store fill:#fefce8,stroke:#a16207,color:#422006
+    classDef bad fill:#fef2f2,stroke:#dc2626,color:#7f1d1d
+
+    subgraph Routes["cmd/api routes"]
+        R1["POST /v1/rules/{ruleSet}/revisions"]:::entry
+        R2["POST /v1/rules/{ruleSet}/revisions/{revision}/activate"]:::bad
+        R3["GET /v1/executions/{executionID}"]:::entry
+        R4["GET /health"]:::entry
+    end
+
+    H1["handler: decode raw JSON body,<br/>tenant scope default, actor api"]:::entry
+    H2["handler: returns 501 not implemented"]:::bad
+    H3["handler: lookup, 404 when missing"]:::entry
+    H4["handler: 200 with status ok"]:::entry
+
+    R1 --> H1
+    R2 --> H2
+    R3 --> H3
+    R4 --> H4
+
+    Act["rules.Service.Activate<br/>compile, save, set activation"]:::svc
+    Get["rules.Service.GetExecution"]:::svc
+
+    H1 --> Act
+    H3 --> Get
+
+    Comp["rules.Compiler<br/>limits, duplicate ids,<br/>priority, otherwise, actions"]:::core
+    Act --> Comp
+
+    RR[("rule_revisions")]:::store
+    AR[("rule_activations")]:::store
+    ER[("executions")]:::store
+
+    Act --> RR
+    Act --> AR
+    Get --> ER
+
+    Ok["200 OK<br/>activation payload with<br/>tenant scope, rule set,<br/>revision, version, actor, time"]:::svc
+    Err["400 with error body<br/>on compile or save failure"]:::bad
+    H1 --> Ok
+    H1 --> Err
+
+    Note["Activate is idempotent per (tenant, rule set, revision)<br/>through the primary key on rule_revisions.<br/>Re-activating an existing revision updates the activation row."]:::core
+    Act -.-> Note

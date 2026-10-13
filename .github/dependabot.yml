@@ -1,0 +1,58 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      go-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      go-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: cargo
+    directory: /rust-worker
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      rust-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      rust-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: npm
+    directory: /web/console
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      npm-security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
+      npm-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10

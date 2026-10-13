@@ -1,0 +1,80 @@
+erDiagram
+    RULE_REVISIONS {
+        text tenant_scope PK
+        text rule_id PK
+        bigint revision PK
+        jsonb source
+        jsonb compiled
+        text content_hash
+        text compiler_version
+        text match_mode
+        timestamptz created_at
+    }
+    RULE_ACTIVATIONS {
+        text tenant_scope PK
+        text rule_set PK
+        bigint revision FK
+        bigint version
+        text actor
+        timestamptz activated_at
+    }
+    INBOX {
+        text tenant_id PK
+        text event_id PK
+        text status
+        text execution_id
+        timestamptz first_seen_at
+        timestamptz committed_at
+    }
+    EXECUTIONS {
+        text execution_id PK
+        text event_id
+        text tenant_id
+        text rule_set
+        bigint revision
+        text decision_hash
+        text status
+        text error
+        text trace_id
+        timestamptz created_at
+        timestamptz completed_at
+    }
+    OUTBOX_EFFECTS {
+        text effect_id PK
+        text execution_id FK
+        text destination
+        text name
+        jsonb payload
+        text effect_type
+        text status
+        int attempts
+        int max_attempts
+        timestamptz available_at
+        text last_error
+        text claimed_by
+        timestamptz claim_expires_at
+    }
+    QUARANTINE {
+        text quarantine_id PK
+        text source_type
+        text source_id
+        text error_class
+        text payload_ref
+        text event_id
+        text tenant_id
+        text error_message
+    }
+    SHARD_LEASES {
+        int virtual_shard PK
+        text owner
+        bigint fencing_token
+        timestamptz expires_at
+        bigint routing_epoch
+    }
+
+    RULE_REVISIONS ||--o{ RULE_ACTIVATIONS : "selected by"
+    RULE_ACTIVATIONS ||--o{ EXECUTIONS : "pins revision for"
+    INBOX ||--o| EXECUTIONS : "dedup key commits one"
+    EXECUTIONS ||--o{ OUTBOX_EFFECTS : "creates in same tx"
+    OUTBOX_EFFECTS }o--o| QUARANTINE : "failed after max attempts"
+    EXECUTIONS }o--o| QUARANTINE : "permanent failure"

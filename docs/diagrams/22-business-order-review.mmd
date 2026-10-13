@@ -1,0 +1,28 @@
+flowchart LR
+    %% Business example: an expensive order is routed to human review.
+    classDef person fill:#fff7ed,stroke:#c2410c,color:#431407
+    classDef system fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef decision fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef outcome fill:#f5f3ff,stroke:#6d28d9,color:#2e1065
+
+    Author[Operations or risk analyst]:::person
+    Rule["Publish rule revision<br/>rule set order.created,<br/>total gte 1000 emits review"]:::system
+    Store[Storefront]:::person
+    Event["Order-created event<br/>tenant, order id, total"]:::system
+    Evaluate["Evaluate active order rule<br/>first_match mode"]:::decision
+    High{"Order total<br/>over 1000?"}:::decision
+    Approve["No effects, execution completes"]:::outcome
+    Review["Effect emitted to topic<br/>orders.review with reason"]:::outcome
+    Outbox[("outbox_effects<br/>committed with the execution")]:::outcome
+    Workflow["Approval workflow consumes<br/>the review topic"]:::person
+    Analyst[Review team]:::person
+    Result["Approve or decline order"]:::outcome
+
+    Author --> Rule
+    Store --> Event --> Evaluate --> High
+    High -->|No| Approve
+    High -->|Yes| Review --> Outbox --> Workflow --> Analyst --> Result
+    Rule -.->|becomes the active revision| Evaluate
+    Review -.->|effect id is stable across retries| Workflow
+
+    Note["Example only: the rule engine decides and emits work.<br/>The external workflow owns the human approval process.<br/>Decision hash and pinned revision make the call auditable."]:::system

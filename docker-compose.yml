@@ -1,0 +1,242 @@
+name: ${COMPOSE_PROJECT_NAME:-flow-rulz}
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-flow-rulz}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-flow-rulz}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks: [flow-rulz]
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "127.0.0.1:${NATS_PORT:-4222}:4222"
+      - "127.0.0.1:${NATS_MONITOR_PORT:-8222}:8222"
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8222/healthz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    networks: [flow-rulz]
+
+  redis:
+    image: redis:7-alpine
+    command: ["sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\"; else exec redis-server --appendonly yes; fi"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    networks: [flow-rulz]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file: .env
+    environment:
+      HTTP_ADDR: ${HTTP_ADDR:-:8080}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/flow-rulz?sslmode=disable}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      MIGRATIONS_DIR: /app/migrations
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks: [flow-rulz]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/flow-rulz?sslmode=disable}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+      FLOWRULE_METRICS_ADDR: ${FLOWRULE_METRICS_ADDR:-:9090}
+      FLOWRULE_CONSOLE_ORIGIN: ${FLOWRULE_CONSOLE_ORIGIN:-http://localhost:3000}
+      WORKER_REPLICAS: ${WORKER_REPLICAS:-3}
+      MIGRATIONS_DIR: /app/migrations
+    deploy:
+      replicas: ${WORKER_REPLICAS:-3}
+    expose: ["9090"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [flow-rulz]
+
+  # Alternative implementation. Start explicitly with: docker compose --profile rust up worker-rust
+  # Stop/scale down the Go worker before using this service; both contend for the same shard leases.
+  worker-rust:
+    profiles: ["rust"]
+    build:
+      context: .
+      dockerfile: Dockerfile.worker-rust
+    env_file: .env
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/flow-rulz?sslmode=disable}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      NATS_STREAM: ${NATS_STREAM:-flow-rulz}
+      NATS_CONSUMER: ${RUST_NATS_CONSUMER:-flow-rulz-rust-worker}
+      NATS_RULESETS: ${NATS_RULESETS:-}
+      WORKER_REPLICAS: ${RUST_WORKER_REPLICAS:-3}
+      NUM_SHARDS: ${NUM_SHARDS:-4096}
+      EFFECT_DESTINATION_URL: ${EFFECT_DESTINATION_URL:-}
+      LEASE_TTL_MS: ${LEASE_TTL_MS:-30000}
+      LEASE_RENEWAL_INTERVAL_MS: ${LEASE_RENEWAL_INTERVAL_MS:-10000}
+      NATS_ACK_WAIT_MS: ${NATS_ACK_WAIT_MS:-30000}
+      EVENT_RETRY_DELAY_MS: ${EVENT_RETRY_DELAY_MS:-5000}
+      FETCH_BATCH_SIZE: ${FETCH_BATCH_SIZE:-100}
+      EFFECT_PUBLISH_INTERVAL_MS: ${EFFECT_PUBLISH_INTERVAL_MS:-5000}
+      SCHEDULER_POLL_MS: ${SCHEDULER_POLL_MS:-5000}
+      SCHEDULER_BATCH_SIZE: ${SCHEDULER_BATCH_SIZE:-100}
+    deploy:
+      replicas: ${RUST_WORKER_REPLICAS:-3}
+    depends_on:
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [flow-rulz]
+
+  console:
+    build:
+      context: .
+      dockerfile: Dockerfile.console
+    ports:
+      - "127.0.0.1:${CONSOLE_PORT:-3000}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_started
+      loki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks: [flow-rulz]
+
+  loki:
+    image: grafana/loki:3.5.1
+    command: ["-config.file=/etc/loki/config.yml"]
+    volumes:
+      - ./deploy/observability/loki-config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    expose: ["3100"]
+    restart: unless-stopped
+    networks: [flow-rulz]
+
+  promtail:
+    image: grafana/promtail:3.5.1
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./deploy/observability/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail_positions:/tmp
+    depends_on:
+      loki:
+        condition: service_started
+    restart: unless-stopped
+    networks: [flow-rulz]
+
+  random-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.random-producer
+    env_file: .env
+    environment:
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+    command:
+      - --clients
+      - "${RANDOM_PRODUCER_CLIENTS:-10}"
+      - --max-messages
+      - "${RANDOM_PRODUCER_MESSAGES_MAX:-100}"
+      - --shards
+      - "${NUM_SHARDS:-4096}"
+      - --concurrency
+      - "${RANDOM_PRODUCER_CONCURRENCY:-16}"
+      - --scenario
+      - "${RANDOM_PRODUCER_SCENARIO:-all}"
+      - --tenant
+      - "${RANDOM_PRODUCER_TENANT_ID:-acme-corp}"
+    depends_on:
+      nats:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    profiles: [examples]
+    networks: [flow-rulz]
+
+  codegen:
+    build:
+      context: .
+      dockerfile: Dockerfile.codegen
+    env_file: .env
+    environment:
+      GENERATION_OUTPUT_DIR: /generated
+    volumes:
+      - ./generated:/generated
+    profiles: [tools]
+    networks: [flow-rulz]
+
+networks:
+  flow-rulz:
+    name: ${COMPOSE_PROJECT_NAME:-flow-rulz}-network
+
+volumes:
+  postgres_data:
+  nats_data:
+  redis_data:
+  loki_data:
+  promtail_positions:

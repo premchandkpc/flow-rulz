@@ -1,0 +1,35 @@
+name: fraud.result
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted with fraud check result
+fields:
+  check_id:
+    type: string
+    description: Unique fraud check identifier
+    required: true
+  order_id:
+    type: string
+    description: Associated order identifier
+    required: true
+  passed:
+    type: boolean
+    description: Whether fraud check passed
+    required: true
+  risk_score:
+    type: number
+    description: Risk score (0-100)
+    required: true
+  flags:
+    type: array
+    description: Fraud flags detected
+    required: false
+    items:
+      type: string
+  reviewed_at:
+    type: string
+    format: date-time
+    description: Fraud review completion timestamp
+    required: true
+compatibility: BACKWARD
+owner: fraud-team
+deprecated: false

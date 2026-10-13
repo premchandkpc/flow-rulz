@@ -1,0 +1,38 @@
+name: payment.requested
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when payment is requested for an order
+fields:
+  payment_id:
+    type: string
+    description: Unique payment identifier
+    required: true
+  order_id:
+    type: string
+    description: Associated order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer making the payment
+    required: true
+  amount:
+    type: number
+    description: Payment amount in cents
+    required: true
+  currency:
+    type: string
+    description: Currency code
+    required: true
+    default: "USD"
+  payment_method:
+    type: string
+    description: Payment method (card, bank_transfer, wallet)
+    required: true
+  created_at:
+    type: string
+    format: date-time
+    description: Payment request timestamp
+    required: true
+compatibility: BACKWARD
+owner: payments-team
+deprecated: false

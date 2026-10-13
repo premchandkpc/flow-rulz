@@ -1,0 +1,22 @@
+flowchart TB
+    classDef event fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef rule fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef durable fill:#fefce8,stroke:#a16207,color:#422006
+    classDef target fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-dasharray: 5 5
+
+    E1[Event E1<br/>type: order.created<br/>key: order-123]:::event
+    R1[Resolve order.created<br/>then evaluate active revision]:::rule
+    Decision[Decision]:::rule
+    Tx[(One transaction:<br/>inbox + execution + outbox)]:::durable
+    Same[New event E2<br/>type: payment.requested<br/>key: order-123]:::target
+    Different[New event E3<br/>type: customer.notification<br/>key: customer-55]:::target
+    Router[Route each new event by its own<br/>type and partition key]:::target
+    R2[Payment rule set]:::rule
+    R3[Notification rule set]:::rule
+
+    E1 --> R1 --> Decision --> Tx
+    Tx -->|emit_event action| Same
+    Tx -->|emit_event action| Different
+    Same --> Router --> R2
+    Different --> Router --> R3
+    Note[Rule chaining chooses the next event type.<br/>Partition routing independently chooses its explicit key and worker/shard.<br/>Child events are durable outbox effects; strict shard sequencing is still proposed.]:::target

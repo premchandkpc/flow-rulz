@@ -1,0 +1,25 @@
+name: delivered
+version: "1.0"
+namespace: com.example.fooddelivery
+description: Event emitted when order is delivered
+fields:
+  order_id:
+    type: string
+    description: Order identifier
+    required: true
+  driver_id:
+    type: string
+    description: Driver who delivered
+    required: true
+  customer_id:
+    type: string
+    description: Customer who received
+    required: true
+  delivered_at:
+    type: string
+    format: date-time
+    description: Delivery timestamp
+    required: true
+compatibility: BACKWARD
+owner: logistics-team
+deprecated: false

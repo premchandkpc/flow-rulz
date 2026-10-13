@@ -1,0 +1,21 @@
+name: food.prepared
+version: "1.0"
+namespace: com.example.fooddelivery
+description: Event emitted when food is prepared and ready for pickup
+fields:
+  order_id:
+    type: string
+    description: Order identifier
+    required: true
+  restaurant_id:
+    type: string
+    description: Restaurant identifier
+    required: true
+  prepared_at:
+    type: string
+    format: date-time
+    description: Preparation completion timestamp
+    required: true
+compatibility: BACKWARD
+owner: restaurant-team
+deprecated: false

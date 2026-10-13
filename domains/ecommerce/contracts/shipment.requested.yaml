@@ -1,0 +1,66 @@
+name: shipment.requested
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when shipment is requested for an order
+fields:
+  shipment_id:
+    type: string
+    description: Unique shipment identifier
+    required: true
+  order_id:
+    type: string
+    description: Associated order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer receiving the shipment
+    required: true
+  warehouse_id:
+    type: string
+    description: Warehouse to ship from
+    required: true
+  items:
+    type: array
+    description: Items to ship
+    required: true
+    items:
+      type: object
+      properties:
+        product_id:
+          type: string
+          required: true
+        quantity:
+          type: integer
+          required: true
+  shipping_address:
+    type: object
+    description: Shipping address
+    required: true
+    properties:
+      street:
+        type: string
+        required: true
+      city:
+        type: string
+        required: true
+      state:
+        type: string
+        required: true
+      postal_code:
+        type: string
+        required: true
+      country:
+        type: string
+        required: true
+  shipping_method:
+    type: string
+    description: Shipping method (standard, express, overnight)
+    required: true
+  requested_at:
+    type: string
+    format: date-time
+    description: Shipment request timestamp
+    required: true
+compatibility: BACKWARD
+owner: fulfillment-team
+deprecated: false

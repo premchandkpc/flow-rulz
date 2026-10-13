@@ -1,0 +1,34 @@
+flowchart TB
+    %% Target architecture. All boxes are modules in one deployable system.
+    classDef runtime fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef core fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef durable fill:#fefce8,stroke:#a16207,color:#422006
+    classDef planned fill:#f8fafc,stroke:#64748b,color:#0f172a,stroke-dasharray: 5 5
+
+    Event[Business event<br/>id, tenant, type, partition key,<br/>workflow ID, data]:::runtime
+    subgraph Engine[One deployable: Business Event Rule Runtime]
+        Intake[Event intake + inbox deduplication]:::core
+        Router[Partition router]:::core
+        Resolver[Rule-set and revision resolver]:::core
+        Evaluator[Pure rule evaluator]:::core
+        Execution[Execution engine]:::core
+        Effects[Effect and event router]:::core
+        Scheduler[Scheduler]:::planned
+        Accumulator[Partition-key accumulator]:::planned
+        Shards[Shard manager + per-key sequencing]:::planned
+    end
+    DB[(PostgreSQL<br/>rules, inbox, executions, outbox,<br/>leases, future workflow/schedule state)]:::durable
+    NATS[NATS JetStream]:::durable
+
+    Event --> Intake --> Router --> Resolver --> Evaluator --> Execution --> Effects
+    Effects --> NATS
+    Effects --> DB
+    Intake --> DB
+    Resolver --> DB
+    Execution --> DB
+    Scheduler --> Effects
+    Accumulator --> Execution
+    Shards --> Router
+    DB --> Scheduler
+    DB --> Accumulator
+    Note[Solid modules exist today: intake, resolver, evaluator, execution, and outbox-routed child events.<br/>Dashed modules are target capabilities, not runtime behavior yet.]:::planned

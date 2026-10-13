@@ -1,0 +1,29 @@
+name: transaction.review_required
+version: "1.0"
+namespace: com.example.banking
+description: Transaction parked for manual review
+fields:
+  transaction_id:
+    type: string
+    description: Transaction identifier
+    required: true
+  account_id:
+    type: string
+    description: Source account
+    required: true
+  amount:
+    type: number
+    description: Amount in cents
+    required: true
+  reason:
+    type: string
+    description: fraud_review or compliance_risk
+    required: true
+  queued_at:
+    type: string
+    description: Queue timestamp
+    required: true
+    format: date-time
+compatibility: BACKWARD
+owner: operations-team
+deprecated: false

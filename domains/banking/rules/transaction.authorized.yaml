@@ -1,0 +1,39 @@
+rule_set: transaction.authorized
+revision: 1
+mode: all_matches
+rules:
+  - id: settle
+    name: "Settle"
+    description: "Post every authorized transaction to the ledger"
+    priority: 100
+    when:
+      path: "$.transaction_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "transaction.settled"
+          partition_key_policy: "inherit"
+          data:
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            settled_at: "{{now}}"
+  - id: notify_large
+    name: "Notify large settlement"
+    description: "Tell the customer when $10,000 or more is authorized"
+    priority: 50
+    when:
+      path: "$.amount"
+      op: "gte"
+      value: 1000000
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            account_id: "{{$.account_id}}"
+            transaction_id: "{{$.transaction_id}}"
+            template: "authorized_large"
+            requested_at: "{{now}}"

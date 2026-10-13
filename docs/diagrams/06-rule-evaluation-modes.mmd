@@ -1,0 +1,40 @@
+flowchart TB
+    %% Design view: first_match versus all_matches evaluation modes.
+    classDef input fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef rule fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef result fill:#f5f3ff,stroke:#6d28d9,color:#2e1065
+    classDef note fill:#f8fafc,stroke:#334155,color:#0f172a
+
+    Event["Incoming event<br/>tenant, type, data"]:::input
+    Mode{"Configured<br/>match_mode"}:::input
+
+    subgraph First["first_match: stop at the first matching rule"]
+        F1["Rule A: priority 100<br/>total gte 1000"]:::rule
+        F1Match{"Matches?"}:::rule
+        F2["Rule B: priority 50<br/>country not in US CA UK"]:::rule
+        F2Match{"Matches?"}:::rule
+        FDefault["Otherwise rule:<br/>lowest priority, when is null"]:::rule
+        FResult["Effects from exactly one rule"]:::result
+        F1 --> F1Match
+        F1Match -->|Yes| FResult
+        F1Match -->|No| F2 --> F2Match
+        F2Match -->|Yes| FResult
+        F2Match -->|No| FDefault --> FResult
+    end
+
+    subgraph All["all_matches: collect every matching rule"]
+        A1["Rule A: priority 100"]:::rule
+        A2["Rule B: priority 50"]:::rule
+        A3["Rule C: priority 10"]:::rule
+        AResult["Effects from every matching rule,<br/>evaluated highest priority first"]:::result
+        A1 --> A2 --> A3 --> AResult
+    end
+
+    Event --> Mode
+    Mode -->|first_match| F1
+    Mode -->|all_matches| A1
+
+    Sorted["Compiled rules are sorted once by priority,<br/>highest first, and duplicate priorities<br/>are rejected at compile time."]:::note
+    Event -.-> Sorted
+    Otherwise["otherwise runs only when no other rule<br/>matches in first_match mode."]:::note
+    FDefault -.-> Otherwise

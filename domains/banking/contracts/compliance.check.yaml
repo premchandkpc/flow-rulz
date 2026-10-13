@@ -1,0 +1,47 @@
+name: compliance.check
+version: "2.0"
+namespace: com.example.banking
+description: Request for a sanctions and limit check
+fields:
+  check_id:
+    type: string
+    description: Check identifier
+    required: true
+  transaction_id:
+    type: string
+    description: Transaction to check
+    required: true
+  account_id:
+    type: string
+    description: Source account
+    required: true
+  amount:
+    type: number
+    description: Amount in cents
+    required: true
+  currency:
+    type: string
+    description: ISO currency code
+    required: true
+  transaction_type:
+    type: string
+    description: Transaction type
+    required: true
+  counterparty_country:
+    type: string
+    description: ISO country of the destination
+    required: false
+  risk_factors:
+    type: array
+    description: Why the check was requested
+    required: false
+    items:
+      type: string
+  initiated_at:
+    type: string
+    description: Request timestamp
+    required: true
+    format: date-time
+compatibility: BACKWARD
+owner: compliance-team
+deprecated: false

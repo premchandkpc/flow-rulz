@@ -1,0 +1,73 @@
+rule_set: compliance.result
+revision: 2
+mode: first_match
+rules:
+  - id: compliance_failed
+    name: "Compliance failed"
+    description: "Block the transaction and alert investigators"
+    priority: 100
+    when:
+      path: "$.passed"
+      op: "eq"
+      value: false
+    then:
+      - emit_event:
+          type: "transaction.blocked"
+          partition_key_policy: "inherit"
+          data:
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            reason: "compliance_failed"
+            blocked_at: "{{now}}"
+      - emit_event:
+          type: "aml.alert_raised"
+          partition_key_policy: "inherit"
+          data:
+            alert_id: "{{new_id}}"
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            reason: "compliance_failure"
+            raised_at: "{{now}}"
+  - id: compliance_risky
+    name: "Passed with elevated risk"
+    description: "Send high risk passes to manual review"
+    priority: 90
+    when:
+      all:
+        - path: "$.passed"
+          op: "eq"
+          value: true
+        - path: "$.risk_level"
+          op: "in"
+          value: ["high", "critical"]
+    then:
+      - emit_event:
+          type: "transaction.review_required"
+          partition_key_policy: "inherit"
+          data:
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            reason: "compliance_risk"
+            queued_at: "{{now}}"
+  - id: compliance_passed
+    name: "Compliance passed"
+    description: "Authorize transactions that passed cleanly"
+    priority: 80
+    when:
+      path: "$.passed"
+      op: "eq"
+      value: true
+    then:
+      - emit_event:
+          type: "transaction.authorized"
+          partition_key_policy: "inherit"
+          data:
+            transaction_id: "{{$.transaction_id}}"
+            account_id: "{{$.account_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            authorized_by: "compliance"
+            authorized_at: "{{now}}"

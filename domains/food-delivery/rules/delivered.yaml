@@ -1,0 +1,30 @@
+rule_set: delivered
+revision: 1
+mode: all_matches
+rules:
+  - id: complete_order
+    name: "Complete Order"
+    description: "Mark order as completed and trigger feedback request"
+    priority: 100
+    when:
+      all:
+        - path: "$.order_id"
+          op: "exists"
+        - path: "$.driver_id"
+          op: "exists"
+    then:
+      - emit_event:
+          type: "order.completed"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            driver_id: "{{$.driver_id}}"
+            customer_id: "{{$.customer_id}}"
+            completed_at: "{{now}}"
+      - emit_event:
+          type: "feedback.requested"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            requested_at: "{{now}}"

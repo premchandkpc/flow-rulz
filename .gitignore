@@ -1,0 +1,50 @@
+# Go
+go/bin/
+go/vendor/
+
+# Build artifacts
+/bin/
+/bin/*
+/worker
+/codegen
+/examples/*/consumer
+/examples/*/producer
+*.test
+*.o
+*.so
+*.dylib
+*.dll
+*.a
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Rust
+rust/target/
+rust/Cargo.lock
+rust-worker/target/
+rust-worker/Cargo.lock
+
+# Temp files
+.temp/
+*.tmp
+
+# Database/data directories (runtime data)
+data/
+
+# Generated code
+examples/*/generated/
+# Invalid/temporary code-generator output directories
+examples/*/.generated/

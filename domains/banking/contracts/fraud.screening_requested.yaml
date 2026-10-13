@@ -1,0 +1,41 @@
+name: fraud.screening_requested
+version: "1.0"
+namespace: com.example.banking
+description: Request for a fraud score on a pending transaction
+fields:
+  screening_id:
+    type: string
+    description: Screening identifier
+    required: true
+  transaction_id:
+    type: string
+    description: Transaction under review
+    required: true
+  account_id:
+    type: string
+    description: Source account
+    required: true
+  amount:
+    type: number
+    description: Amount in cents
+    required: true
+  currency:
+    type: string
+    description: ISO currency code
+    required: true
+  channel:
+    type: string
+    description: Origin channel
+    required: true
+  counterparty_country:
+    type: string
+    description: ISO country of the destination
+    required: false
+  requested_at:
+    type: string
+    description: Request timestamp
+    required: true
+    format: date-time
+compatibility: BACKWARD
+owner: fraud-team
+deprecated: false

@@ -1,0 +1,21 @@
+rule_set: transaction.blocked
+revision: 1
+mode: all_matches
+rules:
+  - id: notify_blocked
+    name: "Notify blocked"
+    description: "Tell the account holder when a transaction is blocked"
+    priority: 100
+    when:
+      path: "$.transaction_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            account_id: "{{$.account_id}}"
+            transaction_id: "{{$.transaction_id}}"
+            template: "blocked"
+            requested_at: "{{now}}"

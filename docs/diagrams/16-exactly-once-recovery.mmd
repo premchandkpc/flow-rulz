@@ -1,0 +1,27 @@
+sequenceDiagram
+    autonumber
+    participant NATS as NATS JetStream
+    participant Worker as Worker
+    participant DB as PostgreSQL inbox + execution + outbox
+    participant Target as Effect destination
+
+    NATS->>Worker: Deliver event, at least once
+    Worker->>DB: Begin transaction and insert inbox key
+
+    alt Worker crashes before commit
+        Note over DB: Transaction rolls back. No inbox key or execution persists.
+        NATS->>Worker: Redeliver event after ack wait of 30s
+        Worker->>DB: Process as new event
+    else Commit succeeds but worker crashes before ACK
+        Worker->>DB: Commit inbox, execution and outbox together
+        NATS->>Worker: Redeliver event
+        Worker->>DB: Find committed inbox key
+        DB-->>Worker: Existing execution
+        Worker->>NATS: Ack without creating a second execution
+    end
+
+    Worker->>DB: Claim outbox effect with SKIP LOCKED
+    Worker->>Target: Send effect with deterministic effect ID
+    Note over Target: Destination treats effect ID as an idempotency key.
+
+    Note over NATS,Target: Result, at-least-once transport becomes one business execution<br/>and safely repeatable effect delivery.

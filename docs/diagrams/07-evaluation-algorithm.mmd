@@ -1,0 +1,43 @@
+flowchart TD
+    %% Scenario: how the pure evaluator walks rules and builds a decision.
+    classDef proc fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef core fill:#f5f3ff,stroke:#6d28d9,color:#2e1065
+    classDef out fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef note fill:#f8fafc,stroke:#334155,color:#0f172a
+
+    Start["Evaluate(revision, event, facts)"]:::proc
+    Sort["compiled rules sorted by priority,<br/>highest first"]:::core
+    Start --> Sort
+
+    Loop["take next rule"]:::proc
+    Sort --> Loop
+
+    Pred["evalPredicate on event.Data"]:::proc
+    Loop --> Pred
+
+    Pred --> Walk{"composite or leaf?"}:::proc
+    Walk -->|all / any / not| Rec["recurse into children<br/>short circuit on all false<br/>or any true"]:::proc
+    Rec --> Pred
+    Walk -->|leaf| Path["resolve dollar-dot path in data,<br/>missing path means false<br/>except exists and not_exists"]:::proc
+    Path --> Cmp["compare with operator,<br/>numbers normalized before compare"]:::proc
+    Cmp --> Pred
+
+    Pred -->|true| Match["record rule id in matched,<br/>build effects for each then action,<br/>effect id from tenant, event, rule set,<br/>revision, rule id, action index"]:::out
+    Pred -->|false| Other["build effects from otherwise<br/>when the rule defines it"]:::note
+
+    Match --> Mode{"match_mode?"}:::proc
+    Mode -->|first_match| Stop["stop after the first match"]:::proc
+    Mode -->|all_matches| Next["continue with the next rule"]:::proc
+    Other --> Next
+    Next --> More{"more rules?"}:::proc
+    More -->|yes| Loop
+    More -->|no| Hash
+    Stop --> Hash
+
+    Hash["decision hash = sha256 of<br/>content hash, matched ids, effect ids,<br/>event id and facts hash"]:::out
+    Explanations["explanations: rule id, matched,<br/>priority, reason, actions"]:::note
+    Hash --> Result["Decision: matched rules, effects,<br/>hash, explanations"]:::out
+    Hash --> Explanations
+
+    Pure["No I/O, no clock, no randomness.<br/>Same revision and event always<br/>produce the same hash."]:::note
+    Result -.-> Pure

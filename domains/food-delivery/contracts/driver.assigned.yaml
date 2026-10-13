@@ -1,0 +1,38 @@
+name: driver.assigned
+version: "1.0"
+namespace: com.example.fooddelivery
+description: Event emitted when a driver is assigned to an order
+fields:
+  order_id:
+    type: string
+    description: Order identifier
+    required: true
+  driver_id:
+    type: string
+    description: Assigned driver identifier
+    required: true
+  restaurant_id:
+    type: string
+    description: Restaurant for pickup
+    required: true
+  delivery_address:
+    type: object
+    description: Delivery address
+    required: true
+    properties:
+      street:
+        type: string
+      city:
+        type: string
+      state:
+        type: string
+      postal_code:
+        type: string
+  assigned_at:
+    type: string
+    format: date-time
+    description: Assignment timestamp
+    required: true
+compatibility: BACKWARD
+owner: logistics-team
+deprecated: false

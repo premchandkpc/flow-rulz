@@ -1,0 +1,49 @@
+name: transaction.initiated
+version: "2.0"
+namespace: com.example.banking
+description: Customer-initiated money movement entering the platform
+fields:
+  transaction_id:
+    type: string
+    description: Unique transaction identifier
+    required: true
+  account_id:
+    type: string
+    description: Source account
+    required: true
+  amount:
+    type: number
+    description: Amount in cents
+    required: true
+  currency:
+    type: string
+    description: ISO currency code
+    required: true
+  transaction_type:
+    type: string
+    description: transfer, payment, withdrawal or wire_transfer
+    required: true
+  channel:
+    type: string
+    description: mobile, web, branch or api
+    required: true
+  counterparty_account:
+    type: string
+    description: Destination account
+    required: false
+  counterparty_country:
+    type: string
+    description: ISO country of the destination
+    required: false
+  description:
+    type: string
+    description: Free-text reference
+    required: false
+  initiated_at:
+    type: string
+    description: Initiation timestamp
+    required: true
+    format: date-time
+compatibility: BACKWARD
+owner: banking-team
+deprecated: false

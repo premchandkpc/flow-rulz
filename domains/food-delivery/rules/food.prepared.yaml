@@ -1,0 +1,44 @@
+rule_set: food.prepared
+revision: 1
+mode: first_match
+rules:
+  - id: assign_driver
+    name: "Assign Available Driver"
+    description: "Assign nearest available driver"
+    priority: 100
+    when:
+      all:
+        - path: "$.order_id"
+          op: "exists"
+        - path: "$.restaurant_id"
+          op: "exists"
+    then:
+      - emit_event:
+          type: "driver.assigned"
+          partition_key_policy: "from_data"
+          partition_key_path: "$.delivery_address.postal_code"
+          data:
+            order_id: "{{$.order_id}}"
+            driver_id: "driver-{{random}}"
+            restaurant_id: "{{$.restaurant_id}}"
+            delivery_address:
+              street: "123 Main St"
+              city: "San Francisco"
+              state: "CA"
+              postal_code: "94102"
+            assigned_at: "{{now}}"
+  - id: no_drivers
+    name: "No Drivers Available"
+    description: "Queue for later assignment"
+    priority: 50
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "driver.assignment_queued"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            reason: "no_drivers_available"
+            queued_at: "{{now}}"

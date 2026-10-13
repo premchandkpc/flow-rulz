@@ -1,0 +1,53 @@
+flowchart TB
+    %% Design view: rule source shape from JSON to compiled rules and actions.
+    classDef core fill:#f5f3ff,stroke:#6d28d9,color:#2e1065
+    classDef ok fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef bad fill:#fef2f2,stroke:#dc2626,color:#7f1d1d
+    classDef note fill:#f8fafc,stroke:#334155,color:#0f172a
+
+    Src["rule source JSON"]:::core
+    Head["rule_set, revision,<br/>match_mode, input_contract"]:::core
+    Rules["rules array"]:::core
+
+    Src --> Head
+    Src --> Rules
+
+    Rule["one rule<br/>id, name, priority, tags"]:::core
+    Rules --> Rule
+
+    When["when: predicate tree"]:::core
+    Then["then: actions on match"]:::ok
+    Other["otherwise: actions on no match<br/>first_match only, lowest priority rule"]:::note
+
+    Rule --> When
+    Rule --> Then
+    Rule --> Other
+
+    All["all: every child true"]:::core
+    Any["any: at least one child true"]:::core
+    Not["not: inverts one child"]:::core
+    Leaf["leaf: path, op, value"]:::core
+
+    When --> All
+    When --> Any
+    When --> Not
+    When --> Leaf
+    All --> Any
+    Any --> Not
+    Not --> Leaf
+
+    Ops["ops: eq, neq, gt, gte, lt, lte,<br/>in, not_in, exists, not_exists<br/>path must start with dollar-dot"]:::note
+    Leaf --> Ops
+
+    Emit["emit: topic and data<br/>effect_type emit"]:::ok
+    Cmd["command: destination, name, data<br/>effect_type command"]:::ok
+    Then --> Emit
+    Then --> Cmd
+
+    Contract["input_contract name, version, schema_hash<br/>validated against the contract registry<br/>before activation"]:::ok
+    Head --> Contract
+
+    Limits["Compiler rejects:<br/>empty source, missing id or revision,<br/>unknown match mode, duplicate rule ids,<br/>duplicate priorities, depth over 10,<br/>over 100 rules or 200 predicates,<br/>over 10 actions, payload over 256KB"]:::bad
+    Head -.-> Limits
+    Rules -.-> Limits
+    Other -.-> Limits

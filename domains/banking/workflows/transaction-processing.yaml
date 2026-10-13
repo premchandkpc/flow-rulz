@@ -1,0 +1,16 @@
+workflow_type: transaction-processing
+version: 2
+states:
+  - {name: initiated, type: start, rule_sets: [transaction.initiated], on_enter: [], on_exit: []}
+  - {name: screening, type: intermediate, rule_sets: [fraud.screening_result, compliance.result], on_enter: [], on_exit: []}
+  - {name: authorized, type: intermediate, rule_sets: [transaction.authorized], on_enter: [], on_exit: []}
+  - {name: review, type: intermediate, rule_sets: [], on_enter: [], on_exit: []}
+  - {name: settled, type: end, rule_sets: [], on_enter: [], on_exit: []}
+  - {name: blocked, type: end, rule_sets: [transaction.blocked], on_enter: [], on_exit: []}
+transitions:
+  - {from: initiated, to: screening, event_type: fraud.screening_requested}
+  - {from: initiated, to: authorized, event_type: transaction.authorized}
+  - {from: screening, to: authorized, event_type: transaction.authorized}
+  - {from: screening, to: review, event_type: transaction.review_required}
+  - {from: screening, to: blocked, event_type: transaction.blocked}
+  - {from: authorized, to: settled, event_type: transaction.settled}

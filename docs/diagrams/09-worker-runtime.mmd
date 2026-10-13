@@ -1,0 +1,46 @@
+sequenceDiagram
+    autonumber
+    participant Tick as 5s ticker
+    participant W as application.Worker
+    participant NATS as NATS JetStream
+    participant G as delivery goroutine
+    participant Ev as Event service
+    participant Fx as Effect service
+    participant DB as PostgreSQL
+    participant Dest as Effect destination
+
+    Note over W: Run starts publishLoop in a goroutine,<br/>then loops on consumer.Fetch up to 10.
+
+    loop fetch loop until ctx cancelled
+        W->>NATS: Fetch(ctx, 10)
+        NATS-->>W: deliveries
+        W->>G: processDelivery for each delivery, one goroutine each
+    end
+
+    G->>G: delivery.Event decodes the envelope
+    alt envelope is invalid
+        G->>DB: QuarantineEvent source hash and validation class
+        G->>NATS: Retry after 5s
+    else envelope is valid
+        G->>Ev: Process(envelope)
+        Ev->>DB: single transaction
+        Note over Ev,DB: inbox dedup, active revision, evaluate,<br/>execution, outbox effects, commit
+        alt process succeeded
+            Ev-->>G: execution
+            G->>NATS: Ack only after commit
+        else permanent error
+            G->>DB: QuarantineEvent
+            G->>NATS: Ack
+        else retryable error
+            G->>NATS: Retry after 5s
+        end
+    end
+
+    loop publish loop every 5s
+        Tick->>Fx: PublishBatch(ctx, 10)
+        Fx->>DB: ClaimPending SKIP LOCKED
+        DB-->>Fx: claimed effects
+        Fx->>Dest: Send each effect
+        Dest-->>Fx: accepted or failed
+        Fx->>DB: MarkDelivered or ScheduleRetry or Quarantine
+    end

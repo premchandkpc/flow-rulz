@@ -1,0 +1,29 @@
+name: notification.requested
+version: "1.0"
+namespace: com.example.banking
+description: Message to send to the account holder
+fields:
+  notification_id:
+    type: string
+    description: Notification identifier
+    required: true
+  account_id:
+    type: string
+    description: Recipient account
+    required: true
+  transaction_id:
+    type: string
+    description: Related transaction
+    required: true
+  template:
+    type: string
+    description: authorized_large, blocked or review
+    required: true
+  requested_at:
+    type: string
+    description: Request timestamp
+    required: true
+    format: date-time
+compatibility: BACKWARD
+owner: customer-care-team
+deprecated: false

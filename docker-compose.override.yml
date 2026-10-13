@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # Override for local development - mount source code for hot reload
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    volumes:
+      - .:/app
+      - /app/bin
+    command: ["sh", "-c", "go run ./cmd/api"]
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: debug
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    volumes:
+      - .:/app
+      - /app/bin
+    command: ["sh", "-c", "go run ./cmd/worker"]
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: debug
+      WORKER_ID: dev-worker
+
+  # Add a codegen service for development
+  codegen:
+    build:
+      context: .
+      dockerfile: Dockerfile.codegen
+    volumes:
+      - .:/app
+      - ./examples:/examples
+      - ./generated:/generated
+    command: ["sleep", "infinity"]
+    profiles:
+      - tools
+
+  # Add a migrate service for running migrations
+  migrate:
+    image: golang:1.26-alpine
+    container_name: flow-rulz-migrate
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: ["sh", "-c", "apk add --no-cache git && go run ./cmd/migrate up"]
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/flow-rulz?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+
+  # Development database with persisted data
+  postgres:
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  nats:
+    volumes:
+      - ./data/nats:/data
+
+  redis:
+    volumes:
+      - ./data/redis:/data

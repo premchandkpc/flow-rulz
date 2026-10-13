@@ -1,0 +1,33 @@
+sequenceDiagram
+    autonumber
+    participant P1 as Publisher A
+    participant P2 as Publisher B
+    participant DB as PostgreSQL outbox
+    participant Dest as Destination
+
+    Note over P1,DB: Claim query selects pending rows whose<br/>available_at has passed, plus claimed rows<br/>whose claim_expires_at has passed,<br/>ordered by available_at then created_at,<br/>LIMIT batch, FOR UPDATE SKIP LOCKED.
+
+    P1->>DB: ClaimPending(batch 10, owner publisher-a)
+    DB-->>P1: rows locked by A become claimed, 60s lease
+    P2->>DB: ClaimPending(batch 10, owner publisher-b)
+    DB-->>P2: overlapping rows skipped by SKIP LOCKED
+
+    P1->>Dest: Send effect with effect_id as idempotency key
+    alt accepted
+        Dest-->>P1: success
+        P1->>DB: MarkDelivered, claim columns cleared
+    else failed and attempts remain
+        Dest-->>P1: error
+        P1->>DB: ScheduleRetry, status pending, available_at in the future
+    else attempts reached max_attempts
+        Dest-->>P1: error
+        P1->>DB: Quarantine effect and write a quarantine row
+    end
+
+    Note over DB: A crashed publisher leaves rows claimed.<br/>After claim_expires_at passes another<br/>publisher claims them again.
+
+    P2->>DB: ClaimPending after the lease expires
+    DB-->>P2: expired claimed rows returned as claimed again
+    P2->>Dest: Send the same effect_id
+    Dest-->>P2: deduplicated, treated as delivered
+    P2->>DB: MarkDelivered

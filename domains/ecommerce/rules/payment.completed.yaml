@@ -1,0 +1,44 @@
+rule_set: payment.completed
+revision: 1
+mode: all_matches
+rules:
+  - id: trigger_fraud_check
+    name: "Trigger Fraud Check"
+    description: "Trigger fraud check for completed payments over $100"
+    priority: 100
+    when:
+      all:
+        - path: "$.amount"
+          op: "gte"
+          value: 10000
+        - path: "$.payment_method"
+          op: "in"
+          value: ["card", "bank_transfer"]
+    then:
+      - emit_event:
+          type: "fraud.check"
+          partition_key_policy: "inherit"
+          data:
+            check_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            payment_method: "{{$.payment_method}}"
+            created_at: "{{now}}"
+  - id: auto_confirm_low_value
+    name: "Auto Confirm Low Value Orders"
+    description: "Auto-confirm orders under $100 without fraud check"
+    priority: 50
+    when:
+      path: "$.amount"
+      op: "lt"
+      value: 10000
+    then:
+      - emit_event:
+          type: "order.confirmed"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            confirmed_at: "{{now}}"

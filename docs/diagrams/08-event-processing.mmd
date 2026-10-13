@@ -1,0 +1,38 @@
+sequenceDiagram
+    autonumber
+    participant NATS as NATS JetStream
+    participant Worker as Worker
+    participant Events as Event service
+    participant DB as PostgreSQL
+    participant Eval as Rule evaluator
+
+    NATS->>Worker: Fetch delivery from the events stream
+    Worker->>Worker: Decode EventEnvelope
+
+    alt Invalid envelope
+        Worker->>DB: Save quarantine entry with source hash
+        Worker->>NATS: NakWithDelay 5s
+    else Valid envelope
+        Worker->>Events: Process(envelope)
+        Events->>DB: BEGIN transaction
+        Events->>DB: Insert inbox entry tenant_id, event_id
+        alt Duplicate event
+            Events->>DB: Read existing execution
+            Events->>DB: COMMIT
+            Events-->>Worker: Existing execution
+            Worker->>NATS: Ack
+        else New event
+            Events->>DB: Read activation for tenant and rule set
+            Events->>DB: Read active rule revision
+            Events->>Eval: Evaluate(revision, event)
+            Eval-->>Events: Decision with matched rules and effects
+            Events->>DB: Save execution with decision hash
+            Events->>DB: Insert durable outbox effects
+            Events->>DB: Mark inbox committed and execution completed
+            Events->>DB: COMMIT
+            Events-->>Worker: Execution
+            Worker->>NATS: Ack only after commit
+        end
+    end
+
+    Note over DB: Unique tenant_id + event_id prevents<br/>duplicate business execution.<br/>No active rule set returns ErrRuleNotActive<br/>and the delivery is retried, not acked.

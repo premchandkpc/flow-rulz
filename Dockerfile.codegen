@@ -1,0 +1,35 @@
+# Build stage
+FROM golang:1.26-alpine AS builder
+
+RUN apk add --no-cache git make protobuf
+
+WORKDIR /app
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build binary
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /codegen ./cmd/codegen
+
+# Install protoc plugins
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+# Final stage
+FROM alpine:3.24
+
+RUN apk add --no-cache ca-certificates tzdata protobuf
+
+# Copy protoc plugins from builder
+COPY --from=builder /go/bin/protoc-gen-go /usr/local/bin/
+COPY --from=builder /go/bin/protoc-gen-go-grpc /usr/local/bin/
+
+WORKDIR /app
+
+COPY --from=builder /codegen .
+
+ENTRYPOINT ["./codegen"]

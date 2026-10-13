@@ -1,0 +1,74 @@
+flowchart TB
+    %% Design view: import direction. Every arrow points from the importer to the importee.
+    classDef entry fill:#eff6ff,stroke:#1d4ed8,color:#172554
+    classDef service fill:#ecfdf5,stroke:#047857,color:#064e3b
+    classDef core fill:#f5f3ff,stroke:#6d28d9,color:#2e1065
+    classDef port fill:#fff1f2,stroke:#be123c,color:#4c0519
+    classDef adapter fill:#f0fdfa,stroke:#0f766e,color:#134e4a
+    classDef bad fill:#fef2f2,stroke:#dc2626,color:#7f1d1d
+    classDef note fill:#f8fafc,stroke:#334155,color:#0f172a
+
+    subgraph Cmd["cmd: composition roots"]
+        API["cmd/api<br/>HTTP server"]:::entry
+        Worker["cmd/worker<br/>wires every adapter"]:::entry
+    end
+
+    subgraph App["application"]
+        Loop["application.Worker<br/>fetch loop and publish loop"]:::service
+    end
+
+    subgraph Svc["services"]
+        RuleSvc["services/rules"]:::service
+        EventSvc["services/events"]:::service
+        EffectSvc["services/effects"]:::service
+    end
+
+    subgraph Ports["ports: interfaces only"]
+        P["ports<br/>Broker, repositories,<br/>compiler, evaluator, Tx"]:::port
+    end
+
+    subgraph Core["core"]
+        Domain["domain<br/>entities, state machines, errors"]:::core
+        Comp["rules.Compiler"]:::core
+        Eval["rules.Evaluator"]:::core
+    end
+
+    subgraph Adapters["adapters: implement ports"]
+        SQL["adapters/sql<br/>PostgreSQL"]:::adapter
+        NATS["adapters/nats<br/>JetStream"]:::adapter
+        Eff["adapters/effects<br/>HTTP or fake"]:::adapter
+        Mem["adapters/memory<br/>contract fakes"]:::adapter
+    end
+
+    API --> RuleSvc
+    Worker --> Loop
+    Loop --> EventSvc
+    Loop --> EffectSvc
+
+    RuleSvc --> P
+    EventSvc --> P
+    EffectSvc --> P
+    Loop --> P
+
+    RuleSvc --> Comp
+    EventSvc --> Eval
+    Comp --> P
+    Eval --> P
+    Comp --> Domain
+    Eval --> Domain
+    P --> Domain
+
+    SQL -.->|implements| P
+    NATS -.->|implements| P
+    Eff -.->|implements| P
+    Mem -.->|implements| P
+
+    subgraph Forbidden["Forbidden imports"]
+        F1["domain imports nothing outside the standard library"]:::bad
+        F2["ports must not import adapters or services"]:::bad
+        F3["services must not import adapters"]:::bad
+        F4["adapters must not import services or other adapters"]:::bad
+        F5["core must not import cmd or adapters"]:::bad
+    end
+
+    Note["Adapters are only constructed in cmd/<br/>and injected through ports.<br/>Tests substitute adapters/memory.<br/>rules imports ports only to assert<br/>that Compiler and Evaluator implement<br/>the port interfaces."]:::note

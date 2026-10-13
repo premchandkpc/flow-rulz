@@ -1,0 +1,25 @@
+name: restaurant.accepted
+version: "1.0"
+namespace: com.example.fooddelivery
+description: Event emitted when restaurant accepts an order
+fields:
+  order_id:
+    type: string
+    description: Order identifier
+    required: true
+  restaurant_id:
+    type: string
+    description: Restaurant identifier
+    required: true
+  estimated_prep_time:
+    type: integer
+    description: Estimated preparation time in minutes
+    required: true
+  accepted_at:
+    type: string
+    format: date-time
+    description: Acceptance timestamp
+    required: true
+compatibility: BACKWARD
+owner: restaurant-team
+deprecated: false

@@ -1,0 +1,20 @@
+stateDiagram-v2
+    direction TB
+    [*] --> pending : decision emits effects, inserted with the execution
+    pending --> claimed : ClaimPending, SKIP LOCKED, 60 second claim lease
+    claimed --> delivered : destination accepted the effect
+    claimed --> pending : ScheduleRetry with exponential backoff
+    claimed --> quarantined : attempts reached max_attempts
+    pending --> pending : claim expired and another publisher reclaimed it
+    delivered --> [*]
+    quarantined --> [*]
+
+    note right of claimed
+        Claim, Deliver, Retry and Quarantine
+        only accept specific source states.
+        Backoff is 2^(attempts-1) seconds,
+        capped at 60 seconds. effect_id is
+        sha256 of tenant, event, rule set,
+        revision, rule and action index, so
+        the destination can deduplicate.
+    end note

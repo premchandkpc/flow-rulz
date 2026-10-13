@@ -1,0 +1,41 @@
+rule_set: order.placed
+revision: 1
+mode: first_match
+rules:
+  - id: auto_accept_high_rated
+    name: "Auto Accept High Rated Restaurant"
+    description: "Auto-accept orders for restaurants with rating >= 4.5"
+    priority: 100
+    when:
+      all:
+        - path: "$.restaurant_rating"
+          op: "gte"
+          value: 4.5
+        - path: "$.restaurant_status"
+          op: "eq"
+          value: "open"
+    then:
+      - emit_event:
+          type: "restaurant.accepted"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            restaurant_id: "{{$.restaurant_id}}"
+            estimated_prep_time: 20
+            accepted_at: "{{now}}"
+  - id: manual_review
+    name: "Manual Review Required"
+    description: "Send to manual review for other restaurants"
+    priority: 50
+    when:
+      path: "$.restaurant_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "restaurant.review_required"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            restaurant_id: "{{$.restaurant_id}}"
+            reason: "requires_manual_accept"
+            created_at: "{{now}}"

@@ -1,0 +1,33 @@
+name: transaction.authorized
+version: "1.0"
+namespace: com.example.banking
+description: Transaction cleared every control and may settle
+fields:
+  transaction_id:
+    type: string
+    description: Transaction identifier
+    required: true
+  account_id:
+    type: string
+    description: Source account
+    required: true
+  amount:
+    type: number
+    description: Amount in cents
+    required: true
+  currency:
+    type: string
+    description: ISO currency code
+    required: true
+  authorized_by:
+    type: string
+    description: Control that cleared it
+    required: true
+  authorized_at:
+    type: string
+    description: Authorization timestamp
+    required: true
+    format: date-time
+compatibility: BACKWARD
+owner: banking-team
+deprecated: false

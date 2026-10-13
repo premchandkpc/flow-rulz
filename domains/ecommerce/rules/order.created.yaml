@@ -1,0 +1,40 @@
+rule_set: order.created
+revision: 1
+mode: all_matches
+rules:
+  - id: payment_required
+    name: "Payment Required Check"
+    description: "Check if order requires payment"
+    priority: 100
+    when:
+      path: "$.total_amount"
+      op: "gt"
+      value: 0
+    then:
+      - emit_event:
+          type: "payment.requested"
+          partition_key_policy: "inherit"
+          data:
+            payment_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            amount: "{{$.total_amount}}"
+            currency: "{{$.currency}}"
+            payment_method: "card"
+            created_at: "{{now}}"
+  - id: free_order
+    name: "Free Order Auto-Confirm"
+    description: "Auto-confirm orders with zero total"
+    priority: 50
+    when:
+      path: "$.total_amount"
+      op: "eq"
+      value: 0
+    then:
+      - emit_event:
+          type: "order.confirmed"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            confirmed_at: "{{now}}"

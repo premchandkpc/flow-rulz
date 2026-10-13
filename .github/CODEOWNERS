@@ -1,0 +1,62 @@
+# FlowRulz - Code Owners
+# These owners will be requested for review when someone opens a pull request.
+
+# Global owners
+* @premchand
+
+# Core runtime
+/internal/domain/ @premchand
+/internal/rules/ @premchand
+/internal/ports/ @premchand
+/internal/services/ @premchand
+/internal/runtime/ @premchand
+/internal/application/ @premchand
+/internal/config/ @premchand
+/internal/storage/ @premchand
+
+# Adapters
+/internal/adapters/ @premchand
+
+# Entrypoints
+/cmd/ @premchand
+
+# API schemas
+/api/ @premchand
+
+# Database migrations
+/migrations/ @premchand
+
+# Docker/Compose
+/Dockerfile* @premchand
+/docker-compose*.yml @premchand
+
+# Go modules
+/go.mod @premchand
+/go.sum @premchand
+/Makefile @premchand
+
+# SDKs
+/sdk/ @premchand
+
+# Domain contracts
+/domains/ @premchand
+
+# Examples
+/examples/ @premchand
+
+# Tests
+/tests/ @premchand
+
+# Documentation
+/docs/ @premchand
+/README.md @premchand
+/AGENTS.md @premchand
+
+# CI/CD
+/.github/ @premchand
+
+# Rust worker
+/rust-worker/ @premchand
+
+# Web console
+/web/ @premchand
