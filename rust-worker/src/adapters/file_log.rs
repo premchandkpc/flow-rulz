@@ -947,6 +947,12 @@ mod tests {
         }
     }
 
+    #[test]
+    fn storage_exhaustion_is_reported_as_a_durability_failure() {
+        let error = storage_io_error(std::io::Error::from(std::io::ErrorKind::StorageFull));
+        assert!(matches!(error, LogError::StorageFull(_)));
+    }
+
     #[tokio::test]
     async fn segment_rotation_preserves_global_positions_after_restart() {
         let dir = temp_dir();
