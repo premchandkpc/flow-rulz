@@ -118,8 +118,8 @@ func run() (runErr error) {
 		return err
 	}
 
-	// Route emitted child events back into the same subject family consumed by
-	// this worker. Only command effects leave the broker for an external sender.
+	// Route child events, commands, and tenant-service deliveries through NATS JetStream.
+	// Each registered service has a unique subject for durable fan-out.
 	serviceSender := effects.NewDomainServiceSender(repositories.DomainServices, publisher)
 	effectSender := svceffects.NewRouterWithConfig(
 		publisher, externalSender, eventSubject, cfg.Worker.NumShards, serviceSender,
