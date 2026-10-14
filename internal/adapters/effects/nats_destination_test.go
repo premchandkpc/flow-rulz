@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
-	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
 type commandPublisherStub struct {
@@ -21,9 +20,6 @@ func (p *commandPublisherStub) Publish(_ context.Context, subject string, payloa
 	p.payload = append([]byte(nil), payload...)
 	return p.err
 }
-func (p *commandPublisherStub) PublishBatch(context.Context, []ports.PublishMessage) error { return nil }
-func (p *commandPublisherStub) PublishToShard(context.Context, string, uint32, []byte) error { return nil }
-func (p *commandPublisherStub) Close() error { return nil }
 
 func TestNATSDestinationPublishesCommandWithStableIdempotencyKey(t *testing.T) {
 	publisher := &commandPublisherStub{}
