@@ -15,6 +15,10 @@ FlowRulz is a Go-based, event-driven rules runtime. Rules are compiled into immu
 
 The root module uses Go 1.26.0. Both sdk/go and the newer sdk/go/flowrulz client are separate Go modules; each example application also has its own module. CI tests every module separately because nested go.mod files are not included in a parent-module ./... command.
 
+## Control plane / data plane boundary
+
+The HTTP API is a control-plane service. It creates and validates configuration (domains, contracts, rule revisions, workflow definitions, and registered provider/service capabilities) and exposes management/read-only operational views. It does not accept business events and does not connect to NATS to publish them. Producers publish `EventEnvelope` messages directly to NATS JetStream using the configured subject and shard contract. Only `cmd/worker` consumes business events and evaluates rules. The Go SDK's HTTP event transport is rejected; configure `FLOWRULZ_TRANSPORT=nats` for event publication. A schedule or wait in a workflow is a durable runtime instruction, not an API-side timer or event-processing loop.
+
 ## Event lifecycle
 
 1. A producer publishes an EventEnvelope to the NATS subject family events.shard.N. N is computed from tenant ID and partition key using the configured shard count.
