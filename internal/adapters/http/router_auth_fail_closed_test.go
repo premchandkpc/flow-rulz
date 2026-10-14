@@ -27,6 +27,7 @@ func TestRouterFailsClosedWhenRequiredAuthValidatorIsMissing(t *testing.T) {
 }
 
 func TestManagementRouterDoesNotExposeEventIngestion(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
 	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
 
 	recorder := httptest.NewRecorder()
@@ -39,6 +40,7 @@ func TestManagementRouterDoesNotExposeEventIngestion(t *testing.T) {
 }
 
 func TestManagementRouterDoesNotExposeScheduledEventMutation(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
 	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
 
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
@@ -52,6 +54,7 @@ func TestManagementRouterDoesNotExposeScheduledEventMutation(t *testing.T) {
 }
 
 func TestManagementRouterRejectsRuntimeMutations(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
 	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
 	requests := []struct {
 		method string
@@ -77,6 +80,7 @@ func TestManagementRouterRejectsRuntimeMutations(t *testing.T) {
 }
 
 func TestWorkflowDefinitionWriteRequiresPlatformAdminScope(t *testing.T) {
+	t.Setenv("APP_ENV", "test")
 	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/workflows/definitions", strings.NewReader("{}")))
