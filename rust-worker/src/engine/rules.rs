@@ -323,7 +323,7 @@ fn build_child_event_payload(
     child_id: &str,
     partition_key: &str,
 ) -> Value {
-    json!({
+    let mut payload = json!({
         "id": child_id,
         "type": action.event_type,
         "tenant_id": event.tenant_id,
@@ -335,7 +335,6 @@ fn build_child_event_payload(
             "flowrulz_child_event_id": child_id
         }
     });
-    let mut payload = payload;
     if let Some(workflow_id) = &event.workflow_id {
         payload["workflow_id"] = json!(workflow_id);
     }
