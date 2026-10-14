@@ -71,7 +71,7 @@ func TestCreateWorkflowRejectsTenantMismatch(t *testing.T) {
 
 func TestWorkflowDefinitionMutationRoutesAreNotExposed(t *testing.T) {
 	mux := http.NewServeMux()
-	NewWorkflowHandler(&workflowServiceStub{}, nil, nil).RegisterRoutes(mux)
+	NewWorkflowHandler(&workflowServiceStub{}, nil, nil).RegisterAllRoutes(mux)
 
 	tests := []struct {
 		name   string
@@ -97,7 +97,7 @@ func TestGetWorkflowPassesTenantToService(t *testing.T) {
 	service := &workflowServiceStub{}
 	handler := NewWorkflowHandler(service, nil, nil)
 	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
+	handler.RegisterAllRoutes(mux)
 	req := httptest.NewRequest(http.MethodGet, "/v1/workflows/wf-1", nil)
 	req.Header.Set("X-Tenant-ID", "tenant-a")
 	response := httptest.NewRecorder()
@@ -116,7 +116,7 @@ func TestTransitionWorkflowPassesTenantToService(t *testing.T) {
 	service := &workflowServiceStub{}
 	handler := NewWorkflowHandler(service, nil, nil)
 	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
+	handler.RegisterAllRoutes(mux)
 	req := httptest.NewRequest(http.MethodPost, "/v1/workflows/wf-1/transition", strings.NewReader(
 		`{"from_state":"pending","to_state":"completed"}`,
 	))
@@ -155,7 +155,7 @@ func TestGetWorkflowDefinitionSupportsVersionedRoute(t *testing.T) {
 	definitions := &workflowDefinitionRepositoryStub{}
 	handler := NewWorkflowHandler(&workflowServiceStub{}, nil, definitions)
 	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
+	handler.RegisterAllRoutes(mux)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/workflows/definitions/orders/3", nil))
 	if rec.Code != http.StatusOK {
