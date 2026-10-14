@@ -83,8 +83,10 @@ fn scheduled_event_headers(headers: Option<Value>, event_id: &str) -> HashMap<St
 async fn publish_scheduled_event(js: &jetstream::Context, config: &Config, event: &EventEnvelope) -> Result<()> {
     let shard = event.virtual_shard(config.num_shards)?;
     let subject = event_subject(&event.event_type, shard, &config.rulesets);
-    js.publish(subject, serde_json::to_vec(event)?.into()).await
-        .context("publish scheduled event to JetStream")?;
+    let acknowledgement = js.publish(subject.clone(), serde_json::to_vec(event)?.into()).await
+        .with_context(|| format!("publish scheduled event to JetStream subject {subject}"))?;
+    acknowledgement.await
+        .with_context(|| format!("await scheduled-event publish acknowledgement for {subject}"))?;
     Ok(())
 }
 
