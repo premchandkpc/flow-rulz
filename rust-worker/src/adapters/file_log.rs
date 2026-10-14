@@ -829,7 +829,7 @@ mod tests {
         NewLogRecord {
             record_id: record_id.to_string(),
             partition: PartitionId(7),
-            kind: LogRecordKind::EventAccepted,
+            kind: LogRecordKind::ConsumerProgressed,
             tenant_id: "tenant-a".to_string(),
             event_id: record_id.to_string(),
             payload: Bytes::copy_from_slice(payload),
