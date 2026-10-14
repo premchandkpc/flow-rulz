@@ -84,3 +84,14 @@ func TestNATSDestinationRoutesEmitTopicAsEffectsSubject(t *testing.T) {
 		t.Fatalf("subject = %q, want %q", got, want)
 	}
 }
+
+func TestNATSDestinationRequiresStableDeliveryIdentity(t *testing.T) {
+	destination := NewNATSDestination(&commandPublisherStub{})
+	err := destination.Send(context.Background(), &domain.Effect{
+		Destination: "payment", Name: "authorize", EffectType: domain.EffectTypeCommand,
+		Payload: json.RawMessage(`{}`),
+	}, "")
+	if err == nil || !strings.Contains(err.Error(), "stable effect ID") {
+		t.Fatalf("Send() error = %v, want stable identity validation", err)
+	}
+}
