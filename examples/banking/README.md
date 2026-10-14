@@ -30,10 +30,10 @@ Services (one goroutine each in `backend/consumer`): fraud-screening, compliance
 
 ```sh
 docker compose -f docker-compose.yml up -d postgres nats redis api worker
-(cd domains/banking && FLOWRULE_API=http://localhost:18080 ./deploy.sh)   # contracts, rule sets, domain
+(cd domains/banking && FLOWRULZ_API=http://localhost:18080 ./deploy.sh)   # contracts, rule sets, domain
 cd examples/banking
-FLOWRULE_TRANSPORT=nats FLOWRULE_TENANT_ID=development-tenant go run ./backend/consumer
-FLOWRULE_TRANSPORT=nats FLOWRULE_TENANT_ID=development-tenant go run ./backend/producer
+FLOWRULZ_TRANSPORT=nats FLOWRULZ_TENANT_ID=development-tenant go run ./backend/consumer
+FLOWRULZ_TRANSPORT=nats FLOWRULZ_TENANT_ID=development-tenant go run ./backend/producer
 ```
 
 The producer sends seven scenarios (low-risk, mid-value, structuring-sized, high-value, large wire to GB, international to DE, sanctioned IR).

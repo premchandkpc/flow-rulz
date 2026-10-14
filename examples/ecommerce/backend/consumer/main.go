@@ -31,7 +31,7 @@ func run() error {
 	defer client.Close()
 
 	typed := ordercreated.NewClient(client)
-	log.Printf("Listening for %s events for tenant %q", ordercreated.DefaultRuleSet, os.Getenv("FLOWRULE_TENANT_ID"))
+	log.Printf("Listening for %s events for tenant %q", ordercreated.DefaultRuleSet, os.Getenv("FLOWRULZ_TENANT_ID"))
 	err = typed.Subscribe(ctx, func(_ context.Context, order *ordercreated.Created, envelope *flowrulz.Envelope) error {
 		log.Printf(
 			"Received %s event id=%s partition_key=%s order_id=%s customer_id=%s total=%.2f %s",

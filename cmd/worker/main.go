@@ -63,8 +63,8 @@ func run() (runErr error) {
 
 	obs.Logger.Info("worker starting", "environment", cfg.App.Env)
 
-	if metricsAddr := strings.TrimSpace(os.Getenv("FLOWRULE_METRICS_ADDR")); metricsAddr != "" {
-		shutdownMetrics, err := startMetricsServer(metricsAddr, os.Getenv("FLOWRULE_CONSOLE_ORIGIN"))
+	if metricsAddr := strings.TrimSpace(os.Getenv("FLOWRULZ_METRICS_ADDR")); metricsAddr != "" {
+		shutdownMetrics, err := startMetricsServer(metricsAddr, os.Getenv("FLOWRULZ_CONSOLE_ORIGIN"))
 		if err != nil {
 			return err
 		}

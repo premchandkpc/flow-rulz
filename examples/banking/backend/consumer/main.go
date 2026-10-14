@@ -69,7 +69,7 @@ func run() error {
 		}()
 		time.Sleep(300 * time.Millisecond) // stagger consumer creation on the stream
 	}
-	log.Printf("banking services listening for tenant %q", os.Getenv("FLOWRULE_TENANT_ID"))
+	log.Printf("banking services listening for tenant %q", os.Getenv("FLOWRULZ_TENANT_ID"))
 	wg.Wait()
 	close(errs)
 	return errors.Join(drain(errs)...)

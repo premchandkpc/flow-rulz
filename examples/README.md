@@ -69,8 +69,8 @@ cd domains/banking
 ### 5. Run Producer/Consumer
 ```bash
 # Set the same tenant for the producer and consumer, and start the consumer first.
-export FLOWRULE_TENANT_ID=acme-corp
-export FLOWRULE_TRANSPORT=nats
+export FLOWRULZ_TENANT_ID=acme-corp
+export FLOWRULZ_TRANSPORT=nats
 export NATS_URL=nats://localhost:4222
 
 # E-commerce consumer

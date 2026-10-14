@@ -145,7 +145,7 @@ func TestValidateRejectsBatchModeWithoutLeaseAndQueueIntegration(t *testing.T) {
 }
 
 func TestValidateRejectsProductionWithoutAuthentication(t *testing.T) {
-	t.Setenv("FLOWRULE_TRUSTED_PROXY_TOKEN", "")
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", "")
 	cfg := validConfigForTest()
 	cfg.App.Env = "production"
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "production authentication is not configured") {
@@ -154,7 +154,7 @@ func TestValidateRejectsProductionWithoutAuthentication(t *testing.T) {
 }
 
 func TestValidateAllowsProductionTrustedProxyAuthentication(t *testing.T) {
-	t.Setenv("FLOWRULE_TRUSTED_PROXY_TOKEN", "test-proxy-secret")
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", "test-proxy-secret")
 	cfg := validConfigForTest()
 	cfg.App.Env = "production"
 	if err := cfg.Validate(); err != nil {
@@ -163,7 +163,7 @@ func TestValidateAllowsProductionTrustedProxyAuthentication(t *testing.T) {
 }
 
 func TestValidateAllowsProductionJWTAuthentication(t *testing.T) {
-	t.Setenv("FLOWRULE_TRUSTED_PROXY_TOKEN", "")
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", "")
 	cfg := validConfigForTest()
 	cfg.App.Env = "production"
 	cfg.Auth.RequireAuth = true
@@ -182,7 +182,7 @@ func TestLoadRejectsMalformedRequireAuth(t *testing.T) {
 
 func TestLoadDefaultsEnvironmentToProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "")
-	t.Setenv("FLOWRULE_TRUSTED_PROXY_TOKEN", "test-proxy-secret")
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", "test-proxy-secret")
 
 	cfg, err := Load()
 	if err != nil {

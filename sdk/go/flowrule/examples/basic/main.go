@@ -38,8 +38,8 @@ type PaymentRequested struct {
 
 func main() {
 	// Option 1: Auto-config from environment variables
-	// export FLOWRULE_TRANSPORT=nats
-	// export FLOWRULE_TENANT_ID=acme
+	// export FLOWRULZ_TRANSPORT=nats
+	// export FLOWRULZ_TENANT_ID=acme
 	// export NATS_URL=nats://localhost:4222
 	// export NATS_STREAM=flowrulz
 	//

@@ -20,10 +20,10 @@ const (
 // All fields can be set via environment variables (see LoadConfig)
 type Config struct {
 	// Transport selection
-	Transport TransportType `env:"FLOWRULE_TRANSPORT,default=nats"`
+	Transport TransportType `env:"FLOWRULZ_TRANSPORT,default=nats"`
 
 	// Tenant identification (required for all transports)
-	TenantID string `env:"FLOWRULE_TENANT_ID"`
+	TenantID string `env:"FLOWRULZ_TENANT_ID"`
 
 	// NATS configuration
 	NATSURL      string        `env:"NATS_URL,default=nats://localhost:4222"`
@@ -34,63 +34,63 @@ type Config struct {
 	NATSMaxDeliv int           `env:"NATS_MAX_DELIVER,default=10"`
 
 	// gRPC configuration
-	GRPCAddr     string        `env:"FLOWRULE_GRPC_ADDR,default=localhost:9090"`
-	GRPCInsecure bool          `env:"FLOWRULE_GRPC_INSECURE,default=true"`
-	GRPCTimeout  time.Duration `env:"FLOWRULE_GRPC_TIMEOUT,default=10s"`
+	GRPCAddr     string        `env:"FLOWRULZ_GRPC_ADDR,default=localhost:9090"`
+	GRPCInsecure bool          `env:"FLOWRULZ_GRPC_INSECURE,default=true"`
+	GRPCTimeout  time.Duration `env:"FLOWRULZ_GRPC_TIMEOUT,default=10s"`
 
 	// HTTP configuration
-	HTTPAddr    string        `env:"FLOWRULE_HTTP_ADDR,default=http://localhost:8080"`
-	HTTPTimeout time.Duration `env:"FLOWRULE_HTTP_TIMEOUT,default=10s"`
+	HTTPAddr    string        `env:"FLOWRULZ_HTTP_ADDR,default=http://localhost:8080"`
+	HTTPTimeout time.Duration `env:"FLOWRULZ_HTTP_TIMEOUT,default=10s"`
 
 	// Local (embedded) configuration
-	RuleSet        string `env:"FLOWRULE_RULESET"`
-	RuleSource     string `env:"FLOWRULE_RULE_SOURCE"`
-	RuleSourcePath string `env:"FLOWRULE_RULE_SOURCE_PATH"` // file path to rule source
+	RuleSet        string `env:"FLOWRULZ_RULESET"`
+	RuleSource     string `env:"FLOWRULZ_RULE_SOURCE"`
+	RuleSourcePath string `env:"FLOWRULZ_RULE_SOURCE_PATH"` // file path to rule source
 
 	// Common
 	NumShards    uint32        `env:"NUM_SHARDS,default=4096"`
-	SendTimeout  time.Duration `env:"FLOWRULE_SEND_TIMEOUT,default=5s"`
-	MaxRetries   int           `env:"FLOWRULE_MAX_RETRIES,default=3"`
-	RetryBackoff time.Duration `env:"FLOWRULE_RETRY_BACKOFF,default=100ms"`
+	SendTimeout  time.Duration `env:"FLOWRULZ_SEND_TIMEOUT,default=5s"`
+	MaxRetries   int           `env:"FLOWRULZ_MAX_RETRIES,default=3"`
+	RetryBackoff time.Duration `env:"FLOWRULZ_RETRY_BACKOFF,default=100ms"`
 
 	// Contract validation (opt-in)
-	ValidateContracts bool   `env:"FLOWRULE_VALIDATE_CONTRACTS,default=false"`
-	ContractRegistry  string `env:"FLOWRULE_CONTRACT_REGISTRY"` // path to contract definitions
+	ValidateContracts bool   `env:"FLOWRULZ_VALIDATE_CONTRACTS,default=false"`
+	ContractRegistry  string `env:"FLOWRULZ_CONTRACT_REGISTRY"` // path to contract definitions
 
 	// Partition key extraction
-	PartitionKeyExtractor string `env:"FLOWRULE_PARTITION_KEY_EXTRACTOR"` // e.g., "CustomerID", "OrderID", or JSONPath "$.customer.id"
+	PartitionKeyExtractor string `env:"FLOWRULZ_PARTITION_KEY_EXTRACTOR"` // e.g., "CustomerID", "OrderID", or JSONPath "$.customer.id"
 
 	// Observability
-	EnableTracing bool   `env:"FLOWRULE_ENABLE_TRACING,default=false"`
-	ServiceName   string `env:"FLOWRULE_SERVICE_NAME,default=flowrulz-client"`
+	EnableTracing bool   `env:"FLOWRULZ_ENABLE_TRACING,default=false"`
+	ServiceName   string `env:"FLOWRULZ_SERVICE_NAME,default=flowrulz-client"`
 }
 
 // LoadConfig loads configuration from environment variables
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		Transport:             TransportType(getEnv("FLOWRULE_TRANSPORT", "nats")),
-		TenantID:              getEnv("FLOWRULE_TENANT_ID", ""),
+		Transport:             TransportType(getEnv("FLOWRULZ_TRANSPORT", "nats")),
+		TenantID:              getEnv("FLOWRULZ_TENANT_ID", ""),
 		NATSURL:               getEnv("NATS_URL", "nats://localhost:4222"),
 		NATSStream:            getEnv("NATS_STREAM", "flowrulz"),
 		NATSAckWait:           getDurationEnv("NATS_ACK_WAIT", 30*time.Second),
 		NATSMaxDeliv:          getIntEnv("NATS_MAX_DELIVER", 10),
-		GRPCAddr:              getEnv("FLOWRULE_GRPC_ADDR", "localhost:9090"),
-		GRPCInsecure:          getBoolEnv("FLOWRULE_GRPC_INSECURE", true),
-		GRPCTimeout:           getDurationEnv("FLOWRULE_GRPC_TIMEOUT", 10*time.Second),
-		HTTPAddr:              getEnv("FLOWRULE_HTTP_ADDR", "http://localhost:8080"),
-		HTTPTimeout:           getDurationEnv("FLOWRULE_HTTP_TIMEOUT", 10*time.Second),
-		RuleSet:               getEnv("FLOWRULE_RULESET", ""),
-		RuleSource:            getEnv("FLOWRULE_RULE_SOURCE", ""),
-		RuleSourcePath:        getEnv("FLOWRULE_RULE_SOURCE_PATH", ""),
+		GRPCAddr:              getEnv("FLOWRULZ_GRPC_ADDR", "localhost:9090"),
+		GRPCInsecure:          getBoolEnv("FLOWRULZ_GRPC_INSECURE", true),
+		GRPCTimeout:           getDurationEnv("FLOWRULZ_GRPC_TIMEOUT", 10*time.Second),
+		HTTPAddr:              getEnv("FLOWRULZ_HTTP_ADDR", "http://localhost:8080"),
+		HTTPTimeout:           getDurationEnv("FLOWRULZ_HTTP_TIMEOUT", 10*time.Second),
+		RuleSet:               getEnv("FLOWRULZ_RULESET", ""),
+		RuleSource:            getEnv("FLOWRULZ_RULE_SOURCE", ""),
+		RuleSourcePath:        getEnv("FLOWRULZ_RULE_SOURCE_PATH", ""),
 		NumShards:             uint32(getIntEnv("NUM_SHARDS", 4096)),
-		SendTimeout:           getDurationEnv("FLOWRULE_SEND_TIMEOUT", 5*time.Second),
-		MaxRetries:            getIntEnv("FLOWRULE_MAX_RETRIES", 3),
-		RetryBackoff:          getDurationEnv("FLOWRULE_RETRY_BACKOFF", 100*time.Millisecond),
-		ValidateContracts:     getBoolEnv("FLOWRULE_VALIDATE_CONTRACTS", false),
-		ContractRegistry:      getEnv("FLOWRULE_CONTRACT_REGISTRY", ""),
-		PartitionKeyExtractor: getEnv("FLOWRULE_PARTITION_KEY_EXTRACTOR", ""),
-		EnableTracing:         getBoolEnv("FLOWRULE_ENABLE_TRACING", false),
-		ServiceName:           getEnv("FLOWRULE_SERVICE_NAME", "flowrulz-client"),
+		SendTimeout:           getDurationEnv("FLOWRULZ_SEND_TIMEOUT", 5*time.Second),
+		MaxRetries:            getIntEnv("FLOWRULZ_MAX_RETRIES", 3),
+		RetryBackoff:          getDurationEnv("FLOWRULZ_RETRY_BACKOFF", 100*time.Millisecond),
+		ValidateContracts:     getBoolEnv("FLOWRULZ_VALIDATE_CONTRACTS", false),
+		ContractRegistry:      getEnv("FLOWRULZ_CONTRACT_REGISTRY", ""),
+		PartitionKeyExtractor: getEnv("FLOWRULZ_PARTITION_KEY_EXTRACTOR", ""),
+		EnableTracing:         getBoolEnv("FLOWRULZ_ENABLE_TRACING", false),
+		ServiceName:           getEnv("FLOWRULZ_SERVICE_NAME", "flowrulz-client"),
 	}
 
 	// Parse NATS subjects and optional ruleset-specific routing.
@@ -113,17 +113,17 @@ func LoadConfig() (*Config, error) {
 
 func (c *Config) Validate() error {
 	if c.TenantID == "" {
-		return ErrConfig("FLOWRULE_TENANT_ID is required")
+		return ErrConfig("FLOWRULZ_TENANT_ID is required")
 	}
 	if c.NumShards == 0 {
 		return ErrConfig("NUM_SHARDS must be > 0")
 	}
 	if c.Transport == TransportLocal {
 		if c.RuleSet == "" {
-			return ErrConfig("FLOWRULE_RULESET is required for local transport")
+			return ErrConfig("FLOWRULZ_RULESET is required for local transport")
 		}
 		if c.RuleSource == "" && c.RuleSourcePath == "" {
-			return ErrConfig("FLOWRULE_RULE_SOURCE or FLOWRULE_RULE_SOURCE_PATH is required for local transport")
+			return ErrConfig("FLOWRULZ_RULE_SOURCE or FLOWRULZ_RULE_SOURCE_PATH is required for local transport")
 		}
 	}
 	return nil

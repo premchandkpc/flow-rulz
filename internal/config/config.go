@@ -290,8 +290,8 @@ func (c *Config) validateEnvironmentAuth() error {
 	// TenantExtractor independently validates the proxy token on every request.
 	env := strings.ToLower(strings.TrimSpace(c.App.Env))
 	localEnv := env == "development" || env == "dev" || env == "test"
-	if !localEnv && !c.Auth.RequireAuth && strings.TrimSpace(os.Getenv("FLOWRULE_TRUSTED_PROXY_TOKEN")) == "" {
-		return fmt.Errorf("production authentication is not configured: set REQUIRE_AUTH=true with JWT_SECRET or configure FLOWRULE_TRUSTED_PROXY_TOKEN for a trusted proxy")
+	if !localEnv && !c.Auth.RequireAuth && strings.TrimSpace(os.Getenv("FLOWRULZ_TRUSTED_PROXY_TOKEN")) == "" {
+		return fmt.Errorf("production authentication is not configured: set REQUIRE_AUTH=true with JWT_SECRET or configure FLOWRULZ_TRUSTED_PROXY_TOKEN for a trusted proxy")
 	}
 	return nil
 }

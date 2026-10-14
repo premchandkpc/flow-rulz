@@ -19,7 +19,7 @@ const (
 	// TenantIDKey identifies the tenant value stored in request context.
 	TenantIDKey TenantContextKey = "tenant_id"
 
-	trustedProxyTokenEnv    = "FLOWRULE_TRUSTED_PROXY_TOKEN"
+	trustedProxyTokenEnv    = "FLOWRULZ_TRUSTED_PROXY_TOKEN"
 	trustedProxyTokenHeader = "X-Proxy-Auth" //nolint:gosec // header name, not credentials
 	trustedTenantHeader     = "X-Authenticated-Tenant-ID"
 )
