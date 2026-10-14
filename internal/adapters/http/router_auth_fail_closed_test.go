@@ -57,23 +57,24 @@ func TestManagementRouterRejectsRuntimeMutations(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
 	requests := []struct {
-		method string
-		path   string
+		method     string
+		path       string
+		wantStatus int
 	}{
-		{http.MethodPost, "/v1/events/order.created"},
-		{http.MethodPost, "/v1/workflows"},
-		{http.MethodPost, "/v1/workflows/wf-1/transition"},
-		{http.MethodPost, "/v1/batches"},
-		{http.MethodPost, "/v1/quarantine/q-1/replay"},
-		{http.MethodDelete, "/v1/quarantine/q-1"},
-		{http.MethodPost, "/v1/scheduled-events"},
+		{http.MethodPost, "/v1/events/order.created", http.StatusNotFound},
+		{http.MethodPost, "/v1/workflows", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/v1/workflows/wf-1/transition", http.StatusNotFound},
+		{http.MethodPost, "/v1/batches", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/v1/quarantine/q-1/replay", http.StatusNotFound},
+		{http.MethodDelete, "/v1/quarantine/q-1", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/v1/scheduled-events", http.StatusNotFound},
 	}
 	for _, tc := range requests {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			router.ServeHTTP(recorder, httptest.NewRequest(tc.method, tc.path, nil))
-			if recorder.Code != http.StatusNotFound {
-				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusNotFound, recorder.Body.String())
+			if recorder.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, tc.wantStatus, recorder.Body.String())
 			}
 		})
 	}
