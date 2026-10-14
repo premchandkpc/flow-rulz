@@ -310,7 +310,6 @@ func (s *Service) SubscribersForEvent(ctx context.Context, tenantID, eventType s
 	return items, nil
 }
 
-
 func validTenantID(tenantID string) bool {
 	if tenantID == "" || len(tenantID) > 128 {
 		return false
