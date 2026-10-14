@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/middleware"
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/responses"
@@ -57,11 +59,24 @@ func (h *WorkflowHandler) RegisterAllRoutes(mux *http.ServeMux) {
 
 // createWorkflowDefinitionAsAdmin restricts global workflow configuration to platform admins.
 func (h *WorkflowHandler) createWorkflowDefinitionAsAdmin(w http.ResponseWriter, r *http.Request) {
-	if !authn.HasScope(r.Context(), "admin") && !authn.HasScope(r.Context(), "flowrulz:admin") {
-		responses.WriteError(w, http.StatusForbidden, "platform admin scope is required", responses.CodeForbidden)
+	if !requireWorkflowDefinitionAdmin(w, r) {
 		return
 	}
 	h.CreateWorkflowDefinition(w, r)
+}
+
+// requireWorkflowDefinitionAdmin allows local development, but fails closed for
+// test, staging, production, and an unset APP_ENV unless the caller has admin scope.
+func requireWorkflowDefinitionAdmin(w http.ResponseWriter, r *http.Request) bool {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+	if env == "development" || env == "dev" {
+		return true
+	}
+	if authn.HasScope(r.Context(), "admin") || authn.HasScope(r.Context(), "flowrulz:admin") {
+		return true
+	}
+	responses.WriteError(w, http.StatusForbidden, "platform admin scope is required", responses.CodeForbidden)
+	return false
 }
 
 // CreateWorkflow creates a workflow instance for the current tenant.
