@@ -23,6 +23,11 @@ const (
 	LogRecordEffectSettled LogRecordKind = "effect.settled"
 	// LogRecordEventQuarantined records a terminal processing failure.
 	LogRecordEventQuarantined LogRecordKind = "event.quarantined"
+	LogRecordScheduleRequested LogRecordKind = "schedule.requested"
+	LogRecordScheduleCancelled LogRecordKind = "schedule.cancelled"
+	LogRecordScheduleFired LogRecordKind = "schedule.fired"
+	LogRecordConsumerProgressed LogRecordKind = "consumer.progressed"
+	LogRecordFenceAdvanced LogRecordKind = "fence.advanced"
 )
 
 // EventLogRecord is an immutable fact in the processing log. Sequence is assigned
@@ -67,7 +72,7 @@ func (r EventLogRecord) Validate() error {
 		return errors.New("log record requires record_id, tenant_id, partition_key, and event_id")
 	}
 	switch r.Kind {
-	case LogRecordEventAccepted, LogRecordExecutionCommitted, LogRecordEffectRequested, LogRecordEffectSettled, LogRecordEventQuarantined:
+	case LogRecordEventAccepted, LogRecordExecutionCommitted, LogRecordEffectRequested, LogRecordEffectSettled, LogRecordEventQuarantined, LogRecordScheduleRequested, LogRecordScheduleCancelled, LogRecordScheduleFired, LogRecordConsumerProgressed, LogRecordFenceAdvanced:
 	default:
 		return fmt.Errorf("unsupported log record kind %q", r.Kind)
 	}
