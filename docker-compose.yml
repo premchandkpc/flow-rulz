@@ -15,12 +15,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 10s
+      start_period: 60s
     restart: unless-stopped
     networks: [flow-rulz]
 
   nats:
-    image: nats:2.10-alpine
+    image: nats:2.11-alpine
     command: ["-js", "-sd", "/data", "-m", "8222"]
     ports:
       - "127.0.0.1:${NATS_PORT:-4222}:4222"
@@ -32,7 +32,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 10s
+      start_period: 60s
     restart: unless-stopped
     networks: [flow-rulz]
 
