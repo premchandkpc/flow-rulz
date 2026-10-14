@@ -2,7 +2,7 @@ module github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go
 
 go 1.26.0
 
-require github.com/flowrulz/flow-rulz-sdk/go/flowrule v0.0.0
+require github.com/flowrulz/flow-rulz-sdk/go/flowrulz v0.0.0
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
@@ -14,4 +14,4 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 )
 
-replace github.com/flowrulz/flow-rulz-sdk/go/flowrule => ../../../../sdk/go/flowrule
+replace github.com/flowrulz/flow-rulz-sdk/go/flowrulz => ../../../../sdk/go/flowrule
