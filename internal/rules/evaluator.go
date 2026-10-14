@@ -656,8 +656,11 @@ func resolveEmitEventPartitionKey(action *domain.EmitEventAction, event *domain.
 	case domain.PartitionKeyPolicyFromData:
 		if action.PartitionKeyPath != "" {
 			value, err := resolvePath(action.PartitionKeyPath, event.Data, nil)
-			if err != nil || value == nil {
+			if err != nil {
 				return "", fmt.Errorf("resolve partition key from path %s: %w", action.PartitionKeyPath, err)
+			}
+			if value == nil {
+				return "", fmt.Errorf("resolve partition key from path %s: value is missing", action.PartitionKeyPath)
 			}
 			pk, err := formatPartitionKeyValue(value)
 			if err != nil {
@@ -709,7 +712,9 @@ func buildChildEventEnvelope(
 ) domain.EventEnvelope {
 	return domain.EventEnvelope{
 		ID: childID, Type: action.Type, TenantID: parent.TenantID,
-		PartitionKey: partitionKey, OccurredAt: occurredAt, Data: data,
+		PartitionKey: partitionKey, WorkflowID: parent.WorkflowID,
+		CorrelationID: parent.CorrelationID, CausationID: parent.ID,
+		OccurredAt: occurredAt, Data: data,
 		Headers: map[string]string{
 			"flowrulz_parent_event_id": parent.ID,
 			"flowrulz_child_event_id":  childID,
