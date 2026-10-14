@@ -1,4 +1,4 @@
-use crate::{config::Config, engine::{EventEnvelope, sha256_hex}, runtime::{scheduler::event_subject, uuid_token, validate_subject}};
+use crate::{config::Config, engine::{EventEnvelope, sha256_hex}, runtime::{scheduler::event_subject, uuid_token}};
 use anyhow::{bail, Context, Result};
 use async_nats::jetstream;
 use serde_json::{json, Value};
@@ -294,5 +294,26 @@ mod outbox_claim_tests {
         assert!(ensure_claim_update(1, "scheduling retry for", "effect-1").is_ok());
         assert!(ensure_claim_update(0, "scheduling retry for", "effect-1").is_err());
         assert!(ensure_claim_update(2, "quarantining", "effect-1").is_err());
+    }
+
+    #[test]
+    fn effect_subject_validation_rejects_wildcards_and_invalid_tokens() {
+        assert!(validate_subject_path("payments.authorize").is_ok());
+        assert!(validate_subject_path("orders-v2.created").is_ok());
+        assert!(validate_subject_path("Payments.authorize").is_err());
+        assert!(validate_subject_path("payments.*").is_err());
+        assert!(validate_subject_path("payments..created").is_err());
+        assert!(validate_subject_token("payment", "destination").is_ok());
+        assert!(validate_subject_token("../admin", "destination").is_err());
+    }
+
+    #[test]
+    fn service_subject_hashes_tenant_and_service_independently() {
+        let tenant = sha256_hex(b"tenant-a");
+        let service = sha256_hex(b"service-a");
+        let subject = format!("services.{}.{}", &tenant[..24], &service[..24]);
+        assert!(validate_concrete_subject(&subject).is_ok());
+        assert_eq!(subject.split('.').count(), 3);
+        assert!(subject.starts_with("services."));
     }
 }
