@@ -51,7 +51,6 @@ func TestManagementRouterDoesNotExposeScheduledEventMutation(t *testing.T) {
 	}
 }
 
-
 func TestManagementRouterRejectsRuntimeMutations(t *testing.T) {
 	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
 	requests := []struct {
