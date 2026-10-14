@@ -838,6 +838,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn accepted_event_validates_partition_identity_and_recovers() {
+        let dir = temp_dir();
+        let tenant_id = "tenant-a";
+        let event_id = "event-accepted-1";
+        let partition_key = "order-1";
+        let partition = partition_for_key(tenant_id, partition_key);
+        let original_payload = br#"{"value":1}"#;
+        let accepted = json!({
+            "identity": {
+                "tenant_id": tenant_id,
+                "event_id": event_id,
+                "partition_key": partition_key
+            },
+            "event_type": "orders.created",
+            "occurred_at": "2026-10-14T00:00:00Z",
+            "input_contract": {
+                "name": "orders.created",
+                "version": "1",
+                "content_hash": sha256_hex(b"contract-v1")
+            },
+            "correlation_id": null,
+            "causation_id": null,
+            "mode": "async",
+            "headers": {},
+            "payload_hex": encode_hex(original_payload),
+            "payload_sha256": sha256_hex(original_payload)
+        });
+        let payload = Bytes::from(serde_json::to_vec(&accepted).unwrap());
+        let record = NewLogRecord {
+            record_id: deterministic_id("event.accepted", &[tenant_id, partition_key, event_id, ""]),
+            partition,
+            kind: LogRecordKind::EventAccepted,
+            tenant_id: tenant_id.to_string(),
+            event_id: event_id.to_string(),
+            checksum_sha256: sha256_hex(&payload),
+            payload,
+        };
+
+        let log = FileEventLog::open(&dir).await.unwrap();
+        assert_eq!(log.append(record.clone()).await.unwrap(), LogPosition(1));
+        let mut wrong_partition = record.clone();
+        wrong_partition.partition = PartitionId((partition.0 + 1) % 4096);
+        let error = log.append(wrong_partition).await.err().unwrap();
+        assert!(matches!(error, LogError::Integrity(_)));
+        drop(log);
+
+        let reopened = FileEventLog::open(&dir).await.unwrap();
+        let records = reopened.read(partition, LogPosition(0), 10).await.unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].kind, LogRecordKind::EventAccepted);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
     async fn append_is_idempotent_and_survives_restart() {
         let dir = temp_dir();
         let log = FileEventLog::open(&dir).await.unwrap();
