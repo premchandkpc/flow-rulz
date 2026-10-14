@@ -150,13 +150,13 @@ func TestEvaluateEmitEventDeterministicChildID(t *testing.T) {
 	}
 
 	env := &domain.EventEnvelope{
-		ID:           "evt-parent",
-		Type:         "order.created",
-		TenantID:     "acme",
-		PartitionKey: "order-42",
-		WorkflowID:   "wf-42",
+		ID:            "evt-parent",
+		Type:          "order.created",
+		TenantID:      "acme",
+		PartitionKey:  "order-42",
+		WorkflowID:    "wf-42",
 		CorrelationID: "corr-42",
-		Data:         json.RawMessage(`{"total": 42}`),
+		Data:          json.RawMessage(`{"total": 42}`),
 	}
 
 	decision1, _ := NewEvaluator(domain.SystemClock{}).Evaluate(revision, env, nil)
@@ -738,7 +738,7 @@ func TestEvaluateScheduleEventCreatesDurableIntent(t *testing.T) {
 func TestResolveEmitEventPartitionKeyMissingPathReturnsUsefulError(t *testing.T) {
 	_, err := resolveEmitEventPartitionKey(&domain.EmitEventAction{
 		PartitionKeyPolicy: domain.PartitionKeyPolicyFromData,
-		PartitionKeyPath: "$.missing",
+		PartitionKeyPath:   "$.missing",
 	}, &domain.EventEnvelope{Data: json.RawMessage(`{}`)})
 	if err == nil {
 		t.Fatal("expected missing partition key path to fail")
