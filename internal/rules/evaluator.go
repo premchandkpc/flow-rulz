@@ -540,6 +540,12 @@ func (e *Evaluator) buildEffect(revision *domain.RuleRevision, event *domain.Eve
 		if err != nil {
 			return domain.Effect{}, err
 		}
+	case action.ScheduleEvent != nil:
+		var err error
+		effect, err = e.buildScheduleEventEffect(effect, event, ruleID, actionIndex, action.ScheduleEvent)
+		if err != nil {
+			return domain.Effect{}, err
+		}
 	case action.Command != nil:
 		effect = buildCommandEffect(effect, action.Command)
 	}
@@ -590,6 +596,50 @@ func (e *Evaluator) buildEmitEventEffect(
 	effect.Destination = "events." + child.Type
 	effect.Name = child.Type
 	effect.Payload = encoded
+	return effect, nil
+}
+
+func (e *Evaluator) buildScheduleEventEffect(
+	effect domain.Effect,
+	event *domain.EventEnvelope,
+	ruleID string,
+	actionIndex int,
+	action *domain.ScheduleEventAction,
+) (domain.Effect, error) {
+	if action.DelaySeconds < 1 || action.DelaySeconds > domain.MaxScheduledDelaySeconds {
+		return domain.Effect{}, fmt.Errorf("scheduled event delay must be between 1 and %d seconds", domain.MaxScheduledDelaySeconds)
+	}
+	childID := domain.ComputeChildEventID(event.ID, ruleID, actionIndex)
+	partitionKey, err := resolveEmitEventPartitionKey(&domain.EmitEventAction{
+		PartitionKey: action.PartitionKey, PartitionKeyPolicy: action.PartitionKeyPolicy,
+		PartitionKeyPath: action.PartitionKeyPath,
+	}, event)
+	if err != nil {
+		return domain.Effect{}, err
+	}
+	childData, err := interpolateTemplates(action.Data, event, childID, e.clock)
+	if err != nil {
+		return domain.Effect{}, fmt.Errorf("interpolate scheduled event templates: %w", err)
+	}
+	now := e.clock.Now().UTC()
+	scheduled := domain.ScheduledEvent{
+		EventID: childID, TenantID: event.TenantID, EventType: action.Type,
+		PartitionKey: partitionKey, WorkflowID: event.WorkflowID, Payload: childData,
+		Headers: map[string]string{
+			"flowrulz_parent_event_id": event.ID,
+			"flowrulz_scheduled_event_id": childID,
+		},
+		ScheduledAt: now.Add(time.Duration(action.DelaySeconds) * time.Second),
+		Status: domain.ScheduledEventStatusPending, CreatedAt: now,
+	}
+	payload, err := json.Marshal(scheduled)
+	if err != nil {
+		return domain.Effect{}, fmt.Errorf("marshal scheduled event intent: %w", err)
+	}
+	effect.EffectType = domain.EffectTypeScheduleEvent
+	effect.Destination = "scheduled_events"
+	effect.Name = action.Type
+	effect.Payload = payload
 	return effect, nil
 }
 
@@ -672,6 +722,9 @@ func describeAction(action domain.Action) string {
 	}
 	if action.EmitEvent != nil {
 		return "emit_event:" + action.EmitEvent.Type
+	}
+	if action.ScheduleEvent != nil {
+		return "schedule_event:" + action.ScheduleEvent.Type
 	}
 	if action.Command != nil {
 		return "command:" + action.Command.Destination + "/" + action.Command.Name
