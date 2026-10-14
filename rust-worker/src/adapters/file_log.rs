@@ -828,8 +828,10 @@ mod tests {
         let tenant_id = "tenant-a";
         let event_id = "event-1";
         let partition_key = "order-1";
-        let execution_id =
-            deterministic_id("execution", &[tenant_id, partition_key, event_id]);
+        let execution_id = deterministic_id(
+            "execution.committed",
+            &[tenant_id, partition_key, event_id, "execution"],
+        );
         let effect_payload = Bytes::from_static(br#"{"type":"orders.approved"}"#);
         let effect = crate::domain::EffectIntent {
             effect_id: "effect-1".to_string(),
