@@ -11,7 +11,7 @@ use chrono::Utc;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::collections::HashMap;
 use tokio::task::JoinSet;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 pub async fn run(config: Config) -> Result<()> {
     let (pool, js) = connect_services(&config).await?;
@@ -71,7 +71,7 @@ fn spawn_consumer_tasks(
     }
 }
 
-fn spawn_background_tasks(tasks: &mut JoinSet<()>, pool: &PgPool, js: &jetstream::Context, config: &Config) {
+fn spawn_background_tasks(tasks: &mut JoinSet<Result<()>>, pool: &PgPool, js: &jetstream::Context, config: &Config) {
     let outbox_pool = pool.clone();
     let outbox_js = js.clone();
     let outbox_config = config.clone();
@@ -91,24 +91,32 @@ fn spawn_background_tasks(tasks: &mut JoinSet<()>, pool: &PgPool, js: &jetstream
     });
 }
 
-async fn wait_for_shutdown(tasks: &mut JoinSet<()>) {
+async fn wait_for_shutdown(tasks: &mut JoinSet<Result<()>>) -> Result<()> {
     tokio::select! {
-        _ = tokio::signal::ctrl_c() => info!("shutdown signal received"),
+        signal = tokio::signal::ctrl_c() => {
+            signal.context("wait for shutdown signal")?;
+            info!("shutdown signal received");
+            Ok(())
+        }
         result = tasks.join_next() => {
-            if let Some(Err(error)) = result { warn!(error=%error, "runtime task join failed"); }
-            warn!("a core runtime task exited; shutting down remaining tasks");
+            match result {
+                Some(Ok(Ok(()))) => Err(anyhow!("core runtime task exited unexpectedly")),
+                Some(Ok(Err(error))) => Err(error.context("core runtime task failed")),
+                Some(Err(error)) => Err(anyhow!("core runtime task panicked: {error}")),
+                None => Err(anyhow!("all core runtime tasks exited unexpectedly")),
+            }
         }
     }
 }
 
-async fn abort_remaining_tasks(tasks: &mut JoinSet<()>) {
+async fn abort_remaining_tasks(tasks: &mut JoinSet<Result<()>>) {
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
 }
 
 async fn release_owned_leases(pool: &PgPool, leases: &HashMap<u32, i64>, worker_id: &str) {
-    for shard in leases.keys() {
-        if let Err(error) = engine::release_lease(pool, *shard, worker_id, *leases.get(shard).expect("lease token must exist")).await {
+    for (shard, token) in leases {
+        if let Err(error) = engine::release_lease(pool, *shard, worker_id, *token).await {
             warn!(shard, error = %error, "failed to release shard lease");
         }
     }
