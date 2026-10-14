@@ -31,6 +31,16 @@ func (r *ContractRegistry) collection(name string) *mongo.Collection {
 // Register publishes an immutable contract version. A semantic change requires a new version.
 func (r *ContractRegistry) Register(ctx context.Context, schema *domain.ContractSchema) error {
 	if err := schema.NormalizeAndValidate(); err != nil { return fmt.Errorf("validate contract: %w", err) }
+	if schema.Parent != nil {
+		parent, err := r.Get(ctx, schema.Parent.Name, schema.Parent.Version)
+		if err != nil { return fmt.Errorf("resolve parent contract: %w", err) }
+		if parent == nil { return fmt.Errorf("parent contract %s@%s not found", schema.Parent.Name, schema.Parent.Version) }
+		if err := parent.NormalizeAndValidate(); err != nil { return fmt.Errorf("invalid parent contract: %w", err) }
+		if schema.Parent.SchemaHash != "" && schema.Parent.SchemaHash != parent.SchemaHash { return fmt.Errorf("parent contract schema hash mismatch") }
+		if !parent.AllowsChild(domain.ContractRef{Name:schema.Name, Version:schema.Version, SchemaHash:schema.SchemaHash}) {
+			return fmt.Errorf("parent contract %s@%s does not allow child %s@%s", parent.Name, parent.Version, schema.Name, schema.Version)
+		}
+	}
 	existing, err := r.Get(ctx, schema.Name, schema.Version)
 	if err != nil { return err }
 	if existing != nil {
