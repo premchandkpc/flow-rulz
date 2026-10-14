@@ -35,19 +35,27 @@ func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idemp
 	if s.publisher == nil {
 		return errors.New("publish command: NATS publisher is not configured")
 	}
-	if effect.EffectType != domain.EffectTypeEmit && effect.EffectType != domain.EffectTypeCommand {
+	var subject string
+	switch effect.EffectType {
+	case domain.EffectTypeEmit:
+		if err := validateCommandName(effect.Destination); err != nil {
+			return fmt.Errorf("publish emitted effect: %w", err)
+		}
+		subject = "effects." + effect.Destination
+	case domain.EffectTypeCommand:
+		if effect.Destination == "" || effect.Name == "" {
+			return errors.New("publish command: destination and name are required")
+		}
+		if !commandToken.MatchString(effect.Destination) {
+			return fmt.Errorf("publish command: invalid destination %q", effect.Destination)
+		}
+		if err := validateCommandName(effect.Name); err != nil {
+			return err
+		}
+		subject = "commands." + effect.Destination + "." + effect.Name
+	default:
 		return fmt.Errorf("publish command: unsupported effect type %q", effect.EffectType)
 	}
-	if effect.Destination == "" || effect.Name == "" {
-		return errors.New("publish command: destination and name are required")
-	}
-	if !commandToken.MatchString(effect.Destination) {
-		return fmt.Errorf("publish command: invalid destination %q", effect.Destination)
-	}
-	if err := validateCommandName(effect.Name); err != nil {
-		return err
-	}
-	subject := "commands." + effect.Destination + "." + effect.Name
 	message := *effect
 	message.IdempotencyKey = idempotencyKey
 	payload, err := json.Marshal(&message)
