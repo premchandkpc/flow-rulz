@@ -35,6 +35,9 @@ func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idemp
 	if s.publisher == nil {
 		return errors.New("publish effect: NATS publisher is not configured")
 	}
+	if effect.ID == "" || idempotencyKey == "" {
+		return errors.New("publish effect: stable effect ID and idempotency key are required")
+	}
 	var subject string
 	switch effect.EffectType {
 	case domain.EffectTypeEmit:
