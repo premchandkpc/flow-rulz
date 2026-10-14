@@ -56,7 +56,7 @@ func TestDeterministicLogRecordIDDoesNotConflateDelimiterValues(t *testing.T) {
 func TestEventLogRecordValidateRequiresCanonicalRecordID(t *testing.T) {
 	record := EventLogRecord{
 		RecordID: DeterministicLogRecordID(LogRecordEventAccepted, "tenant-a", "order-1", "event-1", ""),
-		Kind: LogRecordEventAccepted, TenantID: "tenant-a", PartitionKey: "order-1",
+		Kind:     LogRecordEventAccepted, TenantID: "tenant-a", PartitionKey: "order-1",
 		EventID: "event-1", Payload: json.RawMessage(`{}`), OccurredAt: time.Now().UTC(),
 	}
 	record.RecordID = "arbitrary-id"
