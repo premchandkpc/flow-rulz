@@ -169,8 +169,8 @@ impl FileEventLog {
         partitions: &'a mut HashMap<PartitionId, PartitionState>,
         partition: PartitionId,
     ) -> Result<&'a mut PartitionState, LogError> {
-        if let std::collections::hash_map::Entry::Occupied(entry) = partitions.entry(partition) {
-            return Ok(entry.into_mut());
+        if let Some(state) = existing_partition_mut(partitions, partition) {
+            return Ok(state);
         }
 
         let path = partition_path(&self.root, partition);
@@ -188,16 +188,19 @@ impl FileEventLog {
                 .map_err(storage_error)?;
         }
 
-        Ok(match partitions.entry(partition) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(PartitionState {
+        partitions.insert(
+            partition,
+            PartitionState {
                 file,
                 segment_number: 0,
                 next_position: 0,
                 records: Vec::new(),
                 highest_fencing_epoch: 0,
-            }),
-        })
+            },
+        );
+        partitions
+            .get_mut(&partition)
+            .ok_or_else(|| LogError::Integrity("partition state disappeared".into()))
     }
 }
 
@@ -826,6 +829,13 @@ fn acquire_process_lock(root: &Path) -> Result<File, LogError> {
     }
 
     Ok(file)
+}
+
+fn existing_partition_mut(
+    partitions: &mut HashMap<PartitionId, PartitionState>,
+    partition: PartitionId,
+) -> Option<&mut PartitionState> {
+    partitions.get_mut(&partition)
 }
 
 fn partition_path(root: &Path, partition: PartitionId) -> PathBuf {
