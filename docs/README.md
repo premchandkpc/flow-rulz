@@ -76,13 +76,13 @@ The authoritative route registrations are in internal/adapters/http/handlers and
 | GET | /v1/quarantine and /v1/quarantine/{id} | List/read quarantined items |
 | POST | /v1/quarantine/{id}/replay | Replay a quarantined item |
 | DELETE | /v1/quarantine/{id} | Delete a quarantined item |
-| GET / POST | /v1/scheduled-events | List/schedule an event |
-| GET / DELETE | /v1/scheduled-events/{eventID} | Read/cancel a scheduled event |
 | GET | /health | Process liveness only |
 
 Authentication/authorization and trusted tenant identity are not implemented. The current tenant middleware trusts caller-supplied header/query values. Do not expose the API to untrusted networks. The health endpoint does not check database or broker readiness.
 
-Scheduled/wait instructions belong to the durable worker runtime. The control-plane HTTP API does not create or mutate runtime scheduled events.\n\n## Configuration and development
+Scheduled/wait instructions belong to the durable worker runtime. The control-plane HTTP API does not create or mutate runtime scheduled events.\n\nScheduled/wait instructions belong to the durable worker runtime. The control-plane HTTP API does not create or mutate runtime scheduled events.
+
+## Configuration and development
 
 - Environment names/defaults: [.env.example](../.env.example)
 - Root build/test/check targets: [Makefile](../Makefile)
