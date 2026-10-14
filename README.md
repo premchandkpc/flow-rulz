@@ -45,6 +45,8 @@ docker compose config
 docker compose up --build -d
 ~~~
 
+Use the default Go worker. The optional Rust worker profile is legacy and incompatible with the NATS-only effect routes; do not enable it until that alternative is separately migrated or removed.
+
 Open the React operations console at http://localhost:3000. Compose starts three worker replicas by default (`WORKER_REPLICAS=3`); check them with `docker compose ps worker`. It proxies the API, worker metrics, and Loki through Docker DNS so browser clients do not need to resolve container names. API is also available at localhost:8080, NATS at localhost:4222, NATS monitoring at localhost:8222, PostgreSQL at localhost:5432, and Redis at localhost:6379. Published ports bind to 127.0.0.1 only. Promtail discovers local Docker container logs and ships them to Loki for the console Logs page. The stack uses development settings and demo credentials; do not reuse those credentials in production. See [docs/deployment-compose.md](docs/deployment-compose.md) for service discovery, environment variables, log collection, and troubleshooting.
 
 For root-module development:
