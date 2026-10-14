@@ -7,6 +7,7 @@ import (
 
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/middleware"
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/responses"
+	authn "github.com/flowrulz/flow-rulz/internal/auth"
 	"github.com/flowrulz/flow-rulz/internal/domain"
 	"github.com/flowrulz/flow-rulz/internal/ports"
 )
@@ -27,7 +28,19 @@ func NewWorkflowHandler(workflowSvc ports.WorkflowService, ruleSvc ports.RuleSer
 	}
 }
 
-// RegisterRoutes registers the handler's HTTP routes on mux.
+// RegisterControlPlaneRoutes registers configuration and read-only workflow views.
+// Runtime instance creation and transitions are worker-owned.
+func (h *WorkflowHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /v1/workflows/{workflowID}", h.GetWorkflow)
+	mux.HandleFunc("GET /v1/workflows", h.ListWorkflows)
+	mux.HandleFunc("GET /v1/workflows/definitions", h.ListWorkflowDefinitions)
+	mux.HandleFunc("GET /v1/workflows/definitions/{workflowType}", h.GetWorkflowDefinition)
+	mux.HandleFunc("GET /v1/workflows/definitions/{workflowType}/{version}", h.GetWorkflowDefinition)
+	mux.Handle("POST /v1/workflows/definitions", http.HandlerFunc(h.createWorkflowDefinitionAsAdmin))
+}
+
+// RegisterRoutes preserves the complete handler route set for focused handler tests.
+// The production API router must use RegisterControlPlaneRoutes.
 func (h *WorkflowHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/workflows", h.CreateWorkflow)
 	mux.HandleFunc("GET /v1/workflows/{workflowID}", h.GetWorkflow)
@@ -36,6 +49,15 @@ func (h *WorkflowHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/workflows/definitions", h.ListWorkflowDefinitions)
 	mux.HandleFunc("GET /v1/workflows/definitions/{workflowType}", h.GetWorkflowDefinition)
 	mux.HandleFunc("GET /v1/workflows/definitions/{workflowType}/{version}", h.GetWorkflowDefinition)
+}
+
+// createWorkflowDefinitionAsAdmin restricts global workflow configuration to platform admins.
+func (h *WorkflowHandler) createWorkflowDefinitionAsAdmin(w http.ResponseWriter, r *http.Request) {
+	if !authn.HasScope(r.Context(), "admin") && !authn.HasScope(r.Context(), "flowrulz:admin") {
+		responses.WriteError(w, http.StatusForbidden, "platform admin scope is required", responses.CodeForbidden)
+		return
+	}
+	h.CreateWorkflowDefinition(w, r)
 }
 
 // CreateWorkflow creates a workflow instance for the current tenant.
