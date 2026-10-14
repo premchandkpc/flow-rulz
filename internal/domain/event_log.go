@@ -15,7 +15,7 @@ type LogRecordKind string
 const (
 	// LogRecordEventAccepted records an accepted input event.
 	LogRecordEventAccepted LogRecordKind = "event.accepted"
-	// LogRecordExecutionRecorded records a deterministic rule execution.
+	// LogRecordExecutionCommitted records an atomic rule execution outcome and its complete effect-intent set.
 	LogRecordExecutionCommitted LogRecordKind = "execution.committed"
 	// LogRecordEffectRequested records an effect intent.
 	LogRecordEffectRequested LogRecordKind = "effect.requested"
