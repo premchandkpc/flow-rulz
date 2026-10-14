@@ -139,13 +139,17 @@ func validateWorkerDependencies(
 func normalizeWorkerConfig(config WorkerConfig) (WorkerConfig, error) {
 	defaults := DefaultWorkerConfig()
 	if config.MaxGlobalInFlight == 0 {
-		config = defaults
+		config.MaxGlobalInFlight = defaults.MaxGlobalInFlight
 	}
 	if config.MaxGlobalInFlight < 0 {
 		config.MaxGlobalInFlight = defaults.MaxGlobalInFlight
 	}
 
+	fetchBatchWasUnset := config.FetchBatchSize <= 0
 	applyWorkerConfigDefaults(&config, defaults)
+	if fetchBatchWasUnset && config.FetchBatchSize > config.MaxGlobalInFlight {
+		config.FetchBatchSize = config.MaxGlobalInFlight
+	}
 	if config.FetchBatchSize > config.MaxGlobalInFlight {
 		return WorkerConfig{}, fmt.Errorf(
 			"worker fetch batch size (%d) must not exceed max global in-flight (%d)",
