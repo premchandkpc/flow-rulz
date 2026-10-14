@@ -879,6 +879,7 @@ mod tests {
         let log = FileEventLog::open(&dir).await.unwrap();
         assert_eq!(log.append(record.clone()).await.unwrap(), LogPosition(1));
         let mut wrong_partition = record.clone();
+        wrong_partition.record_id = "different-record-id".to_string();
         wrong_partition.partition = PartitionId((partition.0 + 1) % 4096);
         let error = log.append(wrong_partition).await.err().unwrap();
         assert!(matches!(error, LogError::Integrity(_)));
