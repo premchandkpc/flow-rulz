@@ -1,13 +1,12 @@
 // Package domainservices manages tenant domains and services.
 // It provides CRUD operations for domains and services, and validates
-// endpoint URLs and event type configurations.
+// event types and tenant-scoped NATS delivery identities.
 package domainservices
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
 	"unicode"
@@ -40,15 +39,14 @@ const (
 type Service struct {
 	repository ports.DomainServiceRepository
 	clock      ports.Clock
-	allowHTTP  bool
 }
 
 // NewService creates a new domain Service with the given repository and clock.
-func NewService(repository ports.DomainServiceRepository, clock ports.Clock, allowHTTP bool) *Service {
+func NewService(repository ports.DomainServiceRepository, clock ports.Clock, _ bool) *Service {
 	if clock == nil {
 		clock = domain.SystemClock{}
 	}
-	return &Service{repository: repository, clock: clock, allowHTTP: allowHTTP}
+	return &Service{repository: repository, clock: clock}
 }
 
 // SaveDomain creates or updates a tenant domain.
@@ -180,10 +178,11 @@ func (s *Service) SaveService(ctx context.Context, tenantID string, item *domain
 	if err := s.persistService(ctx, item); err != nil {
 		return nil, err
 	}
+	item.NATSSubject = domain.DomainServiceSubject(item.TenantID, item.ID)
 	return item, nil
 }
 
-func normalizeAndValidateService(item *domain.DomainService, tenantID string, allowHTTP bool) error {
+func normalizeAndValidateService(item *domain.DomainService, tenantID string, _ bool) error {
 	if item == nil {
 		return fmt.Errorf("%w: service is required", ErrInvalidInput)
 	}
@@ -194,8 +193,8 @@ func normalizeAndValidateService(item *domain.DomainService, tenantID string, al
 	if !validTenantID(tenantID) || !namePattern.MatchString(item.Name) || len(item.DomainIDs) > maxDomainsPerService {
 		return fmt.Errorf("%w: service name and at most %d domain_ids are required", ErrInvalidInput, maxDomainsPerService)
 	}
-	if err := validateEndpoint(item.EndpointURL, allowHTTP); err != nil {
-		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	if item.EndpointURL != "" {
+		return fmt.Errorf("%w: endpoint_url HTTP callbacks are no longer supported; FlowRulz assigns a NATS subject", ErrInvalidInput)
 	}
 	return nil
 }
@@ -268,6 +267,7 @@ func (s *Service) GetService(ctx context.Context, tenantID, serviceID string) (*
 	if item == nil {
 		return nil, ErrNotFound
 	}
+	item.NATSSubject = domain.DomainServiceSubject(item.TenantID, item.ID)
 	return item, nil
 }
 
@@ -276,6 +276,9 @@ func (s *Service) ListServices(ctx context.Context, tenantID string) ([]*domain.
 	items, err := s.repository.ListServices(ctx, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("list tenant services: %w", err)
+	}
+	for _, item := range items {
+		item.NATSSubject = domain.DomainServiceSubject(item.TenantID, item.ID)
 	}
 	return items, nil
 }
@@ -300,26 +303,12 @@ func (s *Service) SubscribersForEvent(ctx context.Context, tenantID, eventType s
 	if len(items) > 100 {
 		return nil, fmt.Errorf("event %q exceeds the 100-service fan-out limit", eventType)
 	}
+	for _, item := range items {
+		item.NATSSubject = domain.DomainServiceSubject(item.TenantID, item.ID)
+	}
 	return items, nil
 }
 
-func validateEndpoint(raw string, allowHTTP bool) error {
-	parsed, err := url.Parse(raw)
-	if len(raw) > 2048 || err != nil || parsed.Hostname() == "" || !parsed.IsAbs() || parsed.Opaque != "" || parsed.User != nil || parsed.Fragment != "" {
-		return errors.New("endpoint_url must be an absolute HTTP(S) URL without credentials or a fragment")
-	}
-	if parsed.Scheme != "https" && (!allowHTTP || parsed.Scheme != "http") {
-		return errors.New("endpoint_url must use HTTPS (HTTP is allowed only in development)")
-	}
-	if port := parsed.Port(); port != "" {
-		for _, char := range port {
-			if char < '0' || char > '9' {
-				return errors.New("endpoint_url port is invalid")
-			}
-		}
-	}
-	return nil
-}
 
 func validTenantID(tenantID string) bool {
 	if tenantID == "" || len(tenantID) > 128 {
