@@ -85,7 +85,6 @@ func run() error {
 		repositories.Contracts,
 		batchSvc,
 		quarantineSvc,
-		repositories.ScheduledEvents,
 		httpapi.RouterConfig{
 			AuthValidator: authValidator,
 			RequireAuth: cfg.Auth.RequireAuth,
