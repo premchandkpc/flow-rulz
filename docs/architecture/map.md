@@ -43,10 +43,10 @@ flowchart LR
 1. Load and validate configuration.
 2. Open storage using internal/storage and initialize the selected backend/migrations.
 3. Create rule compiler and the rule, workflow, batch, and quarantine services.
-4. Create the HTTP router and register rule, workflow, contract, batch, quarantine, scheduled-event and health handlers.
+4. Create the HTTP router for configuration and management/read-only views. The API does not construct a NATS publisher and does not register `POST /v1/events/{eventType}`.
 5. Serve HTTP and shut down when the process context is cancelled.
 
-The API starts HTTP only. No gRPC listener/configuration exists. The default HTTP bind is loopback; Compose publishes host ports on 127.0.0.1. The /health route is liveness only. GET /ready probes the database and the NATS stream (2s timeout) and returns 503 with per-dependency status when either is down; it does not probe workers.
+The API starts HTTP only and its readiness checks cover the database, not NATS. No gRPC listener/configuration exists. The default HTTP bind is loopback; Compose publishes host ports on 127.0.0.1. The /health route is liveness only. Event producers publish directly to NATS JetStream; the worker owns consumption and event processing.
 
 Security contract:
 - In development/test, tenant context may be supplied using X-Tenant-ID or tenant_id for local use only.
