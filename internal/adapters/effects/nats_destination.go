@@ -35,6 +35,9 @@ func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idemp
 	if s.publisher == nil {
 		return errors.New("publish command: NATS publisher is not configured")
 	}
+	if effect.EffectType != domain.EffectTypeEmit && effect.EffectType != domain.EffectTypeCommand {
+		return fmt.Errorf("publish command: unsupported effect type %q", effect.EffectType)
+	}
 	if effect.Destination == "" || effect.Name == "" {
 		return errors.New("publish command: destination and name are required")
 	}
