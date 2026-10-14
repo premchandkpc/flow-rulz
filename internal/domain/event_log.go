@@ -10,14 +10,20 @@ import (
 	"time"
 )
 
+// LogRecordKind identifies an immutable processing fact.
 type LogRecordKind string
 
 const (
-	LogRecordEventAccepted     LogRecordKind = "event.accepted"
+	// LogRecordEventAccepted records an accepted input event.
+	LogRecordEventAccepted LogRecordKind = "event.accepted"
+	// LogRecordExecutionRecorded records a deterministic rule execution.
 	LogRecordExecutionRecorded LogRecordKind = "execution.recorded"
-	LogRecordEffectRequested   LogRecordKind = "effect.requested"
-	LogRecordEffectSettled     LogRecordKind = "effect.settled"
-	LogRecordEventQuarantined  LogRecordKind = "event.quarantined"
+	// LogRecordEffectRequested records an effect intent.
+	LogRecordEffectRequested LogRecordKind = "effect.requested"
+	// LogRecordEffectSettled records an effect delivery outcome.
+	LogRecordEffectSettled LogRecordKind = "effect.settled"
+	// LogRecordEventQuarantined records a terminal processing failure.
+	LogRecordEventQuarantined LogRecordKind = "event.quarantined"
 )
 
 // EventLogRecord is an immutable fact in the processing log. Sequence is assigned
@@ -45,6 +51,7 @@ func DeterministicLogRecordID(kind LogRecordKind, tenantID, partitionKey, eventI
 	return hex.EncodeToString(sum[:])
 }
 
+// Validate checks the required identity and payload invariants for a log record.
 func (r EventLogRecord) Validate() error {
 	if r.RecordID == "" || r.TenantID == "" || r.PartitionKey == "" || r.EventID == "" {
 		return errors.New("log record requires record_id, tenant_id, partition_key, and event_id")
@@ -60,7 +67,7 @@ func (r EventLogRecord) Validate() error {
 	if r.OccurredAt.IsZero() {
 		return errors.New("log record occurred_at is required")
 	}
-	if (r.Kind == LogRecordExecutionRecorded) && r.ExecutionID == "" {
+	if r.Kind == LogRecordExecutionRecorded && r.ExecutionID == "" {
 		return errors.New("execution.recorded requires execution_id")
 	}
 	if (r.Kind == LogRecordEffectRequested || r.Kind == LogRecordEffectSettled) && r.EffectID == "" {
