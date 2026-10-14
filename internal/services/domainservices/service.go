@@ -179,7 +179,7 @@ func (s *Service) SaveService(ctx context.Context, tenantID string, item *domain
 		return nil, err
 	}
 	item.EndpointURL = ""
-	item.NATSSubject = domain.DomainServiceSubject(item.TenantID, item.ID)
+	item.NATSSubject = domain.ServiceSubject(item.TenantID, item.ID)
 	return item, nil
 }
 
@@ -268,7 +268,7 @@ func (s *Service) GetService(ctx context.Context, tenantID, serviceID string) (*
 	if item == nil {
 		return nil, ErrNotFound
 	}
-	item.NATSSubject = domain.DomainServiceSubject(item.TenantID, item.ID)
+	item.NATSSubject = domain.ServiceSubject(item.TenantID, item.ID)
 	return item, nil
 }
 
@@ -279,7 +279,7 @@ func (s *Service) ListServices(ctx context.Context, tenantID string) ([]*domain.
 		return nil, fmt.Errorf("list tenant services: %w", err)
 	}
 	for _, item := range items {
-		item.NATSSubject = domain.DomainServiceSubject(item.TenantID, item.ID)
+		item.NATSSubject = domain.ServiceSubject(item.TenantID, item.ID)
 	}
 	return items, nil
 }
@@ -305,7 +305,7 @@ func (s *Service) SubscribersForEvent(ctx context.Context, tenantID, eventType s
 		return nil, fmt.Errorf("event %q exceeds the 100-service fan-out limit", eventType)
 	}
 	for _, item := range items {
-		item.NATSSubject = domain.DomainServiceSubject(item.TenantID, item.ID)
+		item.NATSSubject = domain.ServiceSubject(item.TenantID, item.ID)
 	}
 	return items, nil
 }
