@@ -58,7 +58,7 @@ func TestCompileEnforcesActionBudgetAcrossRuleSet(t *testing.T) {
 
 func TestCompileRejectsFactsPaths(t *testing.T) {
 	source := json.RawMessage(`{"rule_set":"test","revision":1,"mode":"first_match","rules":[{"id":"r1","priority":1,"when":{"path":"$.facts.customer_tier","op":"eq","value":"gold"},"then":[{"emit":{"topic":"test","data":{}}}]},{"id":"r2","priority":2,"when":{"path":"$.facts.account.balance","op":"gt","value":1000},"then":[{"emit":{"topic":"test","data":{}}}]},{"id":"r3","priority":3,"when":{"all":[{"path":"$.facts.profile.status","op":"eq","value":"active"}]},"then":[{"emit":{"topic":"test","data":{}}}]}]}`)
-	
+
 	_, err := NewCompiler(DefaultLimits()).Compile(source)
 	if err == nil {
 		t.Fatal("expected error for $.facts.* path, got nil")
@@ -71,7 +71,7 @@ func TestCompileRejectsFactsPaths(t *testing.T) {
 func TestCompileRejectsFactsPathInComposite(t *testing.T) {
 	// Test $.facts.* inside all/any/not
 	source := json.RawMessage(`{"rule_set":"test","revision":1,"mode":"first_match","rules":[{"id":"r1","priority":1,"when":{"all":[{"path":"$.total","op":"gte","value":100},{"path":"$.facts.tier","op":"eq","value":"premium"}]},"then":[{"emit":{"topic":"test","data":{}}}]}]}`)
-	
+
 	_, err := NewCompiler(DefaultLimits()).Compile(source)
 	if err == nil {
 		t.Fatal("expected error for $.facts.* in composite predicate, got nil")
@@ -89,12 +89,12 @@ func TestCompileStableSortEqualPriority(t *testing.T) {
 		{"id":"a-rule","priority":10,"when":{"path":"$.x","op":"eq","value":2},"then":[{"emit":{"topic":"a","data":{}}}]},
 		{"id":"m-rule","priority":11,"when":{"path":"$.x","op":"eq","value":3},"then":[{"emit":{"topic":"m","data":{}}}]}
 	]}`)
-	
+
 	rev, err := NewCompiler(DefaultLimits()).Compile(source)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	
+
 	// Should be sorted by priority: z-rule (12), m-rule (11), a-rule (10)
 	if len(rev.Compiled) != 3 {
 		t.Fatalf("expected 3 rules, got %d", len(rev.Compiled))
@@ -103,7 +103,7 @@ func TestCompileStableSortEqualPriority(t *testing.T) {
 		t.Errorf("expected order [z-rule, m-rule, a-rule], got [%s, %s, %s]",
 			rev.Compiled[0].ID, rev.Compiled[1].ID, rev.Compiled[2].ID)
 	}
-	
+
 	// Evaluate with x=2 should match a-rule (lowest priority, last in sorted order)
 	eval := NewEvaluator(domain.SystemClock{})
 	event := &domain.EventEnvelope{
@@ -126,7 +126,7 @@ func TestCompileStableSortSamePriorityByID(t *testing.T) {
 		{"id":"a-rule","priority":10,"when":{"path":"$.x","op":"eq","value":1},"then":[{"emit":{"topic":"a","data":{}}}]},
 		{"id":"m-rule","priority":10,"when":{"path":"$.x","op":"eq","value":1},"then":[{"emit":{"topic":"m","data":{}}}]}
 	]}`)
-	
+
 	// This should fail because of ambiguous priority
 	_, err := NewCompiler(DefaultLimits()).Compile(source)
 	if err == nil {
