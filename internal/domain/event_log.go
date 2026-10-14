@@ -83,6 +83,18 @@ func (r EventLogRecord) Validate() error {
 	if (r.Kind == LogRecordEffectRequested || r.Kind == LogRecordEffectSettled) && r.EffectID == "" {
 		return errors.New("effect record requires effect_id")
 	}
+	if r.Kind == LogRecordExecutionCommitted {
+		var committed ExecutionCommittedPayload
+		if err := json.Unmarshal(r.Payload, &committed); err != nil {
+			return fmt.Errorf("execution.committed payload is invalid: %w", err)
+		}
+		if committed.ExecutionID != r.ExecutionID {
+			return errors.New("execution.committed payload execution_id does not match record")
+		}
+		if err := committed.Validate(r.TenantID, r.EventID); err != nil {
+			return fmt.Errorf("invalid execution.committed payload: %w", err)
+		}
+	}
 	discriminator := ""
 	switch r.Kind {
 	case LogRecordExecutionCommitted:
