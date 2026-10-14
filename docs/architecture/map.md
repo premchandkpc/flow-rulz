@@ -156,7 +156,7 @@ The event service keeps fencing validation, deduplication, evaluation persistenc
 | api/*.json | Public envelope/rule JSON schema source files |
 | migrations | Numbered SQL migrations; no down-script set |
 | sdk/go/runtime | Original standalone envelope, shard, producer, consumer and evaluation helper module |
-| sdk/go/flowrulz | Separate client SDK module with configuration, contracts, local/HTTP/gRPC/NATS transports and a basic example |
+| sdk/go/flowrulz | Separate client SDK module with configuration, contracts and the supported NATS event transport; HTTP ingestion, gRPC and local evaluation are unavailable |
 | examples/{banking,ecommerce,food-delivery} | Independent modules with contract/rule/workflow sources and sample applications |
 | tests/contract | In-memory repository contract suites, not full SQL/Mongo conformance |
 | tests/integration | Service behavior tests using mocks/in-memory repositories, not live infrastructure tests |
