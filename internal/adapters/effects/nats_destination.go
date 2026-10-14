@@ -1,0 +1,72 @@
+// Package effects contains NATS-backed effect destinations.
+package effects
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
+
+	"github.com/flowrulz/flow-rulz/internal/domain"
+	"github.com/flowrulz/flow-rulz/internal/ports"
+)
+
+var commandToken = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
+
+// NATSDestination publishes commands to durable NATS JetStream subjects.
+// Receivers consume the subject with their own durable consumer and deduplicate
+// using the stable effect ID/idempotency key in the message envelope.
+type NATSDestination struct {
+	publisher ports.BrokerPublisher
+}
+
+// NewNATSDestination creates a NATS-backed command destination.
+func NewNATSDestination(publisher ports.BrokerPublisher) *NATSDestination {
+	return &NATSDestination{publisher: publisher}
+}
+
+// Send publishes a command effect to commands.<destination>.<name>.
+func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
+	if effect == nil {
+		return errors.New("publish command: effect is nil")
+	}
+	if s.publisher == nil {
+		return errors.New("publish command: NATS publisher is not configured")
+	}
+	if effect.Destination == "" || effect.Name == "" {
+		return errors.New("publish command: destination and name are required")
+	}
+	if !commandToken.MatchString(effect.Destination) {
+		return fmt.Errorf("publish command: invalid destination %q", effect.Destination)
+	}
+	if err := validateCommandName(effect.Name); err != nil {
+		return err
+	}
+	subject := "commands." + effect.Destination + "." + effect.Name
+	message := *effect
+	message.IdempotencyKey = idempotencyKey
+	payload, err := json.Marshal(&message)
+	if err != nil {
+		return fmt.Errorf("encode command effect: %w", err)
+	}
+	if err := s.publisher.Publish(ctx, subject, payload); err != nil {
+		return fmt.Errorf("publish command to %q: %w", subject, err)
+	}
+	return nil
+}
+
+func validateCommandName(name string) error {
+	if len(name) == 0 || len(name) > 128 {
+		return errors.New("publish command: name must be between 1 and 128 characters")
+	}
+	for _, token := range strings.Split(name, ".") {
+		if !commandToken.MatchString(token) {
+			return fmt.Errorf("publish command: invalid name %q", name)
+		}
+	}
+	return nil
+}
+
+var _ ports.EffectSender = (*NATSDestination)(nil)
