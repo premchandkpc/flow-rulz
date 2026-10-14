@@ -376,6 +376,12 @@ func setupTestUseCase(t *testing.T) (*svcevents.Service, *mockInbox, *mockExecut
 		t.Fatalf("compile: %v", err)
 	}
 
+	// The immutable revision cache validates the full tenant/ruleset/revision key.
+	// The compiler creates rule content; the repository fixture supplies persistence metadata.
+	revision.TenantScope = "test-tenant"
+	revision.RuleID = "order.created"
+	revision.Revision = 1
+
 	if err := activations.Set(context.Background(), &domain.RuleActivation{
 		TenantScope: "test-tenant",
 		RuleSet:     "order.created",
@@ -526,10 +532,22 @@ func TestDeterministicHashConsistency(t *testing.T) {
 		Data:         json.RawMessage(`{"total": 2000, "id": "order-2"}`),
 	}
 
-	exec1, _ := uc.Process(context.Background(), env, 1, 1, "test-worker")
+	exec1, err := uc.Process(context.Background(), env, 1, 1, "test-worker")
+	if err != nil {
+		t.Fatalf("first process: %v", err)
+	}
+	if exec1 == nil {
+		t.Fatal("expected execution from first process")
+	}
 
-	// Process same event again - should get same execution and hash
-	exec2, _ := uc.Process(context.Background(), env, 1, 1, "test-worker")
+	// Process same event again - should get same execution and hash.
+	exec2, err := uc.Process(context.Background(), env, 1, 1, "test-worker")
+	if err != nil {
+		t.Fatalf("second process: %v", err)
+	}
+	if exec2 == nil {
+		t.Fatal("expected execution from second process")
+	}
 
 	if exec1.DecisionHash == "" {
 		t.Error("expected non-empty decision hash")

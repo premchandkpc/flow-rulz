@@ -31,6 +31,9 @@ type Config struct {
 	AckWait        time.Duration
 	MaxDeliver     int
 	NumShards      uint32
+	MaxAge         time.Duration
+	MaxBytes       int64
+	MaxMsgs        int64
 }
 
 type consumerKey struct {
@@ -98,6 +101,12 @@ func applyConfigDefaults(cfg Config) Config {
 	if cfg.MaxDeliver == 0 {
 		cfg.MaxDeliver = -1
 	}
+	if cfg.MaxBytes == 0 {
+		cfg.MaxBytes = -1
+	}
+	if cfg.MaxMsgs == 0 {
+		cfg.MaxMsgs = -1
+	}
 	return cfg
 }
 
@@ -151,18 +160,23 @@ func streamSubjects(cfg Config) []string {
 	for _, base := range cfg.Subjects {
 		subjects = append(subjects, base+".shard.*", base+".ruleset.*.shard.*")
 	}
-	// Emitted effects, commands, and per-service deliveries share the same durable
-	// messaging protocol. WorkQueue retention is safe because each command route
-	// and each tenant service receives a unique subject.
+	// Event and effect subjects share a durable append-only log. A recreated
+	// durable consumer can replay acknowledged messages, so consumers must be
+	// idempotent and retention must satisfy the required replay/audit window.
 	subjects = append(subjects, "commands.>", "effects.>", "services.>")
 	return subjects
 }
 
+func streamConfig(cfg Config) jetstream.StreamConfig {
+	return jetstream.StreamConfig{
+		Name: cfg.Stream, Subjects: streamSubjects(cfg), Retention: jetstream.LimitsPolicy,
+		Storage: jetstream.FileStorage, MaxAge: cfg.MaxAge, MaxBytes: cfg.MaxBytes,
+		MaxMsgs: cfg.MaxMsgs, Discard: jetstream.DiscardOld,
+	}
+}
+
 func ensureStream(ctx context.Context, js jetstream.JetStream, cfg Config) error {
-	_, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name: cfg.Stream, Subjects: streamSubjects(cfg), Retention: jetstream.WorkQueuePolicy,
-		Storage: jetstream.FileStorage, MaxMsgs: -1, Discard: jetstream.DiscardOld,
-	})
+	_, err := js.CreateOrUpdateStream(ctx, streamConfig(cfg))
 	if err != nil {
 		return fmt.Errorf("create stream: %w", err)
 	}

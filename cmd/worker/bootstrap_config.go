@@ -21,6 +21,9 @@ func newNATSConfig(cfg *config.Config) nats.Config {
 		AckWait:    cfg.NATSAckWait(),
 		MaxDeliver: cfg.Worker.NATSMaxDeliver,
 		NumShards:  cfg.Worker.NumShards,
+		MaxAge:     cfg.NATS.MaxAge,
+		MaxBytes:   cfg.NATS.MaxBytes,
+		MaxMsgs:    cfg.NATS.MaxMsgs,
 	}
 }
 
