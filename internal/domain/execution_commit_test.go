@@ -12,7 +12,7 @@ func validExecutionCommittedRecord(t *testing.T) EventLogRecord {
 
 	const tenantID = "tenant-a"
 	const eventID = "event-1"
-	const executionID = "execution-1"
+	const executionID = DeterministicLogRecordID(LogRecordExecutionCommitted, tenantID, "order-1", eventID, "")
 	effectPayload := json.RawMessage(`{"type":"orders.approved","order_id":"order-1"}`)
 	commit := ExecutionCommittedPayload{
 		ExecutionID:    executionID,
@@ -44,7 +44,7 @@ func validExecutionCommittedRecord(t *testing.T) EventLogRecord {
 		t.Fatalf("marshal execution commit: %v", err)
 	}
 	return EventLogRecord{
-		RecordID: DeterministicLogRecordID(LogRecordExecutionCommitted, tenantID, "order-1", eventID, executionID),
+		RecordID: DeterministicLogRecordID(LogRecordExecutionCommitted, tenantID, "order-1", eventID, ""),
 		Kind: LogRecordExecutionCommitted, TenantID: tenantID, PartitionKey: "order-1",
 		EventID: eventID, ExecutionID: executionID, Payload: payload,
 		OccurredAt: time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC),
