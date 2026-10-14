@@ -154,6 +154,8 @@ func TestEvaluateEmitEventDeterministicChildID(t *testing.T) {
 		Type:         "order.created",
 		TenantID:     "acme",
 		PartitionKey: "order-42",
+		WorkflowID:   "wf-42",
+		CorrelationID: "corr-42",
 		Data:         json.RawMessage(`{"total": 42}`),
 	}
 
@@ -174,6 +176,10 @@ func TestEvaluateEmitEventDeterministicChildID(t *testing.T) {
 	}
 	if child1.ID != domain.ComputeChildEventID("acme", "evt-parent", "request-payment", 0) {
 		t.Errorf("child event ID doesn't match ComputeChildEventID: %s", child1.ID)
+	}
+	if child1.WorkflowID != "wf-42" || child1.CorrelationID != "corr-42" || child1.CausationID != "evt-parent" {
+		t.Fatalf("child correlation metadata = workflow %q, correlation %q, causation %q",
+			child1.WorkflowID, child1.CorrelationID, child1.CausationID)
 	}
 }
 
@@ -726,5 +732,18 @@ func TestEvaluateScheduleEventCreatesDurableIntent(t *testing.T) {
 	}
 	if payload["order_id"] != "order-7" {
 		t.Fatalf("scheduled payload = %#v, want order_id order-7", payload)
+	}
+}
+
+func TestResolveEmitEventPartitionKeyMissingPathReturnsUsefulError(t *testing.T) {
+	_, err := resolveEmitEventPartitionKey(&domain.EmitEventAction{
+		PartitionKeyPolicy: domain.PartitionKeyPolicyFromData,
+		PartitionKeyPath: "$.missing",
+	}, &domain.EventEnvelope{Data: json.RawMessage(`{}`)})
+	if err == nil {
+		t.Fatal("expected missing partition key path to fail")
+	}
+	if strings.Contains(err.Error(), "%!w(<nil>)") {
+		t.Fatalf("error contains malformed nil wrapping: %v", err)
 	}
 }
