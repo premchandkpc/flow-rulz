@@ -223,9 +223,10 @@ func ValidOp(op Operator) bool {
 
 // Action represents the action.
 type Action struct {
-	Emit      *EmitAction      `json:"emit,omitempty"`
-	EmitEvent *EmitEventAction `json:"emit_event,omitempty"`
-	Command   *CommandAction   `json:"command,omitempty"`
+	Emit          *EmitAction          `json:"emit,omitempty"`
+	EmitEvent     *EmitEventAction     `json:"emit_event,omitempty"`
+	ScheduleEvent *ScheduleEventAction `json:"schedule_event,omitempty"`
+	Command       *CommandAction       `json:"command,omitempty"`
 }
 
 // EmitAction represents the emit action.
@@ -258,6 +259,19 @@ type EmitEventAction struct {
 }
 
 // CommandAction represents the command action.
+// MaxScheduledDelaySeconds bounds a rule's scheduled-event delay to one year.
+const MaxScheduledDelaySeconds int64 = 31_536_000
+
+// ScheduleEventAction durably schedules a child event after the configured delay.
+type ScheduleEventAction struct {
+	Type               string             `json:"type"`
+	DelaySeconds       int64              `json:"delay_seconds"`
+	PartitionKey       string             `json:"partition_key,omitempty"`
+	PartitionKeyPolicy PartitionKeyPolicy `json:"partition_key_policy,omitempty"`
+	PartitionKeyPath   string             `json:"partition_key_path,omitempty"`
+	Data               json.RawMessage    `json:"data"`
+}
+
 type CommandAction struct {
 	Destination string          `json:"destination"`
 	Name        string          `json:"name"`
