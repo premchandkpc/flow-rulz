@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
-	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
 type domainServiceRepositoryStub struct {
@@ -34,9 +33,6 @@ func (p *natsPublisherStub) Publish(_ context.Context, subject string, payload [
 	p.payload = append([]byte(nil), payload...)
 	return p.err
 }
-func (p *natsPublisherStub) PublishBatch(context.Context, []ports.PublishMessage) error { return nil }
-func (p *natsPublisherStub) PublishToShard(context.Context, string, uint32, []byte) error { return nil }
-func (p *natsPublisherStub) Close() error { return nil }
 
 func serviceEventPayload(t *testing.T) []byte {
 	t.Helper()
