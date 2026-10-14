@@ -272,7 +272,7 @@ impl EventLog for FileEventLog {
                 if tenant_id != record.tenant_id
                     || event_id != record.event_id
                     || record.record_id != expected_record_id
-                    || partition_for_key(tenant_id, partition_key) != partition
+                    || partition_for_key(tenant_id, partition_key) != record.partition
                     || sha256_hex(&original_payload) != payload_hash
                 {
                     return Err(LogError::Integrity("accepted event identity or payload hash is invalid".into()));
