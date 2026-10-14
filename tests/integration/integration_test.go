@@ -532,10 +532,22 @@ func TestDeterministicHashConsistency(t *testing.T) {
 		Data:         json.RawMessage(`{"total": 2000, "id": "order-2"}`),
 	}
 
-	exec1, _ := uc.Process(context.Background(), env, 1, 1, "test-worker")
+	exec1, err := uc.Process(context.Background(), env, 1, 1, "test-worker")
+	if err != nil {
+		t.Fatalf("first process: %v", err)
+	}
+	if exec1 == nil {
+		t.Fatal("expected execution from first process")
+	}
 
-	// Process same event again - should get same execution and hash
-	exec2, _ := uc.Process(context.Background(), env, 1, 1, "test-worker")
+	// Process same event again - should get same execution and hash.
+	exec2, err := uc.Process(context.Background(), env, 1, 1, "test-worker")
+	if err != nil {
+		t.Fatalf("second process: %v", err)
+	}
+	if exec2 == nil {
+		t.Fatal("expected execution from second process")
+	}
 
 	if exec1.DecisionHash == "" {
 		t.Error("expected non-empty decision hash")
