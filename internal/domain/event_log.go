@@ -23,11 +23,16 @@ const (
 	LogRecordEffectSettled       LogRecordKind = "effect.settled"
 	// LogRecordEventQuarantined records a terminal processing failure.
 	LogRecordEventQuarantined    LogRecordKind = "event.quarantined"
-	LogRecordScheduleRequested   LogRecordKind = "schedule.requested"
-	LogRecordScheduleCancelled   LogRecordKind = "schedule.cancelled"
-	LogRecordScheduleFired       LogRecordKind = "schedule.fired"
-	LogRecordConsumerProgressed  LogRecordKind = "consumer.progressed"
-	LogRecordFenceAdvanced       LogRecordKind = "fence.advanced"
+	// LogRecordScheduleRequested records a requested scheduled event.
+	LogRecordScheduleRequested  LogRecordKind = "schedule.requested"
+	// LogRecordScheduleCancelled records cancellation of a scheduled event.
+	LogRecordScheduleCancelled LogRecordKind = "schedule.cancelled"
+	// LogRecordScheduleFired records that a scheduled event became due.
+	LogRecordScheduleFired      LogRecordKind = "schedule.fired"
+	// LogRecordConsumerProgressed records durable consumer progress.
+	LogRecordConsumerProgressed LogRecordKind = "consumer.progressed"
+	// LogRecordFenceAdvanced records a monotonic partition fencing epoch.
+	LogRecordFenceAdvanced      LogRecordKind = "fence.advanced"
 )
 
 // EventLogRecord is an immutable fact in the processing log. Sequence is assigned
@@ -45,9 +50,6 @@ type EventLogRecord struct {
 	OccurredAt   time.Time       `json:"occurred_at"`
 }
 
-// DeterministicLogRecordID returns a stable ID for a logical log fact. The
-// discriminator should be a revision, effect ID, or settlement attempt identity
-// when more than one fact of the same kind can exist for an event.
 // DeterministicID hashes a namespace and any number of length-prefixed fields.
 // It is shared with the Rust runtime to keep identities byte-for-byte compatible.
 func DeterministicID(namespace string, parts ...string) string {
