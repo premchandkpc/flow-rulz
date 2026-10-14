@@ -20,6 +20,7 @@ type Service struct {
 	beginTx    ports.TransactionManager
 	newRepos   ports.EventTxRepositoryFactory
 	contracts  ports.ContractRegistry
+	revisions  *immutableRevisionCache
 }
 
 // NewService constructs the event-processing service.
@@ -38,6 +39,7 @@ func NewService(
 		clock:      clock,
 		beginTx:    beginTx,
 		newRepos:   newRepos,
+		revisions:  newImmutableRevisionCache(4096),
 	}
 }
 
@@ -114,7 +116,7 @@ func (s *Service) resolveRulesets(ctx context.Context, repos ports.EventTxRepos,
 				continue // No activation for this ruleset yet
 			}
 
-			revision, err := repos.RuleRepo.GetActive(ctx, envelope.TenantID, binding.RuleSet)
+			revision, err := s.getRevision(ctx, repos.RuleRepo, envelope.TenantID, binding.RuleSet, activation.Revision)
 			if err != nil {
 				return nil, fmt.Errorf("get active revision for ruleset %s: %w", binding.RuleSet, err)
 			}
@@ -158,7 +160,7 @@ func (s *Service) resolveRulesets(ctx context.Context, repos ports.EventTxRepos,
 		return nil, domain.ErrRuleNotReady
 	}
 
-	revision, err := repos.RuleRepo.GetActive(ctx, envelope.TenantID, ruleSet)
+	revision, err := s.getRevision(ctx, repos.RuleRepo, envelope.TenantID, ruleSet, activation.Revision)
 	if err != nil {
 		return nil, fmt.Errorf("get active revision: %w", err)
 	}
