@@ -1,17 +1,14 @@
-// Package main starts the FlowRulz HTTP API service.
+// Package main starts the FlowRulz control-plane HTTP API service.
 package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/flowrulz/flow-rulz/internal/adapters/http"
-	natsadapter "github.com/flowrulz/flow-rulz/internal/adapters/nats"
+	httpapi "github.com/flowrulz/flow-rulz/internal/adapters/http"
 	"github.com/flowrulz/flow-rulz/internal/auth"
 	"github.com/flowrulz/flow-rulz/internal/config"
 	"github.com/flowrulz/flow-rulz/internal/domain"
@@ -31,7 +28,7 @@ func main() {
 	}
 }
 
-func run() (runErr error) {
+func run() error {
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		syscall.SIGINT,
@@ -54,29 +51,8 @@ func run() (runErr error) {
 		return err
 	}
 
-	natsCfg := natsadapter.Config{
-		NatsURL:    cfg.NATS.URL,
-		Stream:     cfg.NATS.Stream,
-		Consumer:   cfg.NATS.Consumer,
-		Subjects:   []string{"events"},
-		RuleSets:   cfg.NATS.RuleSets,
-		AckWait:    cfg.NATSAckWait(),
-		MaxDeliver: cfg.Worker.NATSMaxDeliver,
-		NumShards:  cfg.Worker.NumShards,
-	}
-	publisher, err := natsadapter.NewPublisher(natsCfg)
-	if err != nil {
-		return fmt.Errorf("initialize NATS event publisher: %w", err)
-	}
-	defer func() {
-		if err := publisher.Close(); err != nil {
-			runErr = errors.Join(runErr, fmt.Errorf("close NATS event publisher: %w", err))
-		}
-	}()
-
-	compiler := rules.NewCompiler(rules.DefaultLimits())
 	repositories := db.Repositories()
-
+	compiler := rules.NewCompiler(rules.DefaultLimits())
 	rulesSvc := svcrules.NewService(
 		compiler,
 		repositories.Rules,
@@ -87,47 +63,40 @@ func run() (runErr error) {
 		repositories.NewRuleTxRepositories,
 	).WithContractRegistry(repositories.Contracts)
 
-	workflowSvc := svcworkflow.NewService(
-		repositories.Workflows,
-		domain.SystemClock{},
-	)
-
+	workflowSvc := svcworkflow.NewService(repositories.Workflows, domain.SystemClock{})
 	batchSvc := svcbatches.NewService(
 		repositories.Batches,
-		nil, // events processor - not needed for query API
+		nil, // The API exposes batch status only; event processing is worker-owned.
 		domain.SystemClock{},
 		domain.BatchConfig{Mode: domain.BatchModeNone},
 	)
-
 	quarantineSvc := svcquarantine.NewService(repositories.Quarantine)
-	domainServicesSvc := svcdomains.NewService(
-		repositories.DomainServices,
-		domain.SystemClock{},
-	)
+	domainServicesSvc := svcdomains.NewService(repositories.DomainServices, domain.SystemClock{})
 
-	workflowDefRepo := repositories.WorkflowDefinitions
-
-	// Configure first-party JWT validation when a secret is supplied.
 	var authValidator *auth.Validator
 	if cfg.Auth.JWTSecret != "" {
 		authValidator = auth.NewValidator([]byte(cfg.Auth.JWTSecret), cfg.Auth.JWTIssuer, cfg.Auth.JWTAudience)
 	}
 
-	router := http.NewRouterWithPublisher(
+	router := httpapi.NewRouterWithConfig(
 		rulesSvc,
 		workflowSvc,
-		workflowDefRepo,
+		repositories.WorkflowDefinitions,
 		repositories.Contracts,
 		batchSvc,
 		quarantineSvc,
-		repositories.ScheduledEvents,
-		publisher,
-		cfg.Worker.NumShards,
-		http.RouterConfig{
-			AuthValidator: authValidator, RequireAuth: cfg.Auth.RequireAuth, RequiredScopes: cfg.Auth.RequiredScopes,
-			InboxRepo: repositories.Inbox, ExecutionRepo: repositories.Executions, OutboxRepo: repositories.Outbox,
-			DomainServices:  domainServicesSvc,
-			ReadinessChecks: map[string]func(context.Context) error{"database": db.Ping, "nats": publisher.Ping},
+		httpapi.RouterConfig{
+			AuthValidator:  authValidator,
+			RequireAuth:    cfg.Auth.RequireAuth,
+			RequiredScopes: cfg.Auth.RequiredScopes,
+			NumShards:      cfg.Worker.NumShards,
+			InboxRepo:      repositories.Inbox,
+			ExecutionRepo:  repositories.Executions,
+			OutboxRepo:     repositories.Outbox,
+			DomainServices: domainServicesSvc,
+			ReadinessChecks: map[string]func(context.Context) error{
+				"database": db.Ping,
+			},
 		},
 	)
 

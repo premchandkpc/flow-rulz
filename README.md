@@ -8,12 +8,16 @@ FlowRulz is a Go-based, event-driven rules runtime. Rules are compiled into immu
 
 | Process | Entrypoint | Responsibility |
 |---|---|---|
-| HTTP API | cmd/api | Rule revisions/activation, workflows, contracts, batches, quarantine, scheduled events, tenant domains/services, event ingestion and tracing |
+| HTTP API (control plane) | cmd/api | Rule revisions/activation, admin-scoped workflow definitions, contracts, batch/quarantine read views, tenant domains/services, read-only execution and trace views |
 | Worker | cmd/worker | NATS JetStream consumption, shard leases/fencing, per-process key serialization, event evaluation, outbox publishing |
 | Code generator | cmd/codegen | Generate Go, Java, Protobuf, and JSON Schema artifacts from a contract already registered in storage |
 | Migration CLI | cmd/migrate | Apply pending migrations; only the up command is implemented |
 
 The root module uses Go 1.26.0. Both sdk/go and the newer sdk/go/flowrulz client are separate Go modules; each example application also has its own module. CI tests every module separately because nested go.mod files are not included in a parent-module ./... command.
+
+## Control plane / data plane boundary
+
+The HTTP API is a control-plane service. It creates and validates configuration (domains, contracts, rule revisions, workflow definitions, and registered provider/service capabilities) and exposes management/read-only operational views. It does not accept business events and does not connect to NATS to publish them. Producers publish `EventEnvelope` messages directly to NATS JetStream using the configured subject and shard contract. Only `cmd/worker` consumes business events and evaluates rules. The Go SDK's HTTP event transport is rejected; configure `FLOWRULZ_TRANSPORT=nats` for event publication. A `schedule_event` rule action is persisted through the transactional outbox and then the worker-owned scheduler. Correlated workflow `wait`/resume semantics are not yet supported.
 
 ## Event lifecycle
 
@@ -100,7 +104,7 @@ Environment variable names and local defaults are documented in .env.example. AP
 - internal/adapters contains HTTP management handlers, PostgreSQL, MongoDB, NATS, Redis, fake test destinations, and NATS effect destinations.
 - internal/storage selects and wires the configured persistence backend.
 - sdk/go/runtime is the original standalone producer/consumer SDK module.
-- sdk/go/flowrulz is a separate client SDK module with local/HTTP/gRPC/NATS transports and a basic client example.
+- sdk/go/flowrulz is a separate client SDK module. NATS is the supported event transport; HTTP ingestion, gRPC transport and local evaluation are not available in the current runtime.
 - examples contains banking, e-commerce, and food-delivery contracts, rules, workflows, and sample applications. Typed domain code lives in `domains/<domain>/builds/go` (separate Go modules) and is produced by `make generate-domain DOMAIN=<domain>` from the contracts stored in the database; example services import it from there and the SDK from `sdk/go/flowrulz`.
 - migrations contains numbered PostgreSQL migrations.
 - docs contains architecture diagrams, rules, operations, roadmap, and dated audit notes.

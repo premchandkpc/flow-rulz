@@ -3,10 +3,13 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/middleware"
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/responses"
+	authn "github.com/flowrulz/flow-rulz/internal/auth"
 	"github.com/flowrulz/flow-rulz/internal/domain"
 	"github.com/flowrulz/flow-rulz/internal/ports"
 )
@@ -27,8 +30,24 @@ func NewWorkflowHandler(workflowSvc ports.WorkflowService, ruleSvc ports.RuleSer
 	}
 }
 
-// RegisterRoutes registers the handler's HTTP routes on mux.
+// RegisterRoutes registers the safe control-plane route set.
 func (h *WorkflowHandler) RegisterRoutes(mux *http.ServeMux) {
+	h.RegisterControlPlaneRoutes(mux)
+}
+
+// RegisterControlPlaneRoutes registers configuration and read-only workflow views.
+// Runtime instance creation and transitions are worker-owned.
+func (h *WorkflowHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /v1/workflows/{workflowID}", h.GetWorkflow)
+	mux.HandleFunc("GET /v1/workflows", h.ListWorkflows)
+	mux.HandleFunc("GET /v1/workflows/definitions", h.ListWorkflowDefinitions)
+	mux.HandleFunc("GET /v1/workflows/definitions/{workflowType}", h.GetWorkflowDefinition)
+	mux.HandleFunc("GET /v1/workflows/definitions/{workflowType}/{version}", h.GetWorkflowDefinition)
+	mux.Handle("POST /v1/workflows/definitions", http.HandlerFunc(h.createWorkflowDefinitionAsAdmin))
+}
+
+// RegisterAllRoutes registers runtime mutation routes for focused handler tests only.
+func (h *WorkflowHandler) RegisterAllRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/workflows", h.CreateWorkflow)
 	mux.HandleFunc("GET /v1/workflows/{workflowID}", h.GetWorkflow)
 	mux.HandleFunc("POST /v1/workflows/{workflowID}/transition", h.TransitionWorkflow)
@@ -36,6 +55,28 @@ func (h *WorkflowHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/workflows/definitions", h.ListWorkflowDefinitions)
 	mux.HandleFunc("GET /v1/workflows/definitions/{workflowType}", h.GetWorkflowDefinition)
 	mux.HandleFunc("GET /v1/workflows/definitions/{workflowType}/{version}", h.GetWorkflowDefinition)
+}
+
+// createWorkflowDefinitionAsAdmin restricts global workflow configuration to platform admins.
+func (h *WorkflowHandler) createWorkflowDefinitionAsAdmin(w http.ResponseWriter, r *http.Request) {
+	if !requireWorkflowDefinitionAdmin(w, r) {
+		return
+	}
+	h.CreateWorkflowDefinition(w, r)
+}
+
+// requireWorkflowDefinitionAdmin allows local development, but fails closed for
+// test, staging, production, and an unset APP_ENV unless the caller has admin scope.
+func requireWorkflowDefinitionAdmin(w http.ResponseWriter, r *http.Request) bool {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+	if env == "development" || env == "dev" {
+		return true
+	}
+	if authn.HasScope(r.Context(), "admin") || authn.HasScope(r.Context(), "flowrulz:admin") {
+		return true
+	}
+	responses.WriteError(w, http.StatusForbidden, "platform admin scope is required", responses.CodeForbidden)
+	return false
 }
 
 // CreateWorkflow creates a workflow instance for the current tenant.
@@ -228,9 +269,8 @@ func (h *WorkflowHandler) ListWorkflowDefinitions(w http.ResponseWriter, r *http
 	})
 }
 
-// CreateWorkflowDefinition is intentionally not registered on the tenant-facing router.
-// Definitions are global platform configuration until a separately authorized admin API
-// and an explicit ownership model are introduced.
+// CreateWorkflowDefinition creates a global platform workflow definition. The control-plane
+// router exposes this operation only to callers with a platform admin scope.
 func (h *WorkflowHandler) CreateWorkflowDefinition(w http.ResponseWriter, r *http.Request) {
 	var def domain.WorkflowDefinition
 	if err := decodeRequestBody(r, &def); err != nil {

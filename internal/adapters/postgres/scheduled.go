@@ -235,14 +235,18 @@ func scanScheduledEvents(rows pgx.Rows) ([]*domain.ScheduledEvent, error) {
 	for rows.Next() {
 		var evt domain.ScheduledEvent
 		var releasedAt *time.Time
+		var lastError *string
 		if err := rows.Scan(
 			&evt.EventID, &evt.TenantID, &evt.EventType, &evt.PartitionKey,
 			&evt.WorkflowID, &evt.Payload, &evt.Headers, &evt.ScheduledAt,
-			&evt.Status, &evt.CreatedAt, &releasedAt, &evt.RetryAt, &evt.RetryCount, &evt.LastError,
+			&evt.Status, &evt.CreatedAt, &releasedAt, &evt.RetryAt, &evt.RetryCount, &lastError,
 		); err != nil {
 			return nil, fmt.Errorf("scan scheduled event: %w", err)
 		}
 		evt.ReleasedAt = releasedAt
+		if lastError != nil {
+			evt.LastError = *lastError
+		}
 		events = append(events, &evt)
 	}
 	if err := rows.Err(); err != nil {

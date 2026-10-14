@@ -48,7 +48,7 @@ type SimulationLogEntry = {
 type SimulationEvent = {
   id: string;
   type: string;
-  scenario: Exclude<SimulationScenario, "all">;
+  scenario: string;
   partitionKey: string;
   shard: number;
   summary: string;
@@ -74,7 +74,7 @@ const NAV: Array<{ id: NavKey; label: string; icon: string }> = [
 ];
 const ROUTES = [
   { method: "GET", path: "/health", description: "API liveness" },
-  { method: "GET", path: "/ready", description: "Dependency readiness (database, NATS)" },
+  { method: "GET", path: "/ready", description: "Database readiness" },
   { method: "GET", path: "/v1/contracts", description: "List registered contracts" },
   { method: "POST", path: "/v1/contracts", description: "Register a contract" },
   { method: "GET", path: "/v1/rules/active", description: "List active rules for the tenant" },
@@ -82,14 +82,17 @@ const ROUTES = [
   { method: "POST", path: "/v1/rules/{ruleSet}/revisions", description: "Compile and activate a rule revision" },
   { method: "GET", path: "/v1/workflows", description: "List workflows" },
   { method: "GET", path: "/v1/workflows/definitions", description: "List workflow definitions" },
+  { method: "POST", path: "/v1/workflows/definitions", description: "Create a workflow definition (platform admin scope required)" },
+  { method: "GET", path: "/v1/workflows/{workflowID}", description: "Read a workflow instance" },
   { method: "GET", path: "/v1/events/{eventID}/trace", description: "Trace event executions and emitted events" },
   { method: "GET", path: "/v1/domains", description: "List tenant event domains" },
   { method: "POST", path: "/v1/domains", description: "Create a tenant event domain" },
   { method: "GET", path: "/v1/services", description: "List tenant event-consuming services" },
   { method: "POST", path: "/v1/services", description: "Create a service and domain subscriptions" },
-  { method: "GET", path: "/v1/batches", description: "List batches" },
+  { method: "GET", path: "/v1/batches", description: "List batch status" },
+  { method: "GET", path: "/v1/batches/{batchID}", description: "Read batch status" },
   { method: "GET", path: "/v1/quarantine", description: "List quarantined work" },
-  { method: "GET", path: "/v1/scheduled-events", description: "List scheduled events" },
+  { method: "GET", path: "/v1/quarantine/{id}", description: "Read a quarantined item" },
 ] as const;
 
 function readSettings(): Settings {
@@ -97,51 +100,8 @@ function readSettings(): Settings {
   catch { return DEFAULT_SETTINGS; }
 }
 function normalizeBase(value: string) { return value.trim().replace(/\/+$/, ""); }
-function encodeBase64JSON(value: unknown) {
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
-  let binary = "";
-  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
-  return btoa(binary);
-}
-function createScenarioPayload(scenario: Exclude<SimulationScenario, "all">, sequence: number) {
-  const suffix = `${Date.now().toString(36)}-${sequence}`;
-  const clientId = `client-${String((sequence - 1) % 50 + 1).padStart(4, "0")}`;
-  const postalCode = ["94102", "94103", "94107", "94110"][(sequence - 1) % 4];
-  const partitionKey = scenario === "banking" ? `account-${String((sequence - 1) % 50 + 1).padStart(4, "0")}` : scenario === "food-delivery" ? postalCode : clientId;
-  const now = new Date().toISOString();
-  if (scenario === "ecommerce") {
-    return {
-      type: "order.created", partitionKey, scenario, summary: `Order ${suffix} · $${(125 + sequence % 300).toFixed(2)}`,
-      payload: {
-        order_id: `order-${suffix}`, customer_id: clientId, total_amount: 12500 + sequence % 30000, currency: "USD",
-        items: [{ product_id: `product-${String(sequence % 40 + 1).padStart(3, "0")}`, quantity: 1 + sequence % 3, unit_price: 12500 }],
-        shipping_address: { street: `${100 + sequence} Market Street`, city: "San Francisco", state: "CA", postal_code: "94102", country: "US" },
-        created_at: now,
-      },
-    };
-  }
-  if (scenario === "banking") {
-    return {
-      type: "transaction.initiated", partitionKey, scenario, summary: `Transfer ${suffix} · $${(10000 + sequence * 10).toFixed(2)}`,
-      payload: {
-        transaction_id: `txn-${suffix}`, account_id: partitionKey, amount: 1000000 + sequence * 1000,
-        currency: "USD", transaction_type: "transfer", counterparty_account: `account-${sequence + 200}`,
-        description: `simulated-transfer-${sequence}`, initiated_at: now,
-      },
-    };
-  }
-  return {
-    type: "order.placed", partitionKey, scenario, summary: `Delivery ${suffix} · ${postalCode}`,
-    payload: {
-      order_id: `delivery-${suffix}`, customer_id: clientId, restaurant_id: `restaurant-${String(sequence % 30 + 1).padStart(3, "0")}`,
-      total_amount: 2800 + sequence * 10, currency: "USD",
-      items: [{ menu_item_id: `menu-item-${String(sequence % 40 + 1).padStart(3, "0")}`, name: "Market street bowl", quantity: 1, unit_price: 2800 }],
-      delivery_address: { street: `${200 + sequence} Oak Avenue`, city: "San Francisco", state: "CA", postal_code: postalCode },
-      created_at: now,
-    },
-  };
-}
 type FlowObservation = { ran: Map<string, Set<string>>; types: Set<string> };
+
 function observeTrace(node: TraceNode | undefined, seen: FlowObservation) {
   if (!node) return;
   if (node.execution) {
@@ -413,7 +373,7 @@ function RuleFlowMap({ settings, scenario, startRuleSet, events, running }: { se
   const nodes = useMemo(() => layoutRuleFlow(stored, startRuleSet), [stored, startRuleSet]);
   const seen = useMemo(() => {
     const result: FlowObservation = { ran: new Map(), types: new Set() };
-    events.filter(event => event.scenario === scenario).forEach(event => observeTrace(event.trace, result));
+    events.filter(event => event.scenario === scenario || event.scenario === "external").forEach(event => observeTrace(event.trace, result));
     return result;
   }, [events, scenario]);
   const levels = [...new Set(nodes.map(node => node.level))];
@@ -570,16 +530,11 @@ export default function App() {
   const [catalogMessage, setCatalogMessage] = useState("");
   const [catalogView, setCatalogView] = useState<{ title: string; body: string } | null>(null);
   const [simulationScenario, setSimulationScenario] = useState<SimulationScenario>("all");
-  const [simulationPace, setSimulationPace] = useState(4000);
+  const [simulationPace, setSimulationPace] = useState(3000);
   const [simulationEvents, setSimulationEvents] = useState<SimulationEvent[]>([]);
-  const [simulationRunning, setSimulationRunning] = useState(false);
-  const [simulationStopping, setSimulationStopping] = useState(false);
+  const simulationRunning = false;
   const [simulationError, setSimulationError] = useState("");
   const [simulationTraceError, setSimulationTraceError] = useState("");
-  const [simulationNotice, setSimulationNotice] = useState("");
-  const simulationActiveRef = useRef(false);
-  const simulationStopRequestedRef = useRef(false);
-  const simulationWaitRef = useRef<AbortController | null>(null);
   const simulationEventsRef = useRef<SimulationEvent[]>([]);
   const simulationTraceInFlightRef = useRef(new Set<string>());
 
@@ -742,28 +697,34 @@ export default function App() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   useEffect(() => { simulationEventsRef.current = simulationEvents; }, [simulationEvents]);
-  useEffect(() => () => {
-    simulationStopRequestedRef.current = true;
-    simulationWaitRef.current?.abort();
-  }, []);
   const [simulationTraceRefreshedAt, setSimulationTraceRefreshedAt] = useState("");
-  const refreshSimulationTrace = useCallback(async (event: SimulationEvent) => {
-    if (simulationTraceInFlightRef.current.has(event.id)) return;
-    simulationTraceInFlightRef.current.add(event.id);
-    try {
-      const response = unwrap(await apiRequest(settings, `/v1/events/${encodeURIComponent(event.id)}/trace`));
-      const trace = response as TraceNode;
-      setSimulationEvents(current => current.map(item => item.id === event.id ? {
-        ...item,
-        trace: { ...trace, effects: trace.effects || [], type: trace.type || event.type, partition_key: trace.partition_key || event.partitionKey, shard: event.shard },
-      } : item));
-      setSimulationTraceError("");
-    } catch (e) {
-      setSimulationTraceError(e instanceof Error ? e.message : String(e));
-    } finally {
-      simulationTraceInFlightRef.current.delete(event.id);
+  const [traceLookupID, setTraceLookupID] = useState("");
+  const loadTraceByID = async () => {
+    const eventID = traceLookupID.trim();
+    if (!eventID) {
+      setSimulationError("Enter an event ID to inspect its durable execution trace.");
+      return;
     }
-  }, [settings]);
+    setSimulationError("");
+    try {
+      const response = unwrap(await apiRequest(settings, `/v1/events/${encodeURIComponent(eventID)}/trace`));
+      const trace = response as TraceNode;
+      const event: SimulationEvent = {
+        id: trace.event_id || eventID,
+        type: trace.type || "unknown",
+        scenario: "external",
+        partitionKey: trace.partition_key || "",
+        shard: trace.shard || 0,
+        summary: "Trace lookup",
+        sentAt: new Date().toISOString(),
+        trace: { ...trace, effects: trace.effects || [] },
+      };
+      setSimulationEvents(current => [event, ...current.filter(item => item.id !== event.id)].slice(0, 30));
+      setSimulationTraceError("");
+    } catch (error) {
+      setSimulationError(error instanceof Error ? error.message : String(error));
+    }
+  };
   useEffect(() => {
     let stopped = false;
     let failures = 0;
@@ -802,84 +763,9 @@ export default function App() {
       const delay = Math.min(3000 * 2 ** failures, 60000) * (1 + Math.random() * 0.2);
       timer = window.setTimeout(() => void loop(), delay);
     };
-    timer = window.setTimeout(() => void loop(), 3000);
+    timer = window.setTimeout(() => void loop(), simulationPace);
     return () => { stopped = true; window.clearTimeout(timer); };
-  }, [settings]);
-  const startSimulation = async () => {
-    if (simulationActiveRef.current) return;
-    if (!settings.tenant.trim()) {
-      setSimulationError("Set a tenant in Settings before starting a simulation.");
-      return;
-    }
-    simulationActiveRef.current = true;
-    simulationStopRequestedRef.current = false;
-    setSimulationRunning(true);
-    setSimulationStopping(false);
-    setSimulationError("");
-    setSimulationTraceError("");
-    setSimulationNotice("");
-
-    const scenarios: Array<Exclude<SimulationScenario, "all">> = simulationScenario === "all"
-      ? ["ecommerce", "banking", "food-delivery"]
-      : [simulationScenario];
-    const currentRules = new Set(activeRules.map(rule => rule.rule_set || rule.rule_id || rule.ruleSet));
-    const missingRules = [...new Set(scenarios.map(scenario => entryRuleFor(scenario)))].filter(rule => !currentRules.has(rule));
-    if (missingRules.length > 0) {
-      setSimulationNotice(`No active source rules for this tenant: ${missingRules.join(", ")}. Events will still be sent, but may not create downstream events.`);
-    }
-
-    let sequence = 0;
-    try {
-      while (!simulationStopRequestedRef.current) {
-        const scenario = scenarios[sequence % scenarios.length];
-        sequence++;
-        const source = createScenarioPayload(scenario, sequence);
-        const eventID = crypto.randomUUID();
-        const response = unwrap(await apiRequest(settings, `/v1/events/${encodeURIComponent(source.type)}`, {
-          method: "POST",
-          body: JSON.stringify({
-            id: eventID,
-            type: source.type,
-            tenant_id: settings.tenant.trim(),
-            partition_key: source.partitionKey,
-            occurred_at: new Date().toISOString(),
-            data: encodeBase64JSON(source.payload),
-            headers: { source: "flowrulz-console-simulation", scenario },
-          }),
-        }));
-        const event: SimulationEvent = {
-          id: response.event_id || eventID, type: source.type, scenario, partitionKey: source.partitionKey,
-          shard: response.shard, summary: source.summary, sentAt: new Date().toISOString(),
-        };
-        setSimulationEvents(current => [event, ...current].slice(0, 30));
-        void refreshSimulationTrace(event);
-
-        if (simulationStopRequestedRef.current) break;
-        const wait = new AbortController();
-        simulationWaitRef.current = wait;
-        await new Promise<void>(resolve => {
-          const timer = window.setTimeout(resolve, simulationPace);
-          wait.signal.addEventListener("abort", () => { window.clearTimeout(timer); resolve(); }, { once: true });
-        });
-        simulationWaitRef.current = null;
-      }
-    } catch (e) {
-      if (!simulationStopRequestedRef.current) {
-        setSimulationError(e instanceof Error ? e.message : String(e));
-      }
-    } finally {
-      simulationActiveRef.current = false;
-      simulationWaitRef.current = null;
-      simulationStopRequestedRef.current = false;
-      setSimulationRunning(false);
-      setSimulationStopping(false);
-    }
-  };
-  const stopSimulation = () => {
-    simulationStopRequestedRef.current = true;
-    setSimulationStopping(true);
-    simulationWaitRef.current?.abort();
-  };
+  }, [settings, simulationPace]);
   const loadLogs = async () => {
     if (!settings.lokiBase.trim()) { setLogsError("Configure a Loki-compatible query URL in Settings to browse runtime logs. The API currently does not expose a log-tail endpoint."); setLogs([]); return; }
     setLogsBusy(true); setLogsError("");
@@ -1496,7 +1382,7 @@ export default function App() {
 
     // Check which nodes have been observed in traces
     const observedRuleSets = new Set<string>();
-    events.filter(e => e.scenario === scenario).forEach(e => {
+    events.filter(e => e.scenario === scenario || e.scenario === "external").forEach(e => {
       if (e.trace?.execution?.rule_set) observedRuleSets.add(e.trace.execution.rule_set);
       e.trace?.effects.forEach(fx => {
         if (fx.child?.execution?.rule_set) observedRuleSets.add(fx.child.execution.rule_set);
@@ -1625,23 +1511,21 @@ export default function App() {
       </section>}
       {nav === "simulations" && <section className="page-content simulation-page">
         <div className="simulation-hero">
-          <div className="simulation-hero-copy"><div className="eyebrow">LIVE EVENT FLOW</div><h2>Send a service event through the real worker.</h2><p>The simulator publishes the existing example-domain events to this tenant. Follow the actual shard, active rule set, execution, and outbox destinations below.</p></div>
+          <div className="simulation-hero-copy"><div className="eyebrow">RUNTIME OBSERVABILITY</div><h2>Inspect an event processed by the worker.</h2><p>Business events enter through NATS JetStream. The control-plane console does not publish events; use the Go SDK or your producer, then look up the event ID here.</p></div>
           <div className="simulation-controls">
-            <label>Domain<select value={simulationScenario} disabled={simulationRunning} onChange={event => setSimulationScenario(event.target.value as SimulationScenario)}><option value="all">Rotate all example domains</option><option value="ecommerce">E-commerce</option><option value="banking">Banking</option><option value="food-delivery">Food delivery</option></select></label>
-            <label>Publish pace<select value={simulationPace} disabled={simulationRunning} onChange={event => setSimulationPace(Number(event.target.value))}><option value={4000}>Slow · every 4 seconds</option><option value={7000}>Very slow · every 7 seconds</option><option value={10000}>Extra slow · every 10 seconds</option></select></label>
-            {simulationRunning
-              ? <button className="button stop-button" onClick={stopSimulation} disabled={simulationStopping}>{simulationStopping ? "Stopping…" : "■ Stop simulation"}</button>
-              : <button className="button primary" onClick={() => void startSimulation()}>▶ Start simulation</button>}
+            <label>Domain filter<select value={simulationScenario} onChange={event => setSimulationScenario(event.target.value as SimulationScenario)}><option value="all">All example domains</option><option value="ecommerce">E-commerce</option><option value="banking">Banking</option><option value="food-delivery">Food delivery</option></select></label>
+            <label>Refresh pace<select value={simulationPace} onChange={event => setSimulationPace(Number(event.target.value))}><option value={3000}>Every 3 seconds</option><option value={7000}>Every 7 seconds</option><option value={10000}>Every 10 seconds</option></select></label>
+            <label>Event ID<input value={traceLookupID} onChange={event => setTraceLookupID(event.target.value)} placeholder="evt-..." /></label>
+            <button className="button primary" onClick={() => void loadTraceByID()}>Load trace</button>
           </div>
         </div>
-        {simulationNotice && <div className="alert warning"><strong>Rule availability</strong><span>{simulationNotice}</span></div>}
-        {simulationError && <div className="alert error"><strong>Simulation stopped</strong><span>{simulationError}</span><button onClick={() => setSimulationError("")}>×</button></div>}
+        {simulationError && <div className="alert error"><strong>Trace lookup failed</strong><span>{simulationError}</span><button onClick={() => setSimulationError("")}>×</button></div>}
         {simulationTraceRefreshedAt && !simulationTraceError && <small className="trace-refreshed">Traces last refreshed {simulationTraceRefreshedAt}</small>}
         {simulationTraceError && <div className="alert warning"><strong>Trace temporarily unavailable</strong><span>{simulationTraceError}</span></div>}
         
         {/* Step-by-step flow visualization */}
         <div className="simulation-flow" aria-label="Live event processing path">
-          <div className={`simulation-flow-step flow-${flowStepState(0)}`}><span className="flow-step-icon">A</span><span><strong>Source service</strong><small>{latestSimulationEvent ? `${latestSimulationEvent.scenario} · ${latestSimulationEvent.type}` : "Example producer sends the event"}</small></span></div><span className={`flow-connector flow-${flowConnectorState(0)}`}>→</span>
+          <div className={`simulation-flow-step flow-${flowStepState(0)}`}><span className="flow-step-icon">A</span><span><strong>Source service</strong><small>{latestSimulationEvent ? `${latestSimulationEvent.scenario} · ${latestSimulationEvent.type}` : "Producer sends event to NATS JetStream"}</small></span></div><span className={`flow-connector flow-${flowConnectorState(0)}`}>→</span>
           <div className={`simulation-flow-step flow-${flowStepState(1)}`}><span className="flow-step-icon">N</span><span><strong>NATS JetStream</strong><small>{latestSimulationEvent ? `events.shard.${latestSimulationEvent.shard}` : "Shared tenant shard routing"}</small></span></div><span className={`flow-connector flow-${flowConnectorState(1)}`}>→</span>
           <div className={`simulation-flow-step flow-${flowStepState(2)}`}><span className="flow-step-icon">W</span><span><strong>Worker + rule set</strong><small>{latestSimulationEvent?.trace?.execution ? `${latestSimulationEvent.trace.execution.rule_set} · ${latestSimulationEvent.trace.execution.status}` : "Waiting for matching rule set"}</small></span></div><span className={`flow-connector flow-${flowConnectorState(2)}`}>→</span>
           <div className={`simulation-flow-step flow-${flowStepState(3)}`}><span className="flow-step-icon">B</span><span><strong>Outbox destination</strong><small>{latestSimulationEvent?.trace?.effects[0] ? `${latestSimulationEvent.trace.effects[0].destination} · ${latestSimulationEvent.trace.effects[0].status}` : "Child event or configured service"}</small></span></div>
@@ -1656,8 +1540,8 @@ export default function App() {
         />
         
         <div className="metric-grid simulation-metrics">
-          <MetricCard label="Simulation" value={simulationRunning ? simulationStopping ? "Stopping" : "Running" : "Stopped"} hint={`Tenant · ${settings.tenant || "not configured"}`} icon={simulationRunning ? "●" : "○"}/>
-          <MetricCard label="Events tracked" value={simulationEvents.length} hint="Recent simulator events, newest first" icon="↗"/>
+          <MetricCard label="Runtime" value={simulationRunning ? "Running" : "Trace viewer"} hint={`Tenant · ${settings.tenant || "not configured"}`} icon={simulationRunning ? "●" : "○"}/>
+          <MetricCard label="Events tracked" value={simulationEvents.length} hint="Events looked up in this session, newest first" icon="↗"/>
           <MetricCard label="Worker processed" value={simulationProcessed} hint="Completed executions in current event list" icon="⚙"/>
           <MetricCard label="Effects delivered" value={simulationDelivered} hint="Outbox deliveries in observed traces" icon="⇢"/>
         </div>

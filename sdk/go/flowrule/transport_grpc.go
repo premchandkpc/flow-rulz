@@ -11,7 +11,7 @@ type grpcTransport struct {
 }
 
 func newGRPCTransport(cfg *TransportConfig) (Transport, error) {
-	return nil, ErrConfig("gRPC transport not available: protobuf definitions not found. Use NATS, HTTP, or Local transport instead.")
+	return nil, ErrConfig("gRPC transport not available: no gRPC server is implemented. Use NATS to publish events; HTTP event ingestion and local evaluation are not supported.")
 }
 
 func (t *grpcTransport) Send(ctx context.Context, env *Envelope) error {

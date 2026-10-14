@@ -49,7 +49,7 @@ func (s *quarantineServiceStub) Delete(_ context.Context, tenantID, id string) e
 func quarantineRequest(t *testing.T, method, path string, service *quarantineServiceStub) *httptest.ResponseRecorder {
 	t.Helper()
 	mux := http.NewServeMux()
-	NewQuarantineHandler(service).RegisterRoutes(mux)
+	NewQuarantineHandler(service).RegisterAllRoutes(mux)
 	req := httptest.NewRequest(method, path, nil)
 	req.Header.Set("X-Tenant-ID", "tenant-a")
 	res := httptest.NewRecorder()

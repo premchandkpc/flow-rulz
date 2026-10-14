@@ -40,8 +40,12 @@ flowchart TB
     Leaf --> Ops
 
     Emit["emit: topic and data<br/>effect_type emit"]:::ok
+    Child["emit_event: typed child event<br/>effect_type emit_event"]:::ok
+    Schedule["schedule_event: delay_seconds, type, data<br/>durable outbox intent + worker scheduler"]:::ok
     Cmd["command: destination, name, data<br/>effect_type command"]:::ok
     Then --> Emit
+    Then --> Child
+    Then --> Schedule
     Then --> Cmd
 
     Contract["input_contract name, version, schema_hash<br/>validated against the contract registry<br/>before activation"]:::ok

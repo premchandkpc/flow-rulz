@@ -79,7 +79,7 @@ func TestGetBatchPassesTenantToService(t *testing.T) {
 	service := &batchServiceStub{batch: &domain.BatchRun{BatchID: "batch-1", TenantID: "tenant-a"}}
 	handler := NewBatchHandler(service)
 	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
+	handler.RegisterAllRoutes(mux)
 	req := httptest.NewRequest(http.MethodGet, "/v1/batches/batch-1", nil)
 	req.Header.Set("X-Tenant-ID", "tenant-a")
 	response := httptest.NewRecorder()

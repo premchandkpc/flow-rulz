@@ -260,7 +260,7 @@ func writeGeneratedContractResponse(
 // Tenant identity alone is not sufficient authorization for platform-wide data.
 func requireContractAdmin(w http.ResponseWriter, r *http.Request) bool {
 	env := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
-	if env == "" || env == "development" || env == "dev" || env == "test" {
+	if env == "development" || env == "dev" || env == "test" {
 		return true
 	}
 	if auth.HasScope(r.Context(), "contracts:admin") ||

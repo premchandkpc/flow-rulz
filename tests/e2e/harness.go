@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	effectadapters "github.com/flowrulz/flow-rulz/internal/adapters/effects"
 	"github.com/flowrulz/flow-rulz/internal/adapters/nats"
 	"github.com/flowrulz/flow-rulz/internal/application"
 	"github.com/flowrulz/flow-rulz/internal/config"
@@ -37,14 +38,23 @@ type TestEnv struct {
 	NATSConn          *natsgo.Conn
 	WorkerCancel      context.CancelFunc
 	WorkerDone        chan error
+	Scheduler         *scheduler.Scheduler
 	Config            *config.Config
 	Storage           *storage.Storage
 	ShardCount        uint32
 }
 
-type fakeEffectSender struct{}
+type fakeEffectSender struct {
+	scheduled *effectadapters.ScheduledEventSender
+}
 
 func (f *fakeEffectSender) Send(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
+	if effect != nil && effect.EffectType == domain.EffectTypeScheduleEvent {
+		if f.scheduled == nil {
+			return fmt.Errorf("scheduled-event sender is not configured in e2e harness")
+		}
+		return f.scheduled.Send(ctx, effect, idempotencyKey)
+	}
 	log.Printf("fake sender: effect %s to %s", effect.ID, effect.Destination)
 	return nil
 }
@@ -165,7 +175,9 @@ func StartStack(t *testing.T) *TestEnv {
 	evaluator := rules.NewEvaluator(clock)
 
 	// Use fake effect sender for testing
-	effectSender := &fakeEffectSender{}
+	effectSender := &fakeEffectSender{
+		scheduled: effectadapters.NewScheduledEventSender(repositories.ScheduledEvents),
+	}
 
 	eventsSvc := svcevents.NewService(
 		compiler, evaluator, repositories.Quarantine, clock,
@@ -269,6 +281,9 @@ func (e *TestEnv) Stop() {
 		case <-time.After(5 * time.Second):
 			log.Println("worker shutdown timeout")
 		}
+	}
+	if e.Scheduler != nil {
+		e.Scheduler.Stop()
 	}
 	if e.Storage != nil {
 		e.Storage.Close()

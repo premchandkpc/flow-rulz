@@ -121,8 +121,9 @@ func run() (runErr error) {
 	// Route child events, commands, and tenant-service deliveries through NATS JetStream.
 	// Each registered service has a unique subject for durable fan-out.
 	serviceSender := effects.NewDomainServiceSender(repositories.DomainServices, publisher)
+	scheduledEventSender := effects.NewScheduledEventSender(repositories.ScheduledEvents)
 	effectSender := svceffects.NewRouterWithConfig(
-		publisher, commandSender, eventSubject, cfg.Worker.NumShards, serviceSender,
+		publisher, commandSender, eventSubject, cfg.Worker.NumShards, serviceSender, scheduledEventSender,
 	)
 	workerID := cfg.WorkerID()
 	eventsSvc := svcevents.NewService(

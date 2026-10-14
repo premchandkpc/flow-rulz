@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
 )
@@ -149,11 +150,13 @@ func TestEvaluateEmitEventDeterministicChildID(t *testing.T) {
 	}
 
 	env := &domain.EventEnvelope{
-		ID:           "evt-parent",
-		Type:         "order.created",
-		TenantID:     "acme",
-		PartitionKey: "order-42",
-		Data:         json.RawMessage(`{"total": 42}`),
+		ID:            "evt-parent",
+		Type:          "order.created",
+		TenantID:      "acme",
+		PartitionKey:  "order-42",
+		WorkflowID:    "wf-42",
+		CorrelationID: "corr-42",
+		Data:          json.RawMessage(`{"total": 42}`),
 	}
 
 	decision1, _ := NewEvaluator(domain.SystemClock{}).Evaluate(revision, env, nil)
@@ -171,8 +174,12 @@ func TestEvaluateEmitEventDeterministicChildID(t *testing.T) {
 	if child1.ID != child2.ID {
 		t.Errorf("child event ID not deterministic: %s != %s", child1.ID, child2.ID)
 	}
-	if child1.ID != domain.ComputeChildEventID("evt-parent", "request-payment", 0) {
+	if child1.ID != domain.ComputeChildEventID("acme", "evt-parent", "request-payment", 0) {
 		t.Errorf("child event ID doesn't match ComputeChildEventID: %s", child1.ID)
+	}
+	if child1.WorkflowID != "wf-42" || child1.CorrelationID != "corr-42" || child1.CausationID != "evt-parent" {
+		t.Fatalf("child correlation metadata = workflow %q, correlation %q, causation %q",
+			child1.WorkflowID, child1.CorrelationID, child1.CausationID)
 	}
 }
 
@@ -651,4 +658,92 @@ func TestTemplateUnresolvedPathIsError(t *testing.T) {
 func evalLeafForTest(p domain.Predicate, data json.RawMessage, facts map[string]json.RawMessage) (bool, error) {
 	e := &Evaluator{clock: domain.SystemClock{}}
 	return e.evalLeaf(p, data, facts)
+}
+
+func TestCompareNumericEqualHandlesUint64WithoutOverflow(t *testing.T) {
+	const maxUint64 = ^uint64(0)
+	if !compareNumericEqual(maxUint64, maxUint64) {
+		t.Fatal("equal maximum uint64 values should compare equal")
+	}
+	if compareNumericEqual(maxUint64, maxUint64-1) {
+		t.Fatal("distinct maximum-range uint64 values must not compare equal")
+	}
+}
+
+func TestCompareNumericEqualPreservesLargeJSONIntegerPrecision(t *testing.T) {
+	if compareNumericEqual(json.Number("9007199254740992"), json.Number("9007199254740993")) {
+		t.Fatal("distinct integers above float64's exact range must not compare equal")
+	}
+	if !compareNumericEqual(json.Number("1.0"), json.Number("1")) {
+		t.Fatal("equivalent JSON numeric values should compare equal")
+	}
+}
+
+func TestEvaluateScheduleEventCreatesDurableIntent(t *testing.T) {
+	source := json.RawMessage(`{
+		"rule_set":"order.created",
+		"revision":1,
+		"mode":"first_match",
+		"rules":[{
+			"id":"schedule-reminder",
+			"priority":1,
+			"when":{"path":"$.order_id","op":"exists"},
+			"then":[{
+				"schedule_event":{
+					"type":"order.reminder",
+					"delay_seconds":60,
+					"partition_key_policy":"inherit",
+					"data":{"order_id":"{{$.order_id}}"}
+				}
+			}]
+		}]
+	}`)
+	revision, err := NewCompiler(DefaultLimits()).Compile(source)
+	if err != nil {
+		t.Fatalf("compile schedule action: %v", err)
+	}
+	now := time.Now().UTC()
+	decision, err := NewEvaluator(domain.SystemClock{}).Evaluate(revision, &domain.EventEnvelope{
+		ID: "evt-schedule", Type: "order.created", TenantID: "tenant-a", PartitionKey: "order-7",
+		WorkflowID: "wf-7", CorrelationID: "corr-7", OccurredAt: now, Data: json.RawMessage(`{"order_id":"order-7"}`),
+	}, nil)
+	if err != nil {
+		t.Fatalf("evaluate schedule action: %v", err)
+	}
+	if len(decision.Effects) != 1 || decision.Effects[0].EffectType != domain.EffectTypeScheduleEvent {
+		t.Fatalf("effects = %#v, want one schedule_event effect", decision.Effects)
+	}
+	var scheduled domain.ScheduledEvent
+	if err := json.Unmarshal(decision.Effects[0].Payload, &scheduled); err != nil {
+		t.Fatalf("decode scheduled intent: %v", err)
+	}
+	if scheduled.EventID == "" || scheduled.TenantID != "tenant-a" || scheduled.EventType != "order.reminder" {
+		t.Fatalf("scheduled identity = %#v", scheduled)
+	}
+	if scheduled.PartitionKey != "order-7" || scheduled.WorkflowID != "wf-7" || scheduled.Headers["flowrulz_correlation_id"] != "corr-7" {
+		t.Fatalf("scheduled routing = %#v", scheduled)
+	}
+	if !scheduled.ScheduledAt.After(now) || scheduled.Status != domain.ScheduledEventStatusPending {
+		t.Fatalf("scheduled state = %#v, want future pending event", scheduled)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(scheduled.Payload, &payload); err != nil {
+		t.Fatalf("decode scheduled payload: %v", err)
+	}
+	if payload["order_id"] != "order-7" {
+		t.Fatalf("scheduled payload = %#v, want order_id order-7", payload)
+	}
+}
+
+func TestResolveEmitEventPartitionKeyMissingPathReturnsUsefulError(t *testing.T) {
+	_, err := resolveEmitEventPartitionKey(&domain.EmitEventAction{
+		PartitionKeyPolicy: domain.PartitionKeyPolicyFromData,
+		PartitionKeyPath:   "$.missing",
+	}, &domain.EventEnvelope{Data: json.RawMessage(`{}`)})
+	if err == nil {
+		t.Fatal("expected missing partition key path to fail")
+	}
+	if strings.Contains(err.Error(), "%!w(<nil>)") {
+		t.Fatalf("error contains malformed nil wrapping: %v", err)
+	}
 }

@@ -9,7 +9,7 @@ const (
 	ScheduledEventStatusPending ScheduledEventStatus = "pending"
 	// ScheduledEventStatusClaimed indicates the event has been claimed by a worker.
 	ScheduledEventStatusClaimed ScheduledEventStatus = "claimed"
-	// ScheduledEventStatusReleased indicates the event was released back to pending.
+	// ScheduledEventStatusReleased indicates the event was successfully published to the event stream.
 	ScheduledEventStatusReleased ScheduledEventStatus = "released"
 	// ScheduledEventStatusFailed indicates the event failed processing.
 	ScheduledEventStatusFailed ScheduledEventStatus = "failed"

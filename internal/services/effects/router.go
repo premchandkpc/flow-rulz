@@ -15,6 +15,7 @@ type Router struct {
 	publisher   ports.EventPublisher
 	command     ports.EffectSender
 	service     ports.EffectSender
+	scheduled   ports.EffectSender
 	baseSubject string
 	numShards   uint32
 }
@@ -37,6 +38,9 @@ func NewRouterWithConfig(publisher ports.EventPublisher, commandSender ports.Eff
 	if len(serviceSenders) > 0 {
 		router.service = serviceSenders[0]
 	}
+	if len(serviceSenders) > 1 {
+		router.scheduled = serviceSenders[1]
+	}
 	return router
 }
 
@@ -46,6 +50,12 @@ func NewRouterWithConfig(publisher ports.EventPublisher, commandSender ports.Eff
 func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
 	if effect == nil {
 		return fmt.Errorf("send effect: effect is nil")
+	}
+	if effect.EffectType == domain.EffectTypeScheduleEvent {
+		if r.scheduled == nil {
+			return fmt.Errorf("schedule event: scheduled-event sender is not configured")
+		}
+		return r.scheduled.Send(ctx, effect, idempotencyKey)
 	}
 	if effect.EffectType != domain.EffectTypeEmitEvent {
 		if effect.EffectType == domain.EffectTypeServiceEvent {

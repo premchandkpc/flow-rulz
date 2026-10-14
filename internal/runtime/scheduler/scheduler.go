@@ -206,14 +206,16 @@ func scheduledRetryDelay(attempt int) time.Duration {
 
 func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent, idempotencyKey string) error {
 	env := &domain.EventEnvelope{
-		ID:           evt.EventID,
-		Type:         evt.EventType,
-		TenantID:     evt.TenantID,
-		PartitionKey: evt.PartitionKey,
-		WorkflowID:   evt.WorkflowID,
-		OccurredAt:   s.clock.Now(),
-		Data:         evt.Payload,
-		Headers:      evt.Headers,
+		ID:            evt.EventID,
+		Type:          evt.EventType,
+		TenantID:      evt.TenantID,
+		PartitionKey:  evt.PartitionKey,
+		WorkflowID:    evt.WorkflowID,
+		CorrelationID: evt.Headers["flowrulz_correlation_id"],
+		CausationID:   evt.Headers["flowrulz_parent_event_id"],
+		OccurredAt:    s.clock.Now(),
+		Data:          evt.Payload,
+		Headers:       evt.Headers,
 	}
 
 	// Add idempotency key to headers

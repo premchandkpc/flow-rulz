@@ -223,9 +223,10 @@ func ValidOp(op Operator) bool {
 
 // Action represents the action.
 type Action struct {
-	Emit      *EmitAction      `json:"emit,omitempty"`
-	EmitEvent *EmitEventAction `json:"emit_event,omitempty"`
-	Command   *CommandAction   `json:"command,omitempty"`
+	Emit          *EmitAction          `json:"emit,omitempty"`
+	EmitEvent     *EmitEventAction     `json:"emit_event,omitempty"`
+	ScheduleEvent *ScheduleEventAction `json:"schedule_event,omitempty"`
+	Command       *CommandAction       `json:"command,omitempty"`
 }
 
 // EmitAction represents the emit action.
@@ -257,6 +258,19 @@ type EmitEventAction struct {
 	Data               json.RawMessage    `json:"data"`
 }
 
+// MaxScheduledDelaySeconds bounds a rule's scheduled-event delay to one year.
+const MaxScheduledDelaySeconds int64 = 31_536_000
+
+// ScheduleEventAction durably schedules a child event after the configured delay.
+type ScheduleEventAction struct {
+	Type               string             `json:"type"`
+	DelaySeconds       int64              `json:"delay_seconds"`
+	PartitionKey       string             `json:"partition_key,omitempty"`
+	PartitionKeyPolicy PartitionKeyPolicy `json:"partition_key_policy,omitempty"`
+	PartitionKeyPath   string             `json:"partition_key_path,omitempty"`
+	Data               json.RawMessage    `json:"data"`
+}
+
 // CommandAction represents the command action.
 type CommandAction struct {
 	Destination string          `json:"destination"`
@@ -285,6 +299,8 @@ const (
 	EffectTypeEmit EffectType = "emit"
 	// EffectTypeEmitEvent identifies the effect type emit_event value.
 	EffectTypeEmitEvent EffectType = "emit_event"
+	// EffectTypeScheduleEvent identifies a durable scheduled-event intent.
+	EffectTypeScheduleEvent EffectType = "schedule_event"
 	// EffectTypeCommand identifies the effect type command value.
 	EffectTypeCommand EffectType = "command"
 	// EffectTypeServiceEvent identifies the effect type service_event value.
@@ -560,9 +576,11 @@ func ComputeSourceHash(source json.RawMessage) string {
 	return fmt.Sprintf("%x", h)
 }
 
-// ComputeChildEventID provides the compute child event id.
-func ComputeChildEventID(parentEventID, ruleID string, actionIndex int) string {
-	raw := fmt.Sprintf("child|%s|%s|%d", parentEventID, ruleID, actionIndex)
+// ComputeChildEventID returns a deterministic child event ID scoped to its tenant.
+// Length-prefixing prevents delimiter ambiguity and tenant inclusion prevents cross-tenant collisions.
+func ComputeChildEventID(tenantID, parentEventID, ruleID string, actionIndex int) string {
+	raw := fmt.Sprintf("child|%d:%s|%d:%s|%d:%s|%d",
+		len(tenantID), tenantID, len(parentEventID), parentEventID, len(ruleID), ruleID, actionIndex)
 	h := sha256.Sum256([]byte(raw))
 	return fmt.Sprintf("%x", h)
 }

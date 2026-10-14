@@ -17,7 +17,7 @@ Native configuration defaults the HTTP server to `127.0.0.1:8080`. The local Com
 | Code generator | `cmd/codegen/main.go` | Generate Go, Java, Protobuf or JSON Schema artifacts from a contract already registered in storage |
 | Migration CLI | `cmd/migrate/main.go` | Apply pending SQL migrations; only `up` is implemented |
 
-The API starts HTTP only. There is no gRPC server or active gRPC listener. The client SDK includes a gRPC transport interface, but that is not a server implementation in this repository. `/health` is a liveness endpoint only; it does not prove storage or NATS readiness.
+The API starts HTTP only. There is no gRPC server or active gRPC listener. The client SDK includes a gRPC transport interface, but that is not a server implementation in this repository. `/health` is liveness only. `/ready` probes the database; it does not prove NATS or worker readiness.
 
 ## Worker metrics for the React console
 

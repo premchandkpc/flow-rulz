@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
@@ -287,10 +288,10 @@ func compareEq(actual interface{}, expected interface{}) bool {
 	// For numbers, compare numerically but only if both are numeric types
 	// Reject string<->number, bool<->string coercion
 
-	// json.Number vs json.Number: compare as decimal strings
+	// JSON numbers compare by numeric value rather than textual representation.
 	if a, aok := actual.(json.Number); aok {
 		if b, bok := expected.(json.Number); bok {
-			return a.String() == b.String()
+			return compareNumericEqual(a, b)
 		}
 		// json.Number vs other numeric type
 		if isNumeric(expected) {
@@ -344,145 +345,62 @@ func isNumeric(v interface{}) bool {
 }
 
 func compareNumericEqual(a, b interface{}) bool {
-	// Convert both to int64 if possible, otherwise float64
-	var ai, bi int64
-	var af, bf float64
-	var aIsInt, bIsInt bool
-
-	switch av := a.(type) {
-	case int:
-		ai, aIsInt = int64(av), true
-	case int8:
-		ai, aIsInt = int64(av), true
-	case int16:
-		ai, aIsInt = int64(av), true
-	case int32:
-		ai, aIsInt = int64(av), true
-	case int64:
-		ai, aIsInt = av, true
-	case uint:
-		ai, aIsInt = int64(av), true
-	case uint8:
-		ai, aIsInt = int64(av), true
-	case uint16:
-		ai, aIsInt = int64(av), true
-	case uint32:
-		ai, aIsInt = int64(av), true
-	case uint64:
-		ai, aIsInt = int64(av), true
-	case float32:
-		af = float64(av)
-	case float64:
-		if av == float64(int64(av)) {
-			ai, aIsInt = int64(av), true
-		} else {
-			af = av
-		}
-	case json.Number:
-		if iv, err := av.Int64(); err == nil {
-			ai, aIsInt = iv, true
-		} else if fv, err := av.Float64(); err == nil {
-			af = fv
-		}
-	}
-
-	switch bv := b.(type) {
-	case int:
-		bi, bIsInt = int64(bv), true
-	case int8:
-		bi, bIsInt = int64(bv), true
-	case int16:
-		bi, bIsInt = int64(bv), true
-	case int32:
-		bi, bIsInt = int64(bv), true
-	case int64:
-		bi, bIsInt = bv, true
-	case uint:
-		bi, bIsInt = int64(bv), true
-	case uint8:
-		bi, bIsInt = int64(bv), true
-	case uint16:
-		bi, bIsInt = int64(bv), true
-	case uint32:
-		bi, bIsInt = int64(bv), true
-	case uint64:
-		bi, bIsInt = int64(bv), true
-	case float32:
-		bf = float64(bv)
-	case float64:
-		if bv == float64(int64(bv)) {
-			bi, bIsInt = int64(bv), true
-		} else {
-			bf = bv
-		}
-	case json.Number:
-		if iv, err := bv.Int64(); err == nil {
-			bi, bIsInt = iv, true
-		} else if fv, err := bv.Float64(); err == nil {
-			bf = fv
-		}
-	}
-
-	if aIsInt && bIsInt {
-		return ai == bi
-	}
-	return af == bf
+	ar, aOK := numericRat(a)
+	br, bOK := numericRat(b)
+	return aOK && bOK && ar.Cmp(br) == 0
 }
 
-func normalizeNumber(v interface{}) interface{} {
-	switch n := v.(type) {
-	case float64:
-		if n == float64(int64(n)) {
-			return int64(n)
-		}
-		return n
+// numericRat converts supported numeric values to exact rational values where
+// possible. This avoids overflow when comparing uint64 values and avoids
+// silently equating distinct integers after conversion to float64.
+func numericRat(value interface{}) (*big.Rat, bool) {
+	var raw string
+	switch n := value.(type) {
+	case int:
+		raw = strconv.FormatInt(int64(n), 10)
+	case int8:
+		raw = strconv.FormatInt(int64(n), 10)
+	case int16:
+		raw = strconv.FormatInt(int64(n), 10)
+	case int32:
+		raw = strconv.FormatInt(int64(n), 10)
 	case int64:
-		return n
+		raw = strconv.FormatInt(n, 10)
+	case uint:
+		raw = strconv.FormatUint(uint64(n), 10)
+	case uint8:
+		raw = strconv.FormatUint(uint64(n), 10)
+	case uint16:
+		raw = strconv.FormatUint(uint64(n), 10)
+	case uint32:
+		raw = strconv.FormatUint(uint64(n), 10)
+	case uint64:
+		raw = strconv.FormatUint(n, 10)
+	case float32:
+		raw = strconv.FormatFloat(float64(n), 'g', -1, 32)
+	case float64:
+		raw = strconv.FormatFloat(n, 'g', -1, 64)
 	case json.Number:
-		if i, err := n.Int64(); err == nil {
-			return i
-		}
-		if f, err := n.Float64(); err == nil {
-			return f
-		}
+		raw = n.String()
+	case string:
+		// Preserve existing support for numeric strings in ordered comparisons.
+		raw = n
+	default:
+		return nil, false
 	}
-	return v
+	rat, ok := new(big.Rat).SetString(raw)
+	return rat, ok
 }
 
 func compareCmp(actual interface{}, expected interface{}) int {
-	a, aOk := toFloat64(actual)
-	b, bOk := toFloat64(expected)
-	if aOk && bOk {
-		if a > b {
-			return 1
-		}
-		if a < b {
-			return -1
-		}
-		return 0
+	a, aOK := numericRat(actual)
+	b, bOK := numericRat(expected)
+	if !aOK || !bOK {
+		// Indicates incompatible types for numeric comparison.
+		return 2
 	}
-	// If either value cannot be converted to a number, return an error indicator
-	// by returning a special value that will cause the comparison to fail
-	// This prevents incorrect lexical comparison like "100" < "20"
-	return 2 // Indicates incompatible types for numeric comparison
+	return a.Cmp(b)
 }
-
-func toFloat64(v interface{}) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int64:
-		return float64(n), true
-	case json.Number:
-		f, err := n.Float64()
-		return f, err == nil
-	case string:
-		f, err := strconv.ParseFloat(n, 64)
-		return f, err == nil
-	}
-	return 0, false
-}
-
 func compareIn(val interface{}, list interface{}) bool {
 	arr, ok := list.([]interface{})
 	if !ok {
@@ -622,6 +540,12 @@ func (e *Evaluator) buildEffect(revision *domain.RuleRevision, event *domain.Eve
 		if err != nil {
 			return domain.Effect{}, err
 		}
+	case action.ScheduleEvent != nil:
+		var err error
+		effect, err = e.buildScheduleEventEffect(effect, event, ruleID, actionIndex, action.ScheduleEvent)
+		if err != nil {
+			return domain.Effect{}, err
+		}
 	case action.Command != nil:
 		effect = buildCommandEffect(effect, action.Command)
 	}
@@ -652,7 +576,7 @@ func (e *Evaluator) buildEmitEventEffect(
 	actionIndex int,
 	action *domain.EmitEventAction,
 ) (domain.Effect, error) {
-	childID := domain.ComputeChildEventID(event.ID, ruleID, actionIndex)
+	childID := domain.ComputeChildEventID(event.TenantID, event.ID, ruleID, actionIndex)
 	partitionKey, err := resolveEmitEventPartitionKey(action, event)
 	if err != nil {
 		return domain.Effect{}, err
@@ -675,6 +599,51 @@ func (e *Evaluator) buildEmitEventEffect(
 	return effect, nil
 }
 
+func (e *Evaluator) buildScheduleEventEffect(
+	effect domain.Effect,
+	event *domain.EventEnvelope,
+	ruleID string,
+	actionIndex int,
+	action *domain.ScheduleEventAction,
+) (domain.Effect, error) {
+	if action.DelaySeconds < 1 || action.DelaySeconds > domain.MaxScheduledDelaySeconds {
+		return domain.Effect{}, fmt.Errorf("scheduled event delay must be between 1 and %d seconds", domain.MaxScheduledDelaySeconds)
+	}
+	childID := domain.ComputeChildEventID(event.TenantID, event.ID, ruleID, actionIndex)
+	partitionKey, err := resolveEmitEventPartitionKey(&domain.EmitEventAction{
+		PartitionKey: action.PartitionKey, PartitionKeyPolicy: action.PartitionKeyPolicy,
+		PartitionKeyPath: action.PartitionKeyPath,
+	}, event)
+	if err != nil {
+		return domain.Effect{}, err
+	}
+	childData, err := interpolateTemplates(action.Data, event, childID, e.clock)
+	if err != nil {
+		return domain.Effect{}, fmt.Errorf("interpolate scheduled event templates: %w", err)
+	}
+	now := e.clock.Now().UTC()
+	scheduled := domain.ScheduledEvent{
+		EventID: childID, TenantID: event.TenantID, EventType: action.Type,
+		PartitionKey: partitionKey, WorkflowID: event.WorkflowID, Payload: childData,
+		Headers: map[string]string{
+			"flowrulz_parent_event_id":    event.ID,
+			"flowrulz_scheduled_event_id": childID,
+			"flowrulz_correlation_id":     event.CorrelationID,
+		},
+		ScheduledAt: now.Add(time.Duration(action.DelaySeconds) * time.Second),
+		Status:      domain.ScheduledEventStatusPending, CreatedAt: now,
+	}
+	payload, err := json.Marshal(scheduled)
+	if err != nil {
+		return domain.Effect{}, fmt.Errorf("marshal scheduled event intent: %w", err)
+	}
+	effect.EffectType = domain.EffectTypeScheduleEvent
+	effect.Destination = "scheduled_events"
+	effect.Name = action.Type
+	effect.Payload = payload
+	return effect, nil
+}
+
 func resolveEmitEventPartitionKey(action *domain.EmitEventAction, event *domain.EventEnvelope) (string, error) {
 	partitionKey := action.PartitionKey
 	policy := action.PartitionKeyPolicy
@@ -687,8 +656,11 @@ func resolveEmitEventPartitionKey(action *domain.EmitEventAction, event *domain.
 	case domain.PartitionKeyPolicyFromData:
 		if action.PartitionKeyPath != "" {
 			value, err := resolvePath(action.PartitionKeyPath, event.Data, nil)
-			if err != nil || value == nil {
+			if err != nil {
 				return "", fmt.Errorf("resolve partition key from path %s: %w", action.PartitionKeyPath, err)
+			}
+			if value == nil {
+				return "", fmt.Errorf("resolve partition key from path %s: value is missing", action.PartitionKeyPath)
 			}
 			pk, err := formatPartitionKeyValue(value)
 			if err != nil {
@@ -740,7 +712,9 @@ func buildChildEventEnvelope(
 ) domain.EventEnvelope {
 	return domain.EventEnvelope{
 		ID: childID, Type: action.Type, TenantID: parent.TenantID,
-		PartitionKey: partitionKey, OccurredAt: occurredAt, Data: data,
+		PartitionKey: partitionKey, WorkflowID: parent.WorkflowID,
+		CorrelationID: parent.CorrelationID, CausationID: parent.ID,
+		OccurredAt: occurredAt, Data: data,
 		Headers: map[string]string{
 			"flowrulz_parent_event_id": parent.ID,
 			"flowrulz_child_event_id":  childID,
@@ -754,6 +728,9 @@ func describeAction(action domain.Action) string {
 	}
 	if action.EmitEvent != nil {
 		return "emit_event:" + action.EmitEvent.Type
+	}
+	if action.ScheduleEvent != nil {
+		return "schedule_event:" + action.ScheduleEvent.Type
 	}
 	if action.Command != nil {
 		return "command:" + action.Command.Destination + "/" + action.Command.Name
