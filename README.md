@@ -21,7 +21,7 @@ The HTTP API is a control-plane service. It creates and validates configuration 
 
 ## Event lifecycle
 
-1. A producer publishes an EventEnvelope to the NATS JetStream subject family events.shard.N. N is computed from tenant ID and partition key using the configured shard count. File-backed, limits-retention streams keep acknowledged messages available for replay until configured retention or storage limits remove them.
+1. A producer publishes an EventEnvelope to the NATS JetStream subject family events.shard.N. N is computed from tenant ID and partition key using the configured shard count. File-backed, limits-retention streams keep acknowledged messages available for replay until configured retention or storage limits remove them. Configure `NATS_STREAM_MAX_AGE`, `NATS_STREAM_MAX_BYTES`, and `NATS_STREAM_MAX_MSGS`; zero age and `-1` limits mean unlimited, which requires capacity monitoring.
 2. The worker consumes only shards for which it owns a lease. The key queue serializes work for each partition key within this worker process and can allow concurrency across keys. This alone does not guarantee end-to-end per-key ordering across redelivery, lease handoff, or concurrent outbox publishers.
 3. Inside one storage transaction, the event service validates the fencing token, checks the inbox for duplicates, loads the active rule revision, evaluates rules, and writes the execution plus outbox effects.
 4. The worker acknowledges the broker delivery only after the transaction commits.

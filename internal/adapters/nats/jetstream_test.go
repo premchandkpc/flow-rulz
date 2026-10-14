@@ -60,11 +60,14 @@ func TestStreamSubjectsIncludeApplicationCommandAndServiceRoutes(t *testing.T) {
 }
 
 func TestStreamRetentionIsLogBased(t *testing.T) {
-	cfg := streamConfig(Config{Stream: "flowrulz-test", Subjects: []string{"events"}})
+	cfg := streamConfig(Config{Stream: "flowrulz-test", Subjects: []string{"events"}, MaxAge: 24 * time.Hour, MaxBytes: 1024, MaxMsgs: 50})
 	if cfg.Retention != jetstream.LimitsPolicy {
 		t.Fatalf("stream retention policy = %v, want %v", cfg.Retention, jetstream.LimitsPolicy)
 	}
 	if cfg.Storage != jetstream.FileStorage {
 		t.Fatalf("stream storage = %v, want file storage", cfg.Storage)
+	}
+	if cfg.MaxAge != 24*time.Hour || cfg.MaxBytes != 1024 || cfg.MaxMsgs != 50 {
+		t.Fatalf("stream limits = age:%s bytes:%d msgs:%d, want 24h/1024/50", cfg.MaxAge, cfg.MaxBytes, cfg.MaxMsgs)
 	}
 }

@@ -31,6 +31,9 @@ type Config struct {
 	AckWait        time.Duration
 	MaxDeliver     int
 	NumShards      uint32
+	MaxAge         time.Duration
+	MaxBytes       int64
+	MaxMsgs        int64
 }
 
 type consumerKey struct {
@@ -98,6 +101,12 @@ func applyConfigDefaults(cfg Config) Config {
 	if cfg.MaxDeliver == 0 {
 		cfg.MaxDeliver = -1
 	}
+	if cfg.MaxBytes == 0 {
+		cfg.MaxBytes = -1
+	}
+	if cfg.MaxMsgs == 0 {
+		cfg.MaxMsgs = -1
+	}
 	return cfg
 }
 
@@ -161,7 +170,8 @@ func streamSubjects(cfg Config) []string {
 func streamConfig(cfg Config) jetstream.StreamConfig {
 	return jetstream.StreamConfig{
 		Name: cfg.Stream, Subjects: streamSubjects(cfg), Retention: jetstream.LimitsPolicy,
-		Storage: jetstream.FileStorage, MaxMsgs: -1, Discard: jetstream.DiscardOld,
+		Storage: jetstream.FileStorage, MaxAge: cfg.MaxAge, MaxBytes: cfg.MaxBytes,
+		MaxMsgs: cfg.MaxMsgs, Discard: jetstream.DiscardOld,
 	}
 }
 

@@ -28,10 +28,13 @@ type DatabaseConfig struct {
 
 // NATSConfig contains natsconfig settings.
 type NATSConfig struct {
-	URL      string
-	Stream   string
-	Consumer string
-	RuleSets []string
+	URL       string
+	Stream    string
+	Consumer  string
+	RuleSets  []string
+	MaxAge    time.Duration
+	MaxBytes  int64
+	MaxMsgs   int64
 }
 
 // RedisConfig contains redis config settings.
@@ -139,6 +142,9 @@ func loadNATSConfig() NATSConfig {
 		Stream:   getEnv("NATS_STREAM", "flowrulz"),
 		Consumer: getEnv("NATS_CONSUMER", ""),
 		RuleSets: splitCSV(getEnv("NATS_RULESETS", "")),
+		MaxAge:   getDurationEnv("NATS_STREAM_MAX_AGE", 0),
+		MaxBytes: int64(getIntEnv("NATS_STREAM_MAX_BYTES", -1)),
+		MaxMsgs:  int64(getIntEnv("NATS_STREAM_MAX_MSGS", -1)),
 	}
 }
 
@@ -251,6 +257,18 @@ func (c *Config) validateDatabase() error {
 func (c *Config) validateNATS() error {
 	if c.NATS.URL == "" {
 		return fmt.Errorf("NATS_URL is required")
+	}
+	if c.NATS.MaxAge < 0 {
+		return fmt.Errorf("NATS_STREAM_MAX_AGE must be >= 0")
+	}
+	if c.NATS.MaxBytes < -1 {
+		return fmt.Errorf("NATS_STREAM_MAX_BYTES must be -1 (unlimited) or >= 1")
+	}
+	if c.NATS.MaxBytes == 0 {
+		return fmt.Errorf("NATS_STREAM_MAX_BYTES must be -1 (unlimited) or >= 1")
+	}
+	if c.NATS.MaxMsgs < -1 || c.NATS.MaxMsgs == 0 {
+		return fmt.Errorf("NATS_STREAM_MAX_MSGS must be -1 (unlimited) or >= 1")
 	}
 	seenRuleSets := make(map[string]struct{}, len(c.NATS.RuleSets))
 	for _, ruleSet := range c.NATS.RuleSets {

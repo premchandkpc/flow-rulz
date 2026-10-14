@@ -17,6 +17,6 @@ Delivery is at-least-once. A crash after publish but before outbox settlement ma
 
 ## Retention and migration
 
-The stream uses limits-based retention and file storage rather than work-queue retention, which deletes acknowledged records. Operators must set retention/size limits to match replay, audit, and storage requirements, monitor stream capacity, and archive records if they must outlive the JetStream retention window.
+The stream uses limits-based retention and file storage rather than work-queue retention, which deletes acknowledged records. Operators configure `NATS_STREAM_MAX_AGE`, `NATS_STREAM_MAX_BYTES`, and `NATS_STREAM_MAX_MSGS` to match replay, audit, and storage requirements, monitor stream capacity, and archive records if they must outlive the JetStream retention window. Zero age and `-1` count/byte limits mean unlimited retention and therefore require explicit disk-capacity monitoring.
 
 JetStream does not allow changing a stream's retention policy in place. To migrate an existing work-queue stream, stop producers and consumers, let in-flight work finish, verify there are no pending deliveries, then delete/recreate the stream with limits retention before restarting services. Previously acknowledged messages cannot be recovered from the old work-queue stream because that policy already deleted them.

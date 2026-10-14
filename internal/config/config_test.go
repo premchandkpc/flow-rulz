@@ -11,7 +11,7 @@ func validConfigForTest() *Config {
 	return &Config{
 		App:      AppConfig{Env: "development", HTTPAddr: "127.0.0.1:8080", ShutdownTimeout: time.Second},
 		Database: DatabaseConfig{StorageBackend: "postgres", DSN: "postgres://localhost/flowrulz"},
-		NATS:     NATSConfig{URL: "nats://localhost:4222"},
+		NATS:     NATSConfig{URL: "nats://localhost:4222", MaxBytes: -1, MaxMsgs: -1},
 		Worker: WorkerConfig{
 			NumShards:               1,
 			WorkerReplicas:          1,
