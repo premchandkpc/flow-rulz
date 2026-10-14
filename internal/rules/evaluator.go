@@ -628,6 +628,7 @@ func (e *Evaluator) buildScheduleEventEffect(
 		Headers: map[string]string{
 			"flowrulz_parent_event_id": event.ID,
 			"flowrulz_scheduled_event_id": childID,
+			"flowrulz_correlation_id": event.CorrelationID,
 		},
 		ScheduledAt: now.Add(time.Duration(action.DelaySeconds) * time.Second),
 		Status: domain.ScheduledEventStatusPending, CreatedAt: now,
