@@ -47,7 +47,6 @@ struct PartitionState {
     segment_number: u64,
     next_position: u64,
     records: Vec<LogRecord>,
-    by_id: HashMap<String, (LogRecord, LogPosition)>,
     highest_fencing_epoch: u64,
 }
 
@@ -57,7 +56,7 @@ pub struct FileEventLog {
     // Holding this file keeps the OS advisory lock for the adapter lifetime.
     _lock_file: File,
     partitions: Mutex<HashMap<PartitionId, PartitionState>>,
-    record_index: Mutex<HashMap<String, (PartitionId, LogRecord, LogPosition)>>,
+    record_index: Mutex<HashMap<String, (PartitionId, LogPosition)>>,
 }
 
 impl FileEventLog {
@@ -129,10 +128,7 @@ impl FileEventLog {
                             "record ID {record_id} appears in multiple segments"
                         )));
                     }
-                    if record_index
-                        .insert(record_id.clone(), (partition, record, position))
-                        .is_some()
-                    {
+                    if record_index.insert(record_id.clone(), (partition, position)).is_some() {
                         return Err(LogError::Integrity(format!(
                             "record ID {record_id} appears in more than one partition"
                         )));
@@ -155,7 +151,6 @@ impl FileEventLog {
                     segment_number: expected_segment - 1,
                     next_position,
                     records,
-                    by_id,
                     highest_fencing_epoch,
                 },
             );
@@ -198,7 +193,6 @@ impl FileEventLog {
                     segment_number: 0,
                     next_position: 0,
                     records: Vec::new(),
-                    by_id: HashMap::new(),
                     highest_fencing_epoch: 0,
                 },
             );
@@ -231,11 +225,22 @@ impl EventLog for FileEventLog {
 
         // Lock ordering is always record index, then partition map.
         let mut record_index = self.record_index.lock().await;
-        if let Some((existing_partition, existing, position)) =
-            record_index.get(&record.record_id)
-        {
-            let identical = *existing_partition == record.partition
-                && existing.kind == record.kind
+        if let Some((existing_partition, position)) = record_index.get(&record.record_id) {
+            if *existing_partition != record.partition {
+                return Err(LogError::IdentityConflict(record.record_id));
+            }
+            let partitions = self.partitions.lock().await;
+            let state = partitions.get(existing_partition).ok_or_else(|| {
+                LogError::Integrity("record index references a missing partition".into())
+            })?;
+            let record_index = usize::try_from(position.0.checked_sub(1).ok_or_else(|| {
+                LogError::Integrity("record index contains a zero position".into())
+            })?)
+            .map_err(|error| LogError::Integrity(error.to_string()))?;
+            let existing = state.records.get(record_index).ok_or_else(|| {
+                LogError::Integrity("record index references a missing log record".into())
+            })?;
+            let identical = existing.kind == record.kind
                 && existing.tenant_id == record.tenant_id
                 && existing.event_id == record.event_id
                 && existing.payload == record.payload
@@ -430,13 +435,7 @@ impl EventLog for FileEventLog {
         }
         state.next_position = position.0;
         state.records.push(stored.clone());
-        state
-            .by_id
-            .insert(stored.record_id.clone(), (stored.clone(), position));
-        record_index.insert(
-            stored.record_id.clone(),
-            (stored.partition, stored, position),
-        );
+        record_index.insert(stored.record_id.clone(), (stored.partition, position));
         Ok(position)
     }
 
