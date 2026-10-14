@@ -32,6 +32,10 @@ jobs:
 
       - name: Validate schemas, scripts, and Compose configuration
         run: |
+          # These schemas are maintained at api/ on this PR branch. Keep this check
+          # explicit so a missing schema fails loudly rather than silently skipping validation.
+          test -f api/envelope-schema.json
+          test -f api/rule-schema.json
           python -m json.tool api/envelope-schema.json > /dev/null
           python -m json.tool api/rule-schema.json > /dev/null
           bash -n domains/*/deploy.sh
