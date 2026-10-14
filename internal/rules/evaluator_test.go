@@ -652,3 +652,22 @@ func evalLeafForTest(p domain.Predicate, data json.RawMessage, facts map[string]
 	e := &Evaluator{clock: domain.SystemClock{}}
 	return e.evalLeaf(p, data, facts)
 }
+
+func TestCompareNumericEqualHandlesUint64WithoutOverflow(t *testing.T) {
+	const maxUint64 = ^uint64(0)
+	if !compareNumericEqual(maxUint64, maxUint64) {
+		t.Fatal("equal maximum uint64 values should compare equal")
+	}
+	if compareNumericEqual(maxUint64, maxUint64-1) {
+		t.Fatal("distinct maximum-range uint64 values must not compare equal")
+	}
+}
+
+func TestCompareNumericEqualPreservesLargeJSONIntegerPrecision(t *testing.T) {
+	if compareNumericEqual(json.Number("9007199254740992"), json.Number("9007199254740993")) {
+		t.Fatal("distinct integers above float64's exact range must not compare equal")
+	}
+	if !compareNumericEqual(json.Number("1.0"), json.Number("1")) {
+		t.Fatal("equivalent JSON numeric values should compare equal")
+	}
+}
