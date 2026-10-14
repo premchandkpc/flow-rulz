@@ -19,7 +19,7 @@ var commandToken = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 // Receivers consume the subject with their own durable consumer and deduplicate
 // using the stable effect ID/idempotency key in the message envelope.
 type NATSDestination struct {
-	publisher ports.BrokerPublisher
+	publisher ports.SubjectPublisher
 }
 
 // NewNATSDestination creates a NATS-backed command destination.
