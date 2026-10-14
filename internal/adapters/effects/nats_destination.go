@@ -15,7 +15,7 @@ import (
 
 var commandToken = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
-// NATSDestination publishes commands to durable NATS JetStream subjects.
+// NATSDestination publishes emitted effects and commands to durable NATS JetStream subjects.
 // Receivers consume the subject with their own durable consumer and deduplicate
 // using the stable effect ID/idempotency key in the message envelope.
 type NATSDestination struct {
@@ -23,11 +23,11 @@ type NATSDestination struct {
 }
 
 // NewNATSDestination creates a NATS-backed command destination.
-func NewNATSDestination(publisher ports.BrokerPublisher) *NATSDestination {
+func NewNATSDestination(publisher ports.SubjectPublisher) *NATSDestination {
 	return &NATSDestination{publisher: publisher}
 }
 
-// Send publishes a command effect to commands.<destination>.<name>.
+// Send publishes an emitted topic to effects.<topic> or a command to commands.<destination>.<name>.
 func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
 	if effect == nil {
 		return errors.New("publish command: effect is nil")
