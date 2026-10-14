@@ -62,8 +62,8 @@ func (r *ContractRegistry) Register(_ context.Context, schema *domain.ContractSc
 		if existing.SchemaHash != schema.SchemaHash { return fmt.Errorf("contract %s@%s is immutable; publish a new version", schema.Name, schema.Version) }
 		return nil
 	}
-	copy := *schema
-	r.schemas[key] = &copy
+	schemaCopy := *schema
+	r.schemas[key] = &schemaCopy
 	return nil
 }
 
@@ -74,8 +74,8 @@ func (r *ContractRegistry) List(_ context.Context, name string) ([]*domain.Contr
 	var result []*domain.ContractSchema
 	for _, s := range r.schemas {
 		if name == "" || s.Name == name {
-			copy := *s
-			result = append(result, &copy)
+			schemaCopy := *s
+			result = append(result, &schemaCopy)
 		}
 	}
 	return result, nil
