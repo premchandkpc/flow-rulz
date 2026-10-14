@@ -17,7 +17,7 @@ const maxDomainServicePayloadBytes = 1 << 20
 // unique NATS subject. Each receiver owns a durable consumer for that subject.
 type DomainServiceSender struct {
 	services  ports.DomainServiceRepository
-	publisher ports.BrokerPublisher
+	publisher ports.SubjectPublisher
 }
 
 // NewDomainServiceSender creates a NATS-backed domain service sender.
