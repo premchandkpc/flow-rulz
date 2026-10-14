@@ -53,3 +53,15 @@ func TestComputeExecutionIDChangesWhenIdentityChanges(t *testing.T) {
 		})
 	}
 }
+
+func TestComputeChildEventIDIsTenantScoped(t *testing.T) {
+	first := ComputeChildEventID("tenant-a", "evt-1", "rule", 0)
+	same := ComputeChildEventID("tenant-a", "evt-1", "rule", 0)
+	otherTenant := ComputeChildEventID("tenant-b", "evt-1", "rule", 0)
+	if first != same {
+		t.Fatal("child event ID must be deterministic for the same tenant and inputs")
+	}
+	if first == otherTenant {
+		t.Fatal("child event IDs must not collide across tenants")
+	}
+}
