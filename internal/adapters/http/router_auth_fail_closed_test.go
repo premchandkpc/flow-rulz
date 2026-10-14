@@ -7,8 +7,8 @@ import (
 )
 
 func TestRouterFailsClosedWhenRequiredAuthValidatorIsMissing(t *testing.T) {
-	router := NewRouterWithPublisher(
-		nil, nil, nil, nil, nil, nil, nil, nil, 1,
+	router := NewRouterWithConfig(
+		nil, nil, nil, nil, nil, nil, nil,
 		RouterConfig{RequireAuth: true},
 	)
 
@@ -22,5 +22,17 @@ func TestRouterFailsClosedWhenRequiredAuthValidatorIsMissing(t *testing.T) {
 	router.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/health", nil))
 	if health.Code != http.StatusOK {
 		t.Fatalf("health status = %d, want %d; body=%s", health.Code, http.StatusOK, health.Body.String())
+	}
+}
+
+func TestManagementRouterDoesNotExposeEventIngestion(t *testing.T) {
+	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, nil, RouterConfig{})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/events/order.created", nil)
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("event ingestion status = %d, want %d; body=%s", recorder.Code, http.StatusNotFound, recorder.Body.String())
 	}
 }
