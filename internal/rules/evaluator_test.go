@@ -698,8 +698,8 @@ func TestEvaluateScheduleEventCreatesDurableIntent(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	decision, err := NewEvaluator(domain.SystemClock{}).Evaluate(revision, &domain.EventEnvelope{
-		ID:"evt-schedule", Type:"order.created", TenantID:"tenant-a", PartitionKey:"order-7",
-		WorkflowID:"wf-7", CorrelationID:"corr-7", OccurredAt:now, Data:json.RawMessage(`{"order_id":"order-7"}`),
+		ID: "evt-schedule", Type: "order.created", TenantID: "tenant-a", PartitionKey: "order-7",
+		WorkflowID: "wf-7", CorrelationID: "corr-7", OccurredAt: now, Data: json.RawMessage(`{"order_id":"order-7"}`),
 	}, nil)
 	if err != nil {
 		t.Fatalf("evaluate schedule action: %v", err)
