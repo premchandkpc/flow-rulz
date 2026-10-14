@@ -31,7 +31,7 @@ func TestNATSDestinationPublishesCommandWithStableIdempotencyKey(t *testing.T) {
 	err := destination.Send(context.Background(), &domain.Effect{
 		ID: "effect-1", ExecutionID: "execution-1", TenantID: "tenant-a",
 		Destination: "payment", Name: "authorize",
-		EffectType: domain.EffectTypeCommand, Payload: json.RawMessage(`{"order_id":"order-1"}`),
+		EffectType: domain.EffectTypeEmit, Payload: json.RawMessage(`{"order_id":"order-1"}`),
 	}, "effect-effect-1")
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
