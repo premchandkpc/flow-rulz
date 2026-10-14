@@ -39,27 +39,43 @@ func (r *ContractRegistry) Get(_ context.Context, name string, version string) (
 
 // Register stores a contract schema.
 func (r *ContractRegistry) Register(_ context.Context, schema *domain.ContractSchema) error {
-	if schema == nil { return fmt.Errorf("contract is required") }
+	if schema == nil {
+		return fmt.Errorf("contract is required")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if schema.Parent != nil {
 		parent, ok := r.schemas[r.key(schema.Parent.Name, schema.Parent.Version)]
-		if !ok { return fmt.Errorf("parent contract %s@%s not found", schema.Parent.Name, schema.Parent.Version) }
-		if err := parent.NormalizeAndValidate(); err != nil { return err }
-		if schema.Parent.SchemaHash != "" && schema.Parent.SchemaHash != parent.SchemaHash { return fmt.Errorf("parent contract schema hash mismatch") }
+		if !ok {
+			return fmt.Errorf("parent contract %s@%s not found", schema.Parent.Name, schema.Parent.Version)
+		}
+		if err := parent.NormalizeAndValidate(); err != nil {
+			return err
+		}
+		if schema.Parent.SchemaHash != "" && schema.Parent.SchemaHash != parent.SchemaHash {
+			return fmt.Errorf("parent contract schema hash mismatch")
+		}
 		schema.Parent.SchemaHash = parent.SchemaHash
 	}
-	if err := schema.NormalizeAndValidate(); err != nil { return fmt.Errorf("validate contract: %w", err) }
+	if err := schema.NormalizeAndValidate(); err != nil {
+		return fmt.Errorf("validate contract: %w", err)
+	}
 	if schema.Parent != nil {
 		parent := r.schemas[r.key(schema.Parent.Name, schema.Parent.Version)]
-		if !parent.AllowsChild(domain.ContractRef{Name:schema.Name, Version:schema.Version, SchemaHash:schema.SchemaHash}) {
+		if !parent.AllowsChild(domain.ContractRef{Name: schema.Name, Version: schema.Version, SchemaHash: schema.SchemaHash}) {
 			return fmt.Errorf("parent contract %s@%s does not allow child %s@%s", parent.Name, parent.Version, schema.Name, schema.Version)
 		}
 	}
 	key := r.key(schema.Name, schema.Version)
 	if existing, ok := r.schemas[key]; ok {
-		if existing.SchemaHash == "" { if err := existing.NormalizeAndValidate(); err != nil { return err } }
-		if existing.SchemaHash != schema.SchemaHash { return fmt.Errorf("contract %s@%s is immutable; publish a new version", schema.Name, schema.Version) }
+		if existing.SchemaHash == "" {
+			if err := existing.NormalizeAndValidate(); err != nil {
+				return err
+			}
+		}
+		if existing.SchemaHash != schema.SchemaHash {
+			return fmt.Errorf("contract %s@%s is immutable; publish a new version", schema.Name, schema.Version)
+		}
 		return nil
 	}
 	schemaCopy := *schema

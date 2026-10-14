@@ -60,10 +60,18 @@ func (s *Service) Activate(ctx context.Context, tenantScope string, ruleSet stri
 	revision.TenantScope = tenantScope
 	if revision.InputContract != nil && s.contracts != nil {
 		contract, err := s.contracts.Get(ctx, revision.InputContract.Name, revision.InputContract.Version)
-		if err != nil { return nil, fmt.Errorf("resolve input contract: %w", err) }
-		if contract == nil { return nil, fmt.Errorf("input contract %s@%s not found", revision.InputContract.Name, revision.InputContract.Version) }
-		if contract.Deprecated { return nil, fmt.Errorf("input contract %s@%s is deprecated", contract.Name, contract.Version) }
-		if err := contract.NormalizeAndValidate(); err != nil { return nil, fmt.Errorf("invalid input contract: %w", err) }
+		if err != nil {
+			return nil, fmt.Errorf("resolve input contract: %w", err)
+		}
+		if contract == nil {
+			return nil, fmt.Errorf("input contract %s@%s not found", revision.InputContract.Name, revision.InputContract.Version)
+		}
+		if contract.Deprecated {
+			return nil, fmt.Errorf("input contract %s@%s is deprecated", contract.Name, contract.Version)
+		}
+		if err := contract.NormalizeAndValidate(); err != nil {
+			return nil, fmt.Errorf("invalid input contract: %w", err)
+		}
 		if revision.InputContract.SchemaHash != "" && revision.InputContract.SchemaHash != contract.SchemaHash {
 			return nil, fmt.Errorf("input contract schema hash mismatch for %s@%s", contract.Name, contract.Version)
 		}

@@ -40,19 +40,19 @@ func (h *EventIngestionHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 type eventIngestionRequest struct {
-	ID            string            `json:"id"`
-	Type          string            `json:"type"`
-	TenantID      string            `json:"tenant_id"`
-	PartitionKey  string            `json:"partition_key"`
-	WorkflowID    string            `json:"workflow_id,omitempty"`
-	OccurredAt    time.Time         `json:"occurred_at"`
-	Data          []byte            `json:"data"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	CorrelationID string            `json:"correlation_id,omitempty"`
-	CausationID   string            `json:"causation_id,omitempty"`
-	SchemaVersion string            `json:"schema_version,omitempty"`
+	ID            string              `json:"id"`
+	Type          string              `json:"type"`
+	TenantID      string              `json:"tenant_id"`
+	PartitionKey  string              `json:"partition_key"`
+	WorkflowID    string              `json:"workflow_id,omitempty"`
+	OccurredAt    time.Time           `json:"occurred_at"`
+	Data          []byte              `json:"data"`
+	Headers       map[string]string   `json:"headers,omitempty"`
+	CorrelationID string              `json:"correlation_id,omitempty"`
+	CausationID   string              `json:"causation_id,omitempty"`
+	SchemaVersion string              `json:"schema_version,omitempty"`
 	Contract      *domain.ContractRef `json:"contract,omitempty"`
-	MessageKind   string            `json:"message_kind,omitempty"`
+	MessageKind   string              `json:"message_kind,omitempty"`
 }
 
 // PublishEvent handles POST /v1/events/{eventType} requests.
@@ -106,9 +106,11 @@ func (h *EventIngestionHandler) PublishEvent(w http.ResponseWriter, r *http.Requ
 			responses.WriteError(w, http.StatusBadRequest, "event payload does not match contract: "+err.Error(), responses.CodeValidationFailed)
 			return
 		}
-		event.Contract = &domain.ContractRef{Name:schema.Name, Version:schema.Version, SchemaHash:schema.SchemaHash}
+		event.Contract = &domain.ContractRef{Name: schema.Name, Version: schema.Version, SchemaHash: schema.SchemaHash}
 		event.MessageKind = request.MessageKind
-		if event.MessageKind == "" { event.MessageKind = "event" }
+		if event.MessageKind == "" {
+			event.MessageKind = "event"
+		}
 	}
 	if err := event.Validate(); err != nil {
 		responses.WriteError(w, http.StatusBadRequest, err.Error(), responses.CodeValidationFailed)
