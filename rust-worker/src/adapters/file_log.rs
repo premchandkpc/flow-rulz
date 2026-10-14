@@ -137,6 +137,7 @@ impl FileEventLog {
                     next_position: 0,
                     records: Vec::new(),
                     by_id: HashMap::new(),
+                    highest_fencing_epoch: 0,
                 },
             );
         }
@@ -436,7 +437,16 @@ impl EventLog for FileEventLog {
 fn recover_partition(
     path: PathBuf,
     partition: PartitionId,
-) -> Result<(File, Vec<LogRecord>, u64, HashMap<String, (LogRecord, LogPosition)>), LogError> {
+) -> Result<
+    (
+        File,
+        Vec<LogRecord>,
+        u64,
+        HashMap<String, (LogRecord, LogPosition)>,
+        u64,
+    ),
+    LogError,
+> {
     let mut file = OpenOptions::new()
         .create(true)
         .read(true)
@@ -750,13 +760,15 @@ mod tests {
             fencing_epoch: 1,
         };
 
-        let position = log.commit_execution(commit).await.unwrap();
-        assert_eq!(position, LogPosition(1));
         let partition = partition_for_key(tenant_id, partition_key);
+        assert_eq!(log.advance_fence(partition, 1).await.unwrap(), LogPosition(1));
+        let position = log.commit_execution(commit).await.unwrap();
+        assert_eq!(position, LogPosition(2));
         let records = log.read(partition, LogPosition(0), 10).await.unwrap();
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].kind, LogRecordKind::ExecutionCommitted);
-        let payload: serde_json::Value = serde_json::from_slice(&records[0].payload).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].kind, LogRecordKind::FenceAdvanced);
+        assert_eq!(records[1].kind, LogRecordKind::ExecutionCommitted);
+        let payload: serde_json::Value = serde_json::from_slice(&records[1].payload).unwrap();
         assert_eq!(payload["effects"].as_array().unwrap().len(), 1);
         assert_eq!(payload["effects"][0]["effect_id"], "effect-1");
         let _ = fs::remove_dir_all(dir);
