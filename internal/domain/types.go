@@ -258,12 +258,12 @@ type CommandAction struct {
 
 // Effect represents the effect.
 type Effect struct {
-	ID          string          `json:"id"`
-	ExecutionID string          `json:"execution_id"`
-	TenantID    string          `json:"tenant_id,omitempty"`
-	Destination string          `json:"destination"`
-	Name        string          `json:"name"`
-	Payload     json.RawMessage `json:"payload"`
+	ID             string          `json:"id"`
+	ExecutionID    string          `json:"execution_id"`
+	TenantID       string          `json:"tenant_id,omitempty"`
+	Destination    string          `json:"destination"`
+	Name           string          `json:"name"`
+	Payload        json.RawMessage `json:"payload"`
 	EffectType     EffectType      `json:"effect_type"`
 	IdempotencyKey string          `json:"idempotency_key,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
