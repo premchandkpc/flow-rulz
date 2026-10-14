@@ -957,7 +957,7 @@ mod tests {
     async fn segment_rotation_preserves_global_positions_after_restart() {
         let dir = temp_dir();
         let log = FileEventLog::open_with_segment_bytes(&dir, 1).await.unwrap();
-        for index in 1..=3 {
+        for index in 1_u32..=3 {
             let record = new_record(
                 &format!("progress-{index}"),
                 format!(r#"{{"cursor":{index}}}"#).as_bytes(),
