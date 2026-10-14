@@ -334,7 +334,16 @@ fn build_child_event_payload(
             "flowrulz_parent_event_id": event.id,
             "flowrulz_child_event_id": child_id
         }
-    })
+    });
+    let mut payload = payload;
+    if let Some(workflow_id) = &event.workflow_id {
+        payload["workflow_id"] = json!(workflow_id);
+    }
+    if let Some(correlation_id) = &event.correlation_id {
+        payload["correlation_id"] = json!(correlation_id);
+    }
+    payload["causation_id"] = json!(event.id);
+    payload
 }
 
 fn build_command_effect(effect_id: String, event: &EventEnvelope, command: &CommandAction) -> Result<Effect> {
@@ -366,6 +375,10 @@ mod tests {
             occurred_at: Utc::now(),
             data: json!({"approved": true}),
             headers: HashMap::new(),
+            contract: None,
+            message_kind: None,
+            correlation_id: None,
+            causation_id: None,
         }
     }
 
