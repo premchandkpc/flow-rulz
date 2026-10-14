@@ -140,3 +140,29 @@ func TestExecutionCommittedRejectsNondeterministicExecutionID(t *testing.T) {
 		t.Fatal("execution ID unrelated to its source event accepted")
 	}
 }
+
+func TestNoMatchExecutionCannotEmitEffects(t *testing.T) {
+	record := validExecutionCommittedRecord(t)
+	var commit ExecutionCommittedPayload
+	if err := json.Unmarshal(record.Payload, &commit); err != nil {
+		t.Fatal(err)
+	}
+	commit.Outcome = "no_match"
+	record.Payload = marshalCommittedPayload(t, commit)
+	if err := record.Validate(); err == nil {
+		t.Fatal("no-match execution with effects accepted")
+	}
+}
+
+func TestExecutionCommitRejectsDuplicateEffectIDs(t *testing.T) {
+	record := validExecutionCommittedRecord(t)
+	var commit ExecutionCommittedPayload
+	if err := json.Unmarshal(record.Payload, &commit); err != nil {
+		t.Fatal(err)
+	}
+	commit.Effects = append(commit.Effects, commit.Effects[0])
+	record.Payload = marshalCommittedPayload(t, commit)
+	if err := record.Validate(); err == nil {
+		t.Fatal("execution commit with duplicate effect IDs accepted")
+	}
+}
