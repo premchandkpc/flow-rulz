@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"strings"
 )
 
 func TestRouterFailsClosedWhenRequiredAuthValidatorIsMissing(t *testing.T) {
@@ -50,3 +51,37 @@ func TestManagementRouterDoesNotExposeScheduledEventMutation(t *testing.T) {
 	}
 }
 
+
+func TestManagementRouterRejectsRuntimeMutations(t *testing.T) {
+	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
+	requests := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/v1/events/order.created"},
+		{http.MethodPost, "/v1/workflows"},
+		{http.MethodPost, "/v1/workflows/wf-1/transition"},
+		{http.MethodPost, "/v1/batches"},
+		{http.MethodPost, "/v1/quarantine/q-1/replay"},
+		{http.MethodDelete, "/v1/quarantine/q-1"},
+		{http.MethodPost, "/v1/scheduled-events"},
+	}
+	for _, tc := range requests {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(tc.method, tc.path, nil))
+			if recorder.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusNotFound, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestWorkflowDefinitionWriteRequiresPlatformAdminScope(t *testing.T) {
+	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/workflows/definitions", strings.NewReader("{}")))
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusForbidden, recorder.Body.String())
+	}
+}
