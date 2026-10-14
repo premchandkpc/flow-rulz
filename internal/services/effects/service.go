@@ -12,7 +12,7 @@ import (
 
 // Service handles effect publishing, retries, and quarantine.
 type Service struct {
-	outbox       ports.OutboxDeliveryStore
+	outbox       ports.OutboxRepository
 	effectSender ports.EffectSender
 	quarantine   ports.QuarantineRepository
 	clock        ports.Clock
@@ -21,7 +21,7 @@ type Service struct {
 
 // NewService creates a new effects Service for publishing, retrying, and quarantining effects.
 func NewService(
-	outbox ports.OutboxDeliveryStore,
+	outbox ports.OutboxRepository,
 	effectSender ports.EffectSender,
 	quarantine ports.QuarantineRepository,
 	clock ports.Clock,

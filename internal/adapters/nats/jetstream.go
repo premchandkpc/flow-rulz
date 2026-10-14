@@ -151,18 +151,22 @@ func streamSubjects(cfg Config) []string {
 	for _, base := range cfg.Subjects {
 		subjects = append(subjects, base+".shard.*", base+".ruleset.*.shard.*")
 	}
-	// Emitted effects, commands, and per-service deliveries share the same durable
-	// messaging protocol. WorkQueue retention is safe because each command route
-	// and each tenant service receives a unique subject.
+	// Event and effect subjects share a durable append-only log. A recreated
+	// durable consumer can replay acknowledged messages, so consumers must be
+	// idempotent and retention must satisfy the required replay/audit window.
 	subjects = append(subjects, "commands.>", "effects.>", "services.>")
 	return subjects
 }
 
-func ensureStream(ctx context.Context, js jetstream.JetStream, cfg Config) error {
-	_, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name: cfg.Stream, Subjects: streamSubjects(cfg), Retention: jetstream.WorkQueuePolicy,
+func streamConfig(cfg Config) jetstream.StreamConfig {
+	return jetstream.StreamConfig{
+		Name: cfg.Stream, Subjects: streamSubjects(cfg), Retention: jetstream.LimitsPolicy,
 		Storage: jetstream.FileStorage, MaxMsgs: -1, Discard: jetstream.DiscardOld,
-	})
+	}
+}
+
+func ensureStream(ctx context.Context, js jetstream.JetStream, cfg Config) error {
+	_, err := js.CreateOrUpdateStream(ctx, streamConfig(cfg))
 	if err != nil {
 		return fmt.Errorf("create stream: %w", err)
 	}

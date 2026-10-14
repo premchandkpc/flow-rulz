@@ -1,6 +1,6 @@
 # FlowRulz
 
-FlowRulz is a Go-based, event-driven rules runtime. Rules are compiled into immutable revisions; a worker evaluates incoming events and commits an execution record plus resulting effects; effects are delivered asynchronously through an outbox.
+FlowRulz is a Go-based, event-driven rules runtime. NATS JetStream retains the durable message log; runtime caches accelerate reads, while PostgreSQL stores transactional processing state and the outbox. Rules are compiled into immutable revisions; a worker evaluates incoming events and commits an execution record plus resulting effects; effects are delivered asynchronously through an outbox.
 
 > Security: do not expose the HTTP API directly to untrusted networks. Production tenant identity must come from validated JWT claims or an authenticated trusted proxy that strips and replaces trusted headers. Development-only caller-supplied tenant headers are not authentication.
 
@@ -21,14 +21,14 @@ The HTTP API is a control-plane service. It creates and validates configuration 
 
 ## Event lifecycle
 
-1. A producer publishes an EventEnvelope to the NATS subject family events.shard.N. N is computed from tenant ID and partition key using the configured shard count.
+1. A producer publishes an EventEnvelope to the NATS JetStream subject family events.shard.N. N is computed from tenant ID and partition key using the configured shard count. File-backed, limits-retention streams keep acknowledged messages available for replay until configured retention or storage limits remove them.
 2. The worker consumes only shards for which it owns a lease. The key queue serializes work for each partition key within this worker process and can allow concurrency across keys. This alone does not guarantee end-to-end per-key ordering across redelivery, lease handoff, or concurrent outbox publishers.
 3. Inside one storage transaction, the event service validates the fencing token, checks the inbox for duplicates, loads the active rule revision, evaluates rules, and writes the execution plus outbox effects.
 4. The worker acknowledges the broker delivery only after the transaction commits.
 5. The outbox publisher routes emitted child events back to events.shard.N. Command effects publish to `commands.<destination>.<name>`; domain subscribers receive matching event deliveries on a unique tenant-scoped `services.<tenant-hash>.<service-hash>` subject. Both are durable JetStream messages and at-least-once.
 6. The scheduler claims due scheduled events and publishes them to the same subject family.
 
-NATS delivery is at-least-once. The inbox prevents duplicate event execution when storage constraints and transaction semantics hold. External effects are effectively-once only when the destination honors the idempotency key. Do not claim exactly-once delivery.
+NATS delivery is at-least-once. JetStream is the durable append-only message log; PostgreSQL is the durable transactional state store for inbox deduplication, executions, and outbox delivery state. Runtime caches are disposable accelerators and must be rebuildable from durable stores. The inbox prevents duplicate event execution when storage constraints and transaction semantics hold. External effects are effectively-once only when the destination honors the idempotency key. Do not claim exactly-once delivery.
 
 ## Tenant domains and receiving services
 

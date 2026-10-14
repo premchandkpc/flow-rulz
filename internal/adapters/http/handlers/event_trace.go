@@ -21,7 +21,7 @@ const (
 type EventTraceHandler struct {
 	inbox      ports.InboxRepository
 	executions ports.ExecutionRepository
-	outbox     ports.OutboxReader
+	outbox     ports.OutboxRepository
 	numShards  uint32
 }
 
@@ -62,7 +62,7 @@ type traceBudget struct {
 }
 
 // NewEventTraceHandler creates a new EventTraceHandler.
-func NewEventTraceHandler(inbox ports.InboxRepository, executions ports.ExecutionRepository, outbox ports.OutboxReader, numShards uint32) *EventTraceHandler {
+func NewEventTraceHandler(inbox ports.InboxRepository, executions ports.ExecutionRepository, outbox ports.OutboxRepository, numShards uint32) *EventTraceHandler {
 	return &EventTraceHandler{
 		inbox: inbox, executions: executions, outbox: outbox, numShards: numShards,
 	}

@@ -3,7 +3,7 @@ package nats
 import (
 	"context"
 	"strings"
-	"testing"
+	"testing"\n\n\t"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestRulesetRoutingUsesDisjointSubjectToken(t *testing.T) {
@@ -56,5 +56,15 @@ func TestStreamSubjectsIncludeApplicationCommandAndServiceRoutes(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Fatalf("stream subjects are missing required routes: %v", want)
+	}
+}
+
+func TestStreamRetentionIsLogBased(t *testing.T) {
+	cfg := streamConfig(Config{Stream: "flowrulz-test", Subjects: []string{"events"}})
+	if cfg.Retention != jetstream.LimitsPolicy {
+		t.Fatalf("stream retention policy = %v, want %v", cfg.Retention, jetstream.LimitsPolicy)
+	}
+	if cfg.Storage != jetstream.FileStorage {
+		t.Fatalf("stream storage = %v, want file storage", cfg.Storage)
 	}
 }

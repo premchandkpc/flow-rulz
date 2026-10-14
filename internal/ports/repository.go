@@ -33,37 +33,15 @@ type ExecutionRepository interface {
 	UpdateStatus(ctx context.Context, executionID string, status domain.ExecutionStatus, errMsg string) error
 }
 
-// OutboxWriter persists outgoing effects. Event processing receives this narrow
-// interface so inserts can share the same transaction as inbox and execution writes.
-type OutboxWriter interface {
+// OutboxRepository handles outbox pattern for reliable messaging
+type OutboxRepository interface {
 	Insert(ctx context.Context, effects []domain.OutboxEffect) error
-}
-
-// OutboxDispatcher owns claiming and durable settlement of effects.
-type OutboxDispatcher interface {
 	ClaimPending(ctx context.Context, batchSize int, claimant string, claimTTL time.Duration) ([]domain.OutboxEffect, error)
 	MarkDelivered(ctx context.Context, effectIDs []string, claimant string) error
 	ScheduleRetry(ctx context.Context, effectID, claimant string, delay time.Duration, attempts int, errMsg string) error
 	Quarantine(ctx context.Context, effectID, claimant, errMsg string) error
-}
-
-// OutboxReader exposes read-only operational queries.
-type OutboxReader interface {
 	GetPending(ctx context.Context, limit int) ([]domain.OutboxEffect, error)
 	GetByExecution(ctx context.Context, executionID string) ([]domain.OutboxEffect, error)
-}
-
-// OutboxDeliveryStore is the runtime publisher's minimal persistence boundary.
-type OutboxDeliveryStore interface {
-	OutboxDispatcher
-	OutboxReader
-}
-
-// OutboxRepository is the full adapter contract retained for storage wiring and
-// compatibility. Application services should depend on the narrowest interface.
-type OutboxRepository interface {
-	OutboxWriter
-	OutboxDeliveryStore
 }
 
 // RuleRepository handles rule storage

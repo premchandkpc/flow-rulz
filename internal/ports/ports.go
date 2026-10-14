@@ -31,7 +31,7 @@ type EventTxRepos struct {
 	Activations    ActivationRepository
 	RuleRepo       RuleRepository
 	Executions     ExecutionRepository
-	Outbox         OutboxWriter
+	Outbox         OutboxRepository
 	ShardLeases    ShardLeaseRepository
 	DomainServices DomainServiceRepository
 	Bindings       BindingRepository
