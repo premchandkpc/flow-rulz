@@ -288,7 +288,7 @@ func compareEq(actual interface{}, expected interface{}) bool {
 	// For numbers, compare numerically but only if both are numeric types
 	// Reject string<->number, bool<->string coercion
 
-	// json.Number vs json.Number: compare as decimal strings
+	// JSON numbers compare by numeric value rather than textual representation.
 	if a, aok := actual.(json.Number); aok {
 		if b, bok := expected.(json.Number); bok {
 			return compareNumericEqual(a, b)
