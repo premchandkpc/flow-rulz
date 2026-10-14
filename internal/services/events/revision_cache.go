@@ -1,8 +1,8 @@
 package events
 
 import (
-	"context"
 	"container/list"
+	"context"
 	"sync"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
