@@ -80,10 +80,10 @@ func TestRouterSendsScheduledIntentToDurableSender(t *testing.T) {
 	router := NewRouterWithConfig(publisher, command, "events", 64, nil, scheduled)
 
 	err := router.Send(context.Background(), &domain.Effect{
-		EffectType: domain.EffectTypeScheduleEvent,
+		EffectType:  domain.EffectTypeScheduleEvent,
 		Destination: "scheduled_events",
-		Name: "order.reminder",
-		Payload: json.RawMessage(`{}`),
+		Name:        "order.reminder",
+		Payload:     json.RawMessage(`{}`),
 	}, "effect-schedule-1")
 	if err != nil {
 		t.Fatalf("send scheduled intent: %v", err)
