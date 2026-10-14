@@ -1,4 +1,4 @@
-# Multi-contract model
+# Multi-contract model and implementation status
 
 ## Identity and immutability
 
@@ -23,3 +23,9 @@ A request has a stable message ID and correlation ID, and declares the expected 
 ## Delivery guarantees
 
 NATS JetStream is the single application-message transport. PostgreSQL remains the persistence protocol; the HTTP API is control-plane management only. Broker delivery is at-least-once. Consumers deduplicate on stable message/effect IDs. Contract validation must occur before ACK-worthy durable execution, and schema hashes are not substitutes for tenant authorization.
+
+## Current implementation boundary
+
+Implemented in this change: contract kinds, canonical schema hashes, immutable semantic versions, explicit parent-child allowlists, payload type/required/enum validation, validation at the existing event-ingestion boundary and worker execution, and input-contract hash pinning during rule activation.
+
+Not yet implemented: receiver-side accepted-contract declarations, contract-to-rule-set binding/routing, per-item contract validation for batch send, and durable request/response correlation state. The request/response state machine above is the required design, not a claim that those workflow transitions already exist in code. The legacy HTTP event-ingestion endpoint also remains for SDK compatibility; it must not be described as a NATS-only producer ingress until that compatibility path is removed or replaced.
