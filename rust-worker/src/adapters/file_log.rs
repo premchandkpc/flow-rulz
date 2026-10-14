@@ -411,12 +411,12 @@ impl EventLog for FileEventLog {
         if let Err(error) = state.file.write_all(&encoded).await {
             let _ = state.file.set_len(old_len).await;
             let _ = state.file.sync_data().await;
-            return Err(storage_error(error));
+            return Err(storage_io_error(error));
         }
         if let Err(error) = state.file.sync_data().await {
             let _ = state.file.set_len(old_len).await;
             let _ = state.file.sync_data().await;
-            return Err(storage_error(error));
+            return Err(storage_io_error(error));
         }
 
         if stored.kind == LogRecordKind::FenceAdvanced {
@@ -804,10 +804,10 @@ unsafe extern "C" {
 }
 
 fn truncate_and_sync(file: &mut File, offset: u64) -> Result<(), LogError> {
-    file.set_len(offset).map_err(storage_error)?;
+    file.set_len(offset).map_err(storage_io_error)?;
     // Persist recovery before accepting new appends, so a later crash cannot
     // resurrect bytes from the discarded incomplete tail.
-    file.sync_all().map_err(storage_error)
+    file.sync_all().map_err(storage_io_error)
 }
 
 fn acquire_process_lock(root: &Path) -> Result<File, LogError> {
@@ -904,6 +904,14 @@ fn hex_nibble(value: u8) -> Result<u8, LogError> {
         b'0'..=b'9' => Ok(value - b'0'),
         b'a'..=b'f' => Ok(value - b'a' + 10),
         _ => Err(LogError::Integrity("invalid hex payload".into())),
+    }
+}
+
+fn storage_io_error(error: std::io::Error) -> LogError {
+    if error.kind() == std::io::ErrorKind::StorageFull {
+        LogError::StorageFull(error.to_string())
+    } else {
+        LogError::Unavailable(error.to_string())
     }
 }
 
