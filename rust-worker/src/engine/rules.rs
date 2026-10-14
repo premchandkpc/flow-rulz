@@ -350,3 +350,68 @@ fn build_command_effect(effect_id: String, event: &EventEnvelope, command: &Comm
         effect_type: "command",
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn event(tenant_id: &str) -> EventEnvelope {
+        EventEnvelope {
+            id: "event-1".into(),
+            event_type: "orders.created".into(),
+            tenant_id: tenant_id.into(),
+            partition_key: "order-1".into(),
+            workflow_id: None,
+            occurred_at: Utc::now(),
+            data: json!({"approved": true}),
+            headers: HashMap::new(),
+        }
+    }
+
+    fn matching_rule(id: &str, priority: i64) -> Rule {
+        Rule {
+            id: id.into(),
+            priority,
+            predicate: Predicate {
+                all: None,
+                any: None,
+                not: None,
+                path: Some("$.approved".into()),
+                op: Some("eq".into()),
+                value: Some(json!(true)),
+            },
+            then: Vec::new(),
+            otherwise: Vec::new(),
+        }
+    }
+
+    fn revision(tenant_scope: &str, match_mode: &str, compiled: Vec<Rule>) -> RuleRevision {
+        RuleRevision {
+            tenant_scope: tenant_scope.into(),
+            rule_id: "orders.created".into(),
+            revision: 1,
+            content_hash: "contract-hash".into(),
+            match_mode: match_mode.into(),
+            compiled,
+        }
+    }
+
+    #[test]
+    fn first_match_uses_descending_priority_with_deterministic_ties() {
+        let revision = revision(
+            "tenant-a",
+            "first_match",
+            vec![matching_rule("low", 1), matching_rule("high", 100)],
+        );
+        let (matched, effects) = evaluate(&revision, &event("tenant-a")).unwrap();
+        assert_eq!(matched, vec!["high"]);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn evaluation_rejects_cross_tenant_rule_revisions() {
+        let revision = revision("tenant-a", "all_matches", vec![matching_rule("rule-1", 1)]);
+        assert!(evaluate(&revision, &event("tenant-b")).is_err());
+    }
+}
