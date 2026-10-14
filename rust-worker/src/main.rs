@@ -1,5 +1,7 @@
 //! Entrypoint for the standalone Rust worker service.
 mod config;
+mod domain;
+mod ports;
 mod engine;
 mod runtime;
 
