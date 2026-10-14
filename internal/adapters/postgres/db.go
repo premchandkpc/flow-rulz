@@ -142,7 +142,7 @@ func (d *DB) RunMigrations(ctx context.Context) error {
 		}
 
 		if _, err := tx.Exec(ctx, string(data)); err != nil {
-			tx.Rollback(ctx)
+			_ = tx.Rollback(ctx)
 			return fmt.Errorf("exec migration %s: %w", f, err)
 		}
 
@@ -150,7 +150,7 @@ func (d *DB) RunMigrations(ctx context.Context) error {
 		name := strings.TrimSuffix(f, ".sql")
 		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)`,
 			version, name, checksum); err != nil {
-			tx.Rollback(ctx)
+			_ = tx.Rollback(ctx)
 			return fmt.Errorf("record migration %s: %w", f, err)
 		}
 

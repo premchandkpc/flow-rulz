@@ -274,57 +274,6 @@ func (s *Service) processInTransaction(ctx context.Context, envelope *domain.Eve
 	return firstExecution, nil
 }
 
-// deduplicateEvent checks inbox for duplicate and inserts new entry.
-// Returns existing execution if duplicate, nil if new event.
-func (s *Service) deduplicateEvent(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope) (*domain.Execution, error) {
-	entry, err := repos.Inbox.Get(ctx, envelope.TenantID, envelope.ID)
-	if err != nil {
-		return nil, fmt.Errorf("check inbox: %w", err)
-	}
-	if entry != nil {
-		exec, err := repos.Executions.Get(ctx, entry.ExecutionID)
-		if err != nil {
-			return nil, fmt.Errorf("get existing execution: %w", err)
-		}
-		if exec != nil {
-			return exec, nil
-		}
-	}
-
-	inboxEntry := &domain.InboxEntry{
-		TenantID:     envelope.TenantID,
-		EventID:      envelope.ID,
-		Status:       domain.InboxStatusProcessing,
-		PartitionKey: envelope.PartitionKey,
-		RuleSet:      envelope.Type,
-		Payload:      envelope.Data,
-		FirstSeenAt:  s.clock.Now(),
-	}
-	inserted, err := repos.Inbox.Insert(ctx, inboxEntry)
-	if err != nil {
-		return nil, fmt.Errorf("insert inbox: %w", err)
-	}
-	// F2: Dedup fall-through - if not inserted and no execution found, it's a conflict
-	if !inserted {
-		entry, err = repos.Inbox.Get(ctx, envelope.TenantID, envelope.ID)
-		if err != nil {
-			return nil, fmt.Errorf("get inbox after conflict: %w", err)
-		}
-		if entry != nil {
-			exec, err := repos.Executions.Get(ctx, entry.ExecutionID)
-			if err != nil {
-				return nil, fmt.Errorf("get execution after conflict: %w", err)
-			}
-			if exec != nil {
-				return exec, nil
-			}
-		}
-		// F2: Fall-through with nil execution = conflict
-		return nil, domain.ErrInboxDuplicate
-	}
-	return nil, nil
-}
-
 // deduplicateEventForRuleset checks inbox for duplicate for a specific ruleset.
 // Returns existing execution if duplicate, nil if new event for this ruleset.
 func (s *Service) deduplicateEventForRuleset(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, ruleSet string) (*domain.Execution, error) {
@@ -454,51 +403,6 @@ func (s *Service) persistExecutionAndOutboxForRuleset(ctx context.Context, repos
 	}
 
 	return execution, nil
-}
-
-// loadActiveRevision loads the active rule revision for the event (legacy single-ruleset path).
-// Deprecated: Use resolveRulesets for bindings-based routing.
-func (s *Service) loadActiveRevision(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope) (*domain.RuleRevision, error) {
-	ruleSet := envelope.Type
-	activation, err := repos.Activations.Get(ctx, envelope.TenantID, ruleSet)
-	if err != nil {
-		return nil, fmt.Errorf("get activation: %w", err)
-	}
-	if activation == nil {
-		// Rule not yet activated for this event type. This is transient:
-		// the rule may be deployed shortly after the event arrives.
-		// NATS MaxDeliver + backoff bounds the retry window.
-		return nil, domain.ErrRuleNotReady
-	}
-
-	revision, err := repos.RuleRepo.GetActive(ctx, envelope.TenantID, ruleSet)
-	if err != nil {
-		return nil, fmt.Errorf("get active revision: %w", err)
-	}
-	if revision == nil {
-		return nil, domain.ErrRuleNotFound
-	}
-
-	// Enforce contract binding: if rule revision declares an InputContract,
-	// the event MUST declare a matching contract.
-	if revision.InputContract != nil {
-		if envelope.Contract == nil {
-			return nil, fmt.Errorf("%w: rule revision %s requires contract %s@%s (hash: %s)",
-				domain.ErrContractRequired, revision.RuleID, revision.InputContract.Name, revision.InputContract.Version, revision.InputContract.SchemaHash)
-		}
-		if envelope.Contract.Name != revision.InputContract.Name ||
-			envelope.Contract.Version != revision.InputContract.Version ||
-			envelope.Contract.SchemaHash != revision.InputContract.SchemaHash {
-			return nil, fmt.Errorf("%w: event contract %s@%s (hash: %s) does not match rule revision %s required contract %s@%s (hash: %s)",
-				domain.ErrContractMismatch,
-				envelope.Contract.Name, envelope.Contract.Version, envelope.Contract.SchemaHash,
-				revision.RuleID,
-				revision.InputContract.Name, revision.InputContract.Version, revision.InputContract.SchemaHash)
-		}
-	}
-	// If revision doesn't require a contract, event may or may not have one (backward compatible)
-
-	return revision, nil
 }
 
 // QuarantineEvent records a failed event for later inspection.
