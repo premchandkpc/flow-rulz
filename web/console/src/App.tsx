@@ -526,7 +526,7 @@ export default function App() {
   const [simulationScenario, setSimulationScenario] = useState<SimulationScenario>("all");
   const [simulationPace, setSimulationPace] = useState(4000);
   const [simulationEvents, setSimulationEvents] = useState<SimulationEvent[]>([]);
-  const [simulationRunning, setSimulationRunning] = useState(false);
+  const [simulationRunning] = useState(false);
   const [simulationStopping, setSimulationStopping] = useState(false);
   const [simulationError, setSimulationError] = useState("");
   const [simulationTraceError, setSimulationTraceError] = useState("");
