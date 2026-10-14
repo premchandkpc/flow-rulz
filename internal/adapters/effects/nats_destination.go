@@ -22,7 +22,7 @@ type NATSDestination struct {
 	publisher ports.SubjectPublisher
 }
 
-// NewNATSDestination creates a NATS-backed command destination.
+// NewNATSDestination creates a NATS-backed effect destination.
 func NewNATSDestination(publisher ports.SubjectPublisher) *NATSDestination {
 	return &NATSDestination{publisher: publisher}
 }
@@ -30,10 +30,10 @@ func NewNATSDestination(publisher ports.SubjectPublisher) *NATSDestination {
 // Send publishes an emitted topic to effects.<topic> or a command to commands.<destination>.<name>.
 func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
 	if effect == nil {
-		return errors.New("publish command: effect is nil")
+		return errors.New("publish effect: effect is nil")
 	}
 	if s.publisher == nil {
-		return errors.New("publish command: NATS publisher is not configured")
+		return errors.New("publish effect: NATS publisher is not configured")
 	}
 	var subject string
 	switch effect.EffectType {
