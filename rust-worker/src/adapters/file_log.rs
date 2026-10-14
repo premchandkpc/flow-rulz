@@ -169,8 +169,8 @@ impl FileEventLog {
         partitions: &'a mut HashMap<PartitionId, PartitionState>,
         partition: PartitionId,
     ) -> Result<&'a mut PartitionState, LogError> {
-        if let Some(state) = partitions.get_mut(&partition) {
-            return Ok(state);
+        if let std::collections::hash_map::Entry::Occupied(entry) = partitions.entry(partition) {
+            return Ok(entry.into_mut());
         }
 
         let path = partition_path(&self.root, partition);
@@ -183,24 +183,21 @@ impl FileEventLog {
             .await
             .map_err(storage_error)?;
         if !existed {
-            // Persist the new directory entry as well as later frame bytes.
             File::open(&self.root)
                 .and_then(|directory| directory.sync_all())
                 .map_err(storage_error)?;
         }
-        partitions.insert(
-            partition,
-            PartitionState {
+
+        Ok(match partitions.entry(partition) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(PartitionState {
                 file,
                 segment_number: 0,
                 next_position: 0,
                 records: Vec::new(),
                 highest_fencing_epoch: 0,
-            },
-        );
-        partitions
-            .get_mut(&partition)
-            .ok_or_else(|| LogError::Integrity("partition state disappeared".into()))
+            }),
+        })
     }
 }
 
