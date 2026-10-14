@@ -103,7 +103,6 @@ func run() (runErr error) {
 	domainServicesSvc := svcdomains.NewService(
 		repositories.DomainServices,
 		domain.SystemClock{},
-		cfg.App.Env == "development" || cfg.App.Env == "dev" || cfg.App.Env == "test",
 	)
 
 	workflowDefRepo := repositories.WorkflowDefinitions
