@@ -376,6 +376,12 @@ func setupTestUseCase(t *testing.T) (*svcevents.Service, *mockInbox, *mockExecut
 		t.Fatalf("compile: %v", err)
 	}
 
+	// The immutable revision cache validates the full tenant/ruleset/revision key.
+	// The compiler creates rule content; the repository fixture supplies persistence metadata.
+	revision.TenantScope = "test-tenant"
+	revision.RuleID = "order.created"
+	revision.Revision = 1
+
 	if err := activations.Set(context.Background(), &domain.RuleActivation{
 		TenantScope: "test-tenant",
 		RuleSet:     "order.created",
