@@ -27,8 +27,7 @@ func NewDomainServiceSender(services ports.DomainServiceRepository, publisher po
 
 // Send publishes an event delivery after verifying that its tenant service is active.
 func (s *DomainServiceSender) Send(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
-	event, err := validateAndDecodeEffect(effect)
-	if err != nil {
+	if _, err := validateAndDecodeEffect(effect); err != nil {
 		return err
 	}
 	if s.publisher == nil {
@@ -48,7 +47,6 @@ func (s *DomainServiceSender) Send(ctx context.Context, effect *domain.Effect, i
 	if err := s.publisher.Publish(ctx, subject, payload); err != nil {
 		return fmt.Errorf("publish event to tenant service subject %q: %w", subject, err)
 	}
-	_ = event // validation above ensures the persisted outbox payload is a valid event envelope.
 	return nil
 }
 
