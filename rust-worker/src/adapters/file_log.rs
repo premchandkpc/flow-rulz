@@ -575,4 +575,74 @@ mod tests {
         assert!(matches!(error, LogError::Integrity(_)));
         let _ = fs::remove_dir_all(dir);
     }
+
+    #[tokio::test]
+    async fn execution_and_all_effects_are_one_committed_record() {
+        use crate::domain::{ContractRef, EventIdentity, OutputRoute};
+
+        let dir = temp_dir();
+        let log = FileEventLog::open(&dir).await.unwrap();
+        let tenant_id = "tenant-a";
+        let event_id = "event-1";
+        let partition_key = "order-1";
+        let execution_id =
+            deterministic_id("execution", &[tenant_id, partition_key, event_id]);
+        let effect_payload = Bytes::from_static(br#"{"type":"orders.approved"}"#);
+        let effect = crate::domain::EffectIntent {
+            effect_id: "effect-1".to_string(),
+            tenant_id: tenant_id.to_string(),
+            source_event_id: event_id.to_string(),
+            execution_id: execution_id.clone(),
+            output_contract: ContractRef {
+                name: "orders.approved".to_string(),
+                version: "1".to_string(),
+                content_hash: sha256_hex(b"contract-v1"),
+            },
+            route: OutputRoute::Consumer {
+                destination: "orders.approved".to_string(),
+            },
+            kind: EffectKind::PublishEvent,
+            payload: effect_payload.clone(),
+            payload_sha256: sha256_hex(&effect_payload),
+            partition_key: partition_key.to_string(),
+        };
+        let commit = ExecutionCommit {
+            execution_id,
+            event: EventIdentity {
+                tenant_id: tenant_id.to_string(),
+                event_id: event_id.to_string(),
+                partition_key: partition_key.to_string(),
+            },
+            rule_revisions: Vec::new(),
+            outcome: ExecutionOutcome::Completed,
+            decision_hash: sha256_hex(b"decision"),
+            matched_rule_ids: vec!["approve-order".to_string()],
+            result_payload: Bytes::from_static(br#"{"approved":true}"#),
+            effects: vec![effect],
+            fencing_epoch: 1,
+        };
+
+        let position = log.commit_execution(commit).await.unwrap();
+        assert_eq!(position, LogPosition(1));
+        let partition = partition_for_key(partition_key);
+        let records = log.read(partition, LogPosition(0), 10).await.unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].kind, LogRecordKind::ExecutionCommitted);
+        let payload: serde_json::Value = serde_json::from_slice(&records[0].payload).unwrap();
+        assert_eq!(payload["effects"].as_array().unwrap().len(), 1);
+        assert_eq!(payload["effects"][0]["effect_id"], "effect-1");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn partition_mapping_matches_fnv1a_virtual_shards() {
+        let key = "tenant-a:order-1";
+        let mut expected = 2_166_136_261_u32;
+        for byte in key.as_bytes() {
+            expected ^= u32::from(*byte);
+            expected = expected.wrapping_mul(16_777_619);
+        }
+        assert_eq!(partition_for_key(key), PartitionId(expected % 4096));
+    }
+
 }
