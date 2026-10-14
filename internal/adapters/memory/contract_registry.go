@@ -32,27 +32,47 @@ func (r *ContractRegistry) Get(_ context.Context, name string, version string) (
 	defer r.mu.RUnlock()
 	schema, ok := r.schemas[r.key(name, version)]
 	if !ok {
-		return nil, fmt.Errorf("contract %s@%s not found", name, version)
+		return nil, nil
 	}
 	return schema, nil
 }
 
 // Register stores a contract schema.
 func (r *ContractRegistry) Register(_ context.Context, schema *domain.ContractSchema) error {
+	if err := schema.NormalizeAndValidate(); err != nil { return fmt.Errorf("validate contract: %w", err) }
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.schemas[r.key(schema.Name, schema.Version)] = schema
+	key := r.key(schema.Name, schema.Version)
+	if existing, ok := r.schemas[key]; ok {
+		if existing.SchemaHash == "" { if err := existing.NormalizeAndValidate(); err != nil { return err } }
+		if existing.SchemaHash != schema.SchemaHash { return fmt.Errorf("contract %s@%s is immutable; publish a new version", schema.Name, schema.Version) }
+		return nil
+	}
+	if schema.Parent != nil {
+		parent, ok := r.schemas[r.key(schema.Parent.Name, schema.Parent.Version)]
+		if !ok { return fmt.Errorf("parent contract %s@%s not found", schema.Parent.Name, schema.Parent.Version) }
+		if err := parent.NormalizeAndValidate(); err != nil { return err }
+		if schema.Parent.SchemaHash != "" && schema.Parent.SchemaHash != parent.SchemaHash { return fmt.Errorf("parent contract schema hash mismatch") }
+		schema.Parent.SchemaHash = parent.SchemaHash
+		if err := schema.NormalizeAndValidate(); err != nil { return err }
+		if !parent.AllowsChild(domain.ContractRef{Name:schema.Name, Version:schema.Version, SchemaHash:schema.SchemaHash}) {
+			return fmt.Errorf("parent contract %s@%s does not allow child %s@%s", parent.Name, parent.Version, schema.Name, schema.Version)
+		}
+	}
+	copy := *schema
+	r.schemas[key] = &copy
 	return nil
 }
 
 // List returns all contract schemas matching the given name.
-func (r *ContractRegistry) List(_ context.Context, name string) ([]domain.ContractSchema, error) {
+func (r *ContractRegistry) List(_ context.Context, name string) ([]*domain.ContractSchema, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	var result []domain.ContractSchema
+	var result []*domain.ContractSchema
 	for _, s := range r.schemas {
-		if s.Name == name {
-			result = append(result, *s)
+		if name == "" || s.Name == name {
+			copy := *s
+			result = append(result, &copy)
 		}
 	}
 	return result, nil
