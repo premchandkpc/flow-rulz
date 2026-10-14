@@ -30,6 +30,10 @@ func NewWorkflowHandler(workflowSvc ports.WorkflowService, ruleSvc ports.RuleSer
 
 // RegisterControlPlaneRoutes registers configuration and read-only workflow views.
 // Runtime instance creation and transitions are worker-owned.
+func (h *WorkflowHandler) RegisterRoutes(mux *http.ServeMux) {
+	h.RegisterControlPlaneRoutes(mux)
+}
+
 func (h *WorkflowHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/workflows/{workflowID}", h.GetWorkflow)
 	mux.HandleFunc("GET /v1/workflows", h.ListWorkflows)
@@ -41,7 +45,7 @@ func (h *WorkflowHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
 
 // RegisterRoutes preserves the complete handler route set for focused handler tests.
 // The production API router must use RegisterControlPlaneRoutes.
-func (h *WorkflowHandler) RegisterRoutes(mux *http.ServeMux) {
+func (h *WorkflowHandler) RegisterAllRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/workflows", h.CreateWorkflow)
 	mux.HandleFunc("GET /v1/workflows/{workflowID}", h.GetWorkflow)
 	mux.HandleFunc("POST /v1/workflows/{workflowID}/transition", h.TransitionWorkflow)
