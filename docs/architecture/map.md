@@ -22,7 +22,7 @@ flowchart LR
   Outbox --> Effects[services/effects]
   Effects --> Router[Effect router]
   Router -->|emit event| NATS
-  Router -->|emit topic: effects.>| NATS
+  Router -->|emit topic| NATS
   Router -->|command| Commands[commands.destination.name]
   Router -->|service event| Services[services.tenant-hash.service-hash]
   Commands --> Receiver[Durable JetStream receiver]
