@@ -407,4 +407,4 @@ Rules can create a durable scheduled child event using a `schedule_event` action
 }
 ```
 
-`delay_seconds` must be between 1 and 31,536,000 (one year). Partition-key policies are `explicit`, `inherit`, and `from_data`; `from_data` requires `partition_key_path`. Scheduled events are persisted and retried by the worker runtime, not by the management API. This action schedules an event; it does not implement correlated workflow `wait`/resume semantics.
+`delay_seconds` must be between 1 and 31,536,000 (one year). Partition-key policies are `explicit`, `inherit`, and `from_data`; `from_data` requires `partition_key_path`. Scheduled events are persisted and retried by the Go worker runtime, not by the management API. The optional Rust worker does not yet implement this action; do not route rules containing `schedule_event` to that worker. This action schedules an event; it does not implement correlated workflow `wait`/resume semantics.
