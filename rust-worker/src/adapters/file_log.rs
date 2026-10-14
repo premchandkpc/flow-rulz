@@ -14,7 +14,7 @@ use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -22,6 +22,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
+const DEFAULT_SEGMENT_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FrameBody {
@@ -43,6 +44,7 @@ struct Frame {
 
 struct PartitionState {
     file: tokio::fs::File,
+    segment_number: u64,
     next_position: u64,
     records: Vec<LogRecord>,
     by_id: HashMap<String, (LogRecord, LogPosition)>,
@@ -51,6 +53,7 @@ struct PartitionState {
 
 pub struct FileEventLog {
     root: PathBuf,
+    segment_max_bytes: u64,
     // Holding this file keeps the OS advisory lock for the adapter lifetime.
     _lock_file: File,
     partitions: Mutex<HashMap<PartitionId, PartitionState>>,
@@ -62,42 +65,94 @@ impl FileEventLog {
     /// an incomplete final frame. A complete frame with a bad checksum fails
     /// closed instead of silently discarding potentially committed data.
     pub async fn open(root: impl AsRef<Path>) -> Result<Self, LogError> {
+        Self::open_with_segment_bytes(root, DEFAULT_SEGMENT_BYTES).await
+    }
+
+    /// Open a segmented WAL. Segment size is configurable for deterministic
+    /// rotation tests; production defaults to 256 MiB per partition segment.
+    pub async fn open_with_segment_bytes(
+        root: impl AsRef<Path>,
+        segment_max_bytes: u64,
+    ) -> Result<Self, LogError> {
+        if segment_max_bytes == 0 {
+            return Err(LogError::Invalid("WAL segment size must be positive".into()));
+        }
         let root = root.as_ref().to_path_buf();
         fs::create_dir_all(&root).map_err(storage_error)?;
         let lock_file = acquire_process_lock(&root)?;
         let mut partitions = HashMap::new();
         let mut record_index = HashMap::new();
-        let entries = fs::read_dir(&root).map_err(storage_error)?;
+        let mut files: BTreeMap<PartitionId, Vec<(u64, PathBuf)>> = BTreeMap::new();
 
-        for entry in entries {
+        for entry in fs::read_dir(&root).map_err(storage_error)? {
             let entry = entry.map_err(storage_error)?;
             let name = entry.file_name().to_string_lossy().to_string();
-            let Some(number) = name
-                .strip_prefix("partition-")
-                .and_then(|name| name.strip_suffix(".wal"))
-            else {
-                continue;
-            };
-            let partition_number = number.parse::<u32>().map_err(|_| {
-                LogError::Integrity(format!("invalid WAL filename {name}"))
-            })?;
-            let partition = PartitionId(partition_number);
-            let (file, records, next_position, by_id, highest_fencing_epoch) =
-                recover_partition(entry.path(), partition)?;
-            for (record_id, (record, position)) in &by_id {
-                if record_index
-                    .insert(record_id.clone(), (partition, record.clone(), *position))
-                    .is_some()
-                {
+            if let Some((partition, segment)) = parse_partition_segment(&name)? {
+                files.entry(PartitionId(partition)).or_default().push((segment, entry.path()));
+            }
+        }
+
+        for (partition, mut segments) in files {
+            segments.sort_by_key(|(segment, _)| *segment);
+            if segments.first().map(|(segment, _)| *segment) != Some(0) {
+                return Err(LogError::Integrity(format!(
+                    "partition {} has a segment gap before its first segment",
+                    partition.0
+                )));
+            }
+
+            let mut records = Vec::new();
+            let mut by_id = HashMap::new();
+            let mut next_position = 0_u64;
+            let mut highest_fencing_epoch = 0_u64;
+            let mut current_file = None;
+            let mut expected_segment = 0_u64;
+
+            for (segment_number, path) in segments.iter() {
+                if *segment_number != expected_segment {
                     return Err(LogError::Integrity(format!(
-                        "record ID {record_id} appears in more than one partition"
+                        "partition {} has a WAL segment gap at segment {}",
+                        partition.0, expected_segment
                     )));
                 }
+                let (file, segment_records, segment_position, segment_by_id, segment_epoch) =
+                    recover_partition(
+                        path.clone(),
+                        partition,
+                        next_position + 1,
+                        highest_fencing_epoch,
+                    )?;
+
+                for (record_id, (record, position)) in segment_by_id {
+                    if by_id.insert(record_id.clone(), (record.clone(), position)).is_some() {
+                        return Err(LogError::Integrity(format!(
+                            "record ID {record_id} appears in multiple segments"
+                        )));
+                    }
+                    if record_index
+                        .insert(record_id.clone(), (partition, record, position))
+                        .is_some()
+                    {
+                        return Err(LogError::Integrity(format!(
+                            "record ID {record_id} appears in more than one partition"
+                        )));
+                    }
+                }
+                records.extend(segment_records);
+                next_position = segment_position;
+                highest_fencing_epoch = segment_epoch;
+                current_file = Some(file);
+                expected_segment += 1;
             }
+
+            let file = current_file.ok_or_else(|| {
+                LogError::Integrity(format!("partition {} has no WAL segments", partition.0))
+            })?;
             partitions.insert(
                 partition,
                 PartitionState {
                     file: tokio::fs::File::from_std(file),
+                    segment_number: expected_segment - 1,
                     next_position,
                     records,
                     by_id,
@@ -108,6 +163,7 @@ impl FileEventLog {
 
         Ok(Self {
             root,
+            segment_max_bytes,
             _lock_file: lock_file,
             partitions: Mutex::new(partitions),
             record_index: Mutex::new(record_index),
@@ -139,6 +195,7 @@ impl FileEventLog {
                 partition,
                 PartitionState {
                     file,
+                    segment_number: 0,
                     next_position: 0,
                     records: Vec::new(),
                     by_id: HashMap::new(),
@@ -330,6 +387,25 @@ impl EventLog for FileEventLog {
         let mut encoded = Vec::with_capacity(4 + bytes.len());
         encoded.extend_from_slice(&frame_len.to_be_bytes());
         encoded.extend_from_slice(&bytes);
+
+        let current_len = state.file.metadata().await.map_err(storage_error)?.len();
+        if current_len > 0
+            && current_len.saturating_add(encoded.len() as u64) > self.segment_max_bytes
+        {
+            let next_segment = state.segment_number + 1;
+            let path = segment_path(&self.root, record.partition, next_segment);
+            let next_file = OpenOptions::new()
+                .create_new(true)
+                .read(true)
+                .append(true)
+                .open(path)
+                .map_err(storage_error)?;
+            File::open(&self.root)
+                .and_then(|directory| directory.sync_all())
+                .map_err(storage_error)?;
+            state.file = tokio::fs::File::from_std(next_file);
+            state.segment_number = next_segment;
+        }
 
         let old_len = state.file.metadata().await.map_err(storage_error)?.len();
         if let Err(error) = state.file.write_all(&encoded).await {
@@ -541,6 +617,8 @@ impl EventLog for FileEventLog {
 fn recover_partition(
     path: PathBuf,
     partition: PartitionId,
+    first_position: u64,
+    initial_fencing_epoch: u64,
 ) -> Result<
     (
         File,
@@ -561,8 +639,8 @@ fn recover_partition(
     let mut offset = 0_u64;
     let mut records = Vec::new();
     let mut by_id = HashMap::new();
-    let mut expected_position = 1_u64;
-    let mut highest_fencing_epoch = 0_u64;
+    let mut expected_position = first_position;
+    let mut highest_fencing_epoch = initial_fencing_epoch;
 
     while offset < file_len {
         let remaining = file_len - offset;
@@ -767,6 +845,30 @@ fn acquire_process_lock(root: &Path) -> Result<File, LogError> {
 
 fn partition_path(root: &Path, partition: PartitionId) -> PathBuf {
     root.join(format!("partition-{:010}.wal", partition.0))
+}
+
+fn segment_path(root: &Path, partition: PartitionId, segment: u64) -> PathBuf {
+    root.join(format!("partition-{:010}-segment-{:020}.wal", partition.0, segment))
+}
+
+fn parse_partition_segment(name: &str) -> Result<Option<(u32, u64)>, LogError> {
+    let Some(name) = name.strip_prefix("partition-").and_then(|value| value.strip_suffix(".wal")) else {
+        return Ok(None);
+    };
+    if let Some((partition, segment)) = name.split_once("-segment-") {
+        let partition = partition.parse::<u32>().map_err(|_| {
+            LogError::Integrity(format!("invalid WAL partition filename {name}"))
+        })?;
+        let segment = segment.parse::<u64>().map_err(|_| {
+            LogError::Integrity(format!("invalid WAL segment filename {name}"))
+        })?;
+        Ok(Some((partition, segment)))
+    } else {
+        let partition = name.parse::<u32>().map_err(|_| {
+            LogError::Integrity(format!("invalid WAL partition filename {name}"))
+        })?;
+        Ok(Some((partition, 0)))
+    }
 }
 
 fn partition_for_key(tenant_id: &str, key: &str) -> PartitionId {
