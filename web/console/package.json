@@ -10,8 +10,8 @@
     "test": "node --experimental-strip-types --test src/flow-layout.test.mjs"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^4.7.0",
-    "vite": "^6.4.4",
+    "@vitejs/plugin-react": "^6.1.2",
+    "vite": "^8.3.4",
     "typescript": "~7.0.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
