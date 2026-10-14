@@ -135,10 +135,6 @@ func main() {
 	//     GRPCAddr:  "flowrulz-server:9090",
 	// }
 
-	// HTTP mode
-	// cfg := &flowrulz.Config{
-	//     Transport: flowrulz.TransportHTTP,
-	//     TenantID:  "acme",
-	//     HTTPAddr:  "http://flowrulz-server:8080",
-	// }
+	// HTTP event ingestion is intentionally unsupported: the HTTP API is control-plane only.
+	// Configure the NATS transport for event publication.
 }
