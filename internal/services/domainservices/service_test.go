@@ -155,4 +155,3 @@ func TestSaveServiceAssignsStableNATSSubjectAndRejectsDuplicateName(t *testing.T
 		t.Fatalf("duplicate service name error = %v, want ErrConflict", err)
 	}
 }
-
