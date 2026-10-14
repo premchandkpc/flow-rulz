@@ -5,7 +5,7 @@ mod quarantine;
 mod scheduler;
 
 use crate::{config::Config, engine};
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream;
 use chrono::Utc;
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -22,11 +22,11 @@ pub async fn run(config: Config) -> Result<()> {
     let mut tasks = JoinSet::new();
     spawn_consumer_tasks(&mut tasks, &pool, &js, &config, &leases);
     spawn_background_tasks(&mut tasks, &pool, &js, &config);
-    wait_for_shutdown(&mut tasks).await;
+    let shutdown_result = wait_for_shutdown(&mut tasks).await;
     abort_remaining_tasks(&mut tasks).await;
     release_owned_leases(&pool, &leases, &config.worker_id).await;
     pool.close().await;
-    Ok(())
+    shutdown_result
 }
 
 fn bail_no_leases(config: &Config) -> Result<()> {
@@ -49,7 +49,7 @@ async fn connect_services(config: &Config) -> Result<(PgPool, jetstream::Context
 }
 
 fn spawn_consumer_tasks(
-    tasks: &mut JoinSet<()>,
+    tasks: &mut JoinSet<Result<()>>,
     pool: &PgPool,
     js: &jetstream::Context,
     config: &Config,
@@ -63,9 +63,9 @@ fn spawn_consumer_tasks(
             let shard = *shard;
             let token = *token;
             tasks.spawn(async move {
-                if let Err(error) = consumer::consume_shard_subject(pool, js, config, shard, token, subject, durable).await {
-                    error!(shard, error = %error, "shard consumer stopped");
-                }
+                consumer::consume_shard_subject(pool, js, config, shard, token, subject, durable)
+                    .await
+                    .with_context(|| format!("shard {shard} consumer stopped"))
             });
         }
     }
@@ -76,18 +76,18 @@ fn spawn_background_tasks(tasks: &mut JoinSet<()>, pool: &PgPool, js: &jetstream
     let outbox_js = js.clone();
     let outbox_config = config.clone();
     tasks.spawn(async move {
-        if let Err(error) = effects::outbox_loop(outbox_pool, outbox_js, outbox_config).await {
-            error!(error = %error, "outbox publisher stopped");
-        }
+        effects::outbox_loop(outbox_pool, outbox_js, outbox_config)
+            .await
+            .context("outbox publisher stopped")
     });
 
     let scheduler_pool = pool.clone();
     let scheduler_js = js.clone();
     let scheduler_config = config.clone();
     tasks.spawn(async move {
-        if let Err(error) = scheduler::scheduler_loop(scheduler_pool, scheduler_js, scheduler_config).await {
-            error!(error = %error, "scheduled-event publisher stopped");
-        }
+        scheduler::scheduler_loop(scheduler_pool, scheduler_js, scheduler_config)
+            .await
+            .context("scheduled-event publisher stopped")
     });
 }
 
@@ -108,7 +108,7 @@ async fn abort_remaining_tasks(tasks: &mut JoinSet<()>) {
 
 async fn release_owned_leases(pool: &PgPool, leases: &HashMap<u32, i64>, worker_id: &str) {
     for shard in leases.keys() {
-        if let Err(error) = engine::release_lease(pool, *shard, worker_id).await {
+        if let Err(error) = engine::release_lease(pool, *shard, worker_id, *leases.get(shard).expect("lease token must exist")).await {
             warn!(shard, error = %error, "failed to release shard lease");
         }
     }
