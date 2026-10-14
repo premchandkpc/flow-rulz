@@ -74,7 +74,7 @@ const NAV: Array<{ id: NavKey; label: string; icon: string }> = [
 ];
 const ROUTES = [
   { method: "GET", path: "/health", description: "API liveness" },
-  { method: "GET", path: "/ready", description: "Dependency readiness (database, NATS)" },
+  { method: "GET", path: "/ready", description: "Database readiness" },
   { method: "GET", path: "/v1/contracts", description: "List registered contracts" },
   { method: "POST", path: "/v1/contracts", description: "Register a contract" },
   { method: "GET", path: "/v1/rules/active", description: "List active rules for the tenant" },
@@ -82,13 +82,17 @@ const ROUTES = [
   { method: "POST", path: "/v1/rules/{ruleSet}/revisions", description: "Compile and activate a rule revision" },
   { method: "GET", path: "/v1/workflows", description: "List workflows" },
   { method: "GET", path: "/v1/workflows/definitions", description: "List workflow definitions" },
+  { method: "POST", path: "/v1/workflows/definitions", description: "Create a workflow definition (platform admin scope required)" },
+  { method: "GET", path: "/v1/workflows/{workflowID}", description: "Read a workflow instance" },
   { method: "GET", path: "/v1/events/{eventID}/trace", description: "Trace event executions and emitted events" },
   { method: "GET", path: "/v1/domains", description: "List tenant event domains" },
   { method: "POST", path: "/v1/domains", description: "Create a tenant event domain" },
   { method: "GET", path: "/v1/services", description: "List tenant event-consuming services" },
   { method: "POST", path: "/v1/services", description: "Create a service and domain subscriptions" },
-  { method: "GET", path: "/v1/batches", description: "List batches" },
+  { method: "GET", path: "/v1/batches", description: "List batch status" },
+  { method: "GET", path: "/v1/batches/{batchID}", description: "Read batch status" },
   { method: "GET", path: "/v1/quarantine", description: "List quarantined work" },
+  { method: "GET", path: "/v1/quarantine/{id}", description: "Read a quarantined item" },
 ] as const;
 
 function readSettings(): Settings {
