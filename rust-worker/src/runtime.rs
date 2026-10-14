@@ -145,13 +145,6 @@ async fn acquire_initial_leases(pool: &PgPool, config: &Config) -> Result<HashMa
     Ok(leases)
 }
 
-fn validate_subject(subject: &str) -> Result<()> {
-    if subject.trim().is_empty() || subject.split('.').any(|part| part.is_empty() || (part.contains('*') || part.contains('>'))) {
-        bail!("invalid concrete NATS subject");
-    }
-    Ok(())
-}
-
 fn uuid_token() -> String {
     format!("{}-{}", Utc::now().timestamp_nanos_opt().unwrap_or_default(), std::process::id())
 }
