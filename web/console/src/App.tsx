@@ -97,12 +97,6 @@ function readSettings(): Settings {
   catch { return DEFAULT_SETTINGS; }
 }
 function normalizeBase(value: string) { return value.trim().replace(/\/+$/, ""); }
-function encodeBase64JSON(value: unknown) {
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
-  let binary = "";
-  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
-  return btoa(binary);
-}
 function createScenarioPayload(scenario: Exclude<SimulationScenario, "all">, sequence: number) {
   const suffix = `${Date.now().toString(36)}-${sequence}`;
   const clientId = `client-${String((sequence - 1) % 50 + 1).padStart(4, "0")}`;
@@ -577,7 +571,6 @@ export default function App() {
   const [simulationError, setSimulationError] = useState("");
   const [simulationTraceError, setSimulationTraceError] = useState("");
   const [simulationNotice, setSimulationNotice] = useState("");
-  const simulationActiveRef = useRef(false);
   const simulationStopRequestedRef = useRef(false);
   const simulationWaitRef = useRef<AbortController | null>(null);
   const simulationEventsRef = useRef<SimulationEvent[]>([]);
@@ -805,78 +798,9 @@ export default function App() {
     timer = window.setTimeout(() => void loop(), 3000);
     return () => { stopped = true; window.clearTimeout(timer); };
   }, [settings]);
-  const startSimulation = async () => {
-    setSimulationError("The console is control-plane only and cannot publish business events. Publish through the Go SDK with FLOWRULZ_TRANSPORT=nats, then use this page to inspect execution traces.");
-    return;
-
-    if (simulationActiveRef.current) return;
-    if (!settings.tenant.trim()) {
-      setSimulationError("Set a tenant in Settings before starting a simulation.");
-      return;
-    }
-    simulationActiveRef.current = true;
-    simulationStopRequestedRef.current = false;
-    setSimulationRunning(true);
-    setSimulationStopping(false);
+  const startSimulation = () => {
     setSimulationError("");
-    setSimulationTraceError("");
-    setSimulationNotice("");
-
-    const scenarios: Array<Exclude<SimulationScenario, "all">> = simulationScenario === "all"
-      ? ["ecommerce", "banking", "food-delivery"]
-      : [simulationScenario];
-    const currentRules = new Set(activeRules.map(rule => rule.rule_set || rule.rule_id || rule.ruleSet));
-    const missingRules = [...new Set(scenarios.map(scenario => entryRuleFor(scenario)))].filter(rule => !currentRules.has(rule));
-    if (missingRules.length > 0) {
-      setSimulationNotice(`No active source rules for this tenant: ${missingRules.join(", ")}. Events will still be sent, but may not create downstream events.`);
-    }
-
-    let sequence = 0;
-    try {
-      while (!simulationStopRequestedRef.current) {
-        const scenario = scenarios[sequence % scenarios.length];
-        sequence++;
-        const source = createScenarioPayload(scenario, sequence);
-        const eventID = crypto.randomUUID();
-        const response = unwrap(await apiRequest(settings, `/v1/events/${encodeURIComponent(source.type)}`, {
-          method: "POST",
-          body: JSON.stringify({
-            id: eventID,
-            type: source.type,
-            tenant_id: settings.tenant.trim(),
-            partition_key: source.partitionKey,
-            occurred_at: new Date().toISOString(),
-            data: encodeBase64JSON(source.payload),
-            headers: { source: "flowrulz-console-simulation", scenario },
-          }),
-        }));
-        const event: SimulationEvent = {
-          id: response.event_id || eventID, type: source.type, scenario, partitionKey: source.partitionKey,
-          shard: response.shard, summary: source.summary, sentAt: new Date().toISOString(),
-        };
-        setSimulationEvents(current => [event, ...current].slice(0, 30));
-        void refreshSimulationTrace(event);
-
-        if (simulationStopRequestedRef.current) break;
-        const wait = new AbortController();
-        simulationWaitRef.current = wait;
-        await new Promise<void>(resolve => {
-          const timer = window.setTimeout(resolve, simulationPace);
-          wait.signal.addEventListener("abort", () => { window.clearTimeout(timer); resolve(); }, { once: true });
-        });
-        simulationWaitRef.current = null;
-      }
-    } catch (e) {
-      if (!simulationStopRequestedRef.current) {
-        setSimulationError(e instanceof Error ? e.message : String(e));
-      }
-    } finally {
-      simulationActiveRef.current = false;
-      simulationWaitRef.current = null;
-      simulationStopRequestedRef.current = false;
-      setSimulationRunning(false);
-      setSimulationStopping(false);
-    }
+    setSimulationNotice("Business-event publishing is intentionally disabled in the control-plane console. Publish through the Go SDK with FLOWRULZ_TRANSPORT=nats; use this console for configuration and runtime observability.");
   };
   const stopSimulation = () => {
     simulationStopRequestedRef.current = true;
@@ -1634,7 +1558,7 @@ export default function App() {
             <label>Publish pace<select value={simulationPace} disabled={simulationRunning} onChange={event => setSimulationPace(Number(event.target.value))}><option value={4000}>Slow · every 4 seconds</option><option value={7000}>Very slow · every 7 seconds</option><option value={10000}>Extra slow · every 10 seconds</option></select></label>
             {simulationRunning
               ? <button className="button stop-button" onClick={stopSimulation} disabled={simulationStopping}>{simulationStopping ? "Stopping…" : "■ Stop simulation"}</button>
-              : <button className="button primary" onClick={() => void startSimulation()}>NATS producer required</button>}
+              : <button className="button primary" onClick={startSimulation}>NATS producer required</button>}
           </div>
         </div>
         {simulationNotice && <div className="alert warning"><strong>Rule availability</strong><span>{simulationNotice}</span></div>}
