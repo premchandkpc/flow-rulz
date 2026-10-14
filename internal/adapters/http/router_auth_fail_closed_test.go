@@ -36,3 +36,17 @@ func TestManagementRouterDoesNotExposeEventIngestion(t *testing.T) {
 		t.Fatalf("event ingestion status = %d, want %d; body=%s", recorder.Code, http.StatusNotFound, recorder.Body.String())
 	}
 }
+
+func TestManagementRouterDoesNotExposeScheduledEventMutation(t *testing.T) {
+	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
+
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(method, "/v1/scheduled-events", nil)
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusNotFound {
+			t.Errorf("%s /v1/scheduled-events status = %d, want %d", method, recorder.Code, http.StatusNotFound)
+		}
+	}
+}
+
