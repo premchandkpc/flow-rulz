@@ -676,4 +676,19 @@ mod tests {
         assert_eq!(partition_for_key("tenant-a", key), PartitionId(expected % 4096));
     }
 
+
+    #[tokio::test]
+    async fn record_id_cannot_be_reused_in_another_partition() {
+        let dir = temp_dir();
+        let log = FileEventLog::open(&dir).await.unwrap();
+        log.append(new_record("event-1", br#"{"value":1}"#))
+            .await
+            .unwrap();
+        let mut duplicate = new_record("event-1", br#"{"value":1}"#);
+        duplicate.partition = PartitionId(8);
+        let error = log.append(duplicate).await.unwrap_err();
+        assert!(matches!(error, LogError::IdentityConflict(_)));
+        let _ = fs::remove_dir_all(dir);
+    }
+
 }
