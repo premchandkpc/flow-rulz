@@ -2,7 +2,7 @@
 
 Status: Proposed. Date: 2026-10-14.
 
-The Rust process is a stateless execution service. It owns no durable business truth in memory or local files. FlowRulZ owns append-only log semantics: partition order, stable record identity, progress, replay, retention and recovery. NATS JetStream can remain an ingress/transport adapter during migration, but is not automatically the authoritative processing log. The worker is stateless; the system is not.
+The Rust process is a stateless execution service and must not treat process memory as durable business truth. FlowRulZ owns append-only log semantics: partition order, stable record identity, progress, replay, retention and recovery. NATS JetStream can remain an ingress/transport adapter during migration, but is not automatically the authoritative processing log. The worker is stateless; the system is not. The current file WAL is a single-node adapter prototype for validating framing, checksums, idempotency and recovery; it is not production HA and must not be mistaken for a replicated broker.
 
 ## Invariants
 
@@ -36,7 +36,7 @@ Rule sets declare multiple input contracts and output contracts. Outputs route t
 ## Rollout
 
 1. Domain and ports with unit/property tests.
-2. Segmented WAL prototype with checksums, record-ID index, recovery, replay and retention.
+2. Single-node partitioned WAL prototype with checksums, record-ID index, recovery and replay. Segmentation, retention/archival, replication and quorum remain unimplemented.
 3. Replication/quorum, leader epochs and fencing. A local WAL is not a distributed broker.
 4. Refactor Rust use cases while retaining PostgreSQL mode behind a feature flag.
 5. Rule/contract parity, routing, effects, scheduling and batches.
