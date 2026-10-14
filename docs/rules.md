@@ -390,3 +390,21 @@ Useful for:
 - Debugging why a rule did/didn't match
 - Audit trails
 - Dashboard visualization
+
+
+## Durable scheduled events
+
+Rules can create a durable scheduled child event using a `schedule_event` action. The worker evaluates the action and persists a schedule intent in the same transaction as the execution's outbox rows. The outbox dispatcher writes the intent to the scheduled-event repository; duplicate dispatch is safe because the scheduled event ID is deterministic. The worker-owned scheduler later publishes the event to its shard subject.
+
+```json
+{
+  "schedule_event": {
+    "type": "order.reminder",
+    "delay_seconds": 300,
+    "partition_key_policy": "inherit",
+    "data": { "order_id": "{{$.order_id}}" }
+  }
+}
+```
+
+`delay_seconds` must be between 1 and 31,536,000 (one year). Partition-key policies are `explicit`, `inherit`, and `from_data`; `from_data` requires `partition_key_path`. Scheduled events are persisted and retried by the worker runtime, not by the management API. This action schedules an event; it does not implement correlated workflow `wait`/resume semantics.
