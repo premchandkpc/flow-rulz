@@ -53,7 +53,7 @@ FlowRulz is a Go event-driven rules runtime. The root Go module contains the API
 4. A bounded per-key queue preserves ordering for the same partition key while limiting global work.
 5. Event processing validates the envelope and fencing token, deduplicates through the inbox, loads the active rule revision, evaluates the rule and writes execution/outbox state in the appropriate transaction.
 6. ACK only after successful durable processing. If the durable outcome is unknown, do not ACK as though processing succeeded.
-7. The outbox publisher routes emitted child events back to `events.shard.N`; command effects publish to `commands.<destination>.<name>` and tenant-service fan-out uses a unique `services.<tenant-hash>.<service-hash>` subject.
+7. The outbox publisher routes emitted child events back to `events.shard.N`; generic emit effects publish to `effects.<topic>`, command effects publish to `commands.<destination>.<name>`, and tenant-service fan-out uses a unique `services.<tenant-hash>.<service-hash>` subject.
 8. The scheduler publishes due events through the same subject family. The existence of batch APIs does not prove that batch worker execution is supported.
 
 ### Distributed-systems guarantees
