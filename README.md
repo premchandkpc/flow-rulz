@@ -8,7 +8,7 @@ FlowRulz is a Go-based, event-driven rules runtime. Rules are compiled into immu
 
 | Process | Entrypoint | Responsibility |
 |---|---|---|
-| HTTP API | cmd/api | Rule revisions/activation, workflows, contracts, batches, quarantine, scheduled events, tenant domains/services, event ingestion and tracing |
+| HTTP API | cmd/api | Rule revisions/activation, workflows, contracts, batch/quarantine management, tenant domains/services, event ingestion and tracing |
 | Worker | cmd/worker | NATS JetStream consumption, shard leases/fencing, per-process key serialization, event evaluation, outbox publishing |
 | Code generator | cmd/codegen | Generate Go, Java, Protobuf, and JSON Schema artifacts from a contract already registered in storage |
 | Migration CLI | cmd/migrate | Apply pending migrations; only the up command is implemented |
