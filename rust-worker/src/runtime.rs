@@ -92,10 +92,16 @@ fn spawn_background_tasks(tasks: &mut JoinSet<Result<()>>, pool: &PgPool, js: &j
 }
 
 async fn wait_for_shutdown(tasks: &mut JoinSet<Result<()>>) -> Result<()> {
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .context("install SIGTERM handler")?;
     tokio::select! {
         signal = tokio::signal::ctrl_c() => {
-            signal.context("wait for shutdown signal")?;
-            info!("shutdown signal received");
+            signal.context("wait for Ctrl-C signal")?;
+            info!("Ctrl-C received; shutting down");
+            Ok(())
+        }
+        _ = terminate.recv() => {
+            info!("SIGTERM received; shutting down");
             Ok(())
         }
         result = tasks.join_next() => {
