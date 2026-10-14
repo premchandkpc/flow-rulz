@@ -8,7 +8,7 @@ import (
 
 func TestRouterFailsClosedWhenRequiredAuthValidatorIsMissing(t *testing.T) {
 	router := NewRouterWithConfig(
-		nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil,
 		RouterConfig{RequireAuth: true},
 	)
 
@@ -26,7 +26,7 @@ func TestRouterFailsClosedWhenRequiredAuthValidatorIsMissing(t *testing.T) {
 }
 
 func TestManagementRouterDoesNotExposeEventIngestion(t *testing.T) {
-	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, nil, RouterConfig{})
+	router := NewRouterWithConfig(nil, nil, nil, nil, nil, nil, RouterConfig{})
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/events/order.created", nil)
