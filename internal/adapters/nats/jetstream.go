@@ -147,10 +147,14 @@ func normalizeRuleSets(values []string) ([]string, error) {
 }
 
 func streamSubjects(cfg Config) []string {
-	subjects := make([]string, 0, len(cfg.Subjects)*2)
+	subjects := make([]string, 0, len(cfg.Subjects)*2+2)
 	for _, base := range cfg.Subjects {
 		subjects = append(subjects, base+".shard.*", base+".ruleset.*.shard.*")
 	}
+	// Commands and per-service deliveries share the same durable messaging
+	// protocol. WorkQueue retention is safe because each command destination
+	// and each tenant service receives a unique subject.
+	subjects = append(subjects, "commands.>", "services.>")
 	return subjects
 }
 
