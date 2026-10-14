@@ -81,7 +81,7 @@ func (c fixedClock) Now() time.Time { return c.now }
 
 func TestSaveDomainValidatesInputsAndTenantScopedNames(t *testing.T) {
 	repo := newRepositoryStub()
-	service := NewService(repo, fixedClock{now: time.Unix(10, 0).UTC()}, true)
+	service := NewService(repo, fixedClock{now: time.Unix(10, 0).UTC()})
 	item, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
 		Name: "orders", EventTypes: []string{" orders.created ", "orders.created"},
 	})
@@ -115,7 +115,7 @@ func TestSaveDomainValidatesInputsAndTenantScopedNames(t *testing.T) {
 
 func TestSaveServiceRequiresTenantOwnedDomainsAndRejectsHTTPCallbacks(t *testing.T) {
 	repo := newRepositoryStub()
-	service := NewService(repo, fixedClock{now: time.Unix(20, 0).UTC()}, false)
+	service := NewService(repo, fixedClock{now: time.Unix(20, 0).UTC()})
 	domainA, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
 		Name: "orders", EventTypes: []string{"orders.created"},
 	})
@@ -136,7 +136,7 @@ func TestSaveServiceRequiresTenantOwnedDomainsAndRejectsHTTPCallbacks(t *testing
 
 func TestSaveServiceAssignsStableNATSSubjectAndRejectsDuplicateName(t *testing.T) {
 	repo := newRepositoryStub()
-	service := NewService(repo, fixedClock{now: time.Unix(30, 0).UTC()}, true)
+	service := NewService(repo, fixedClock{now: time.Unix(30, 0).UTC()})
 	item, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
 		Name: "receiver",
 	})
