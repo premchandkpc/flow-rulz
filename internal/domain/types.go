@@ -576,9 +576,11 @@ func ComputeSourceHash(source json.RawMessage) string {
 	return fmt.Sprintf("%x", h)
 }
 
-// ComputeChildEventID provides the compute child event id.
-func ComputeChildEventID(parentEventID, ruleID string, actionIndex int) string {
-	raw := fmt.Sprintf("child|%s|%s|%d", parentEventID, ruleID, actionIndex)
+// ComputeChildEventID returns a deterministic child event ID scoped to its tenant.
+// Length-prefixing prevents delimiter ambiguity and tenant inclusion prevents cross-tenant collisions.
+func ComputeChildEventID(tenantID, parentEventID, ruleID string, actionIndex int) string {
+	raw := fmt.Sprintf("child|%d:%s|%d:%s|%d:%s|%d",
+		len(tenantID), tenantID, len(parentEventID), parentEventID, len(ruleID), ruleID, actionIndex)
 	h := sha256.Sum256([]byte(raw))
 	return fmt.Sprintf("%x", h)
 }
