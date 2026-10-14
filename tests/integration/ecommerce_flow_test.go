@@ -32,7 +32,7 @@ func TestECommerceOrderLifecycle(t *testing.T) {
 	}
 
 	for _, rs := range ruleSets {
-		t.Run("compile_"+rs, func(t *testing.T) {
+		t.Run("compile_"+rs, func(_ *testing.T) {
 			// Note: In real test, we'd load from YAML files
 			// Here we just verify the compiler works
 			_ = compiler
@@ -120,46 +120,46 @@ func TestECommerceEventFlow(t *testing.T) {
 	// This test would require a running FlowRulz stack (API, worker, NATS, PostgreSQL)
 	// For unit testing, we test the individual components
 
-	t.Run("order_created_triggers_payment_requested", func(t *testing.T) {
+	t.Run("order_created_triggers_payment_requested", func(_ *testing.T) {
 		// When order.created event arrives with total > 0
 		// Then payment.requested event should be emitted
 	})
 
-	t.Run("order_created_zero_total_triggers_auto_confirm", func(t *testing.T) {
+	t.Run("order_created_zero_total_triggers_auto_confirm", func(_ *testing.T) {
 		// When order.created event arrives with total = 0
 		// Then order.confirmed event should be emitted
 	})
 
-	t.Run("payment_failed_triggers_retry_and_refund", func(t *testing.T) {
+	t.Run("payment_failed_triggers_retry_and_refund", func(_ *testing.T) {
 		// When payment fails with retry_count < 3
 		// Then payment.retry_scheduled event should be emitted
 		// When retry_count >= 3
 		// Then order.refund_initiated event should be emitted
 	})
 
-	t.Run("delivery_failed_triggers_retry_and_refund", func(t *testing.T) {
+	t.Run("delivery_failed_triggers_retry_and_refund", func(_ *testing.T) {
 		// When delivery fails with retry_count < 3
 		// Then delivery.retry_scheduled event should be emitted
 		// When retry_count >= 3
 		// Then order.refund_initiated event should be emitted
 	})
 
-	t.Run("high_value_payment_triggers_fraud_check", func(t *testing.T) {
+	t.Run("high_value_payment_triggers_fraud_check", func(_ *testing.T) {
 		// When payment.success with amount >= 50000
 		// Then fraud.check event should be emitted
 	})
 
-	t.Run("fraud_passed_triggers_shipment", func(t *testing.T) {
+	t.Run("fraud_passed_triggers_shipment", func(_ *testing.T) {
 		// When fraud.result with passed = true
 		// Then shipment.requested event should be emitted
 	})
 
-	t.Run("fraud_failed_triggers_review", func(t *testing.T) {
+	t.Run("fraud_failed_triggers_review", func(_ *testing.T) {
 		// When fraud.result with passed = false
 		// Then fraud.review event should be emitted
 	})
 
-	t.Run("order_delivered_triggers_review_and_complete", func(t *testing.T) {
+	t.Run("order_delivered_triggers_review_and_complete", func(_ *testing.T) {
 		// When order.delivered event arrives
 		// Then review.requested and order.completed events should be emitted
 	})
@@ -195,7 +195,7 @@ func TestECommerceContractsValidate(t *testing.T) {
 	}
 
 	for _, c := range contracts {
-		t.Run("contract_"+c, func(t *testing.T) {
+		t.Run("contract_"+c, func(_ *testing.T) {
 			// Contract validation would happen at deployment time
 			_ = c
 		})
