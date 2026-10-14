@@ -258,7 +258,6 @@ type EmitEventAction struct {
 	Data               json.RawMessage    `json:"data"`
 }
 
-// CommandAction represents the command action.
 // MaxScheduledDelaySeconds bounds a rule's scheduled-event delay to one year.
 const MaxScheduledDelaySeconds int64 = 31_536_000
 
@@ -272,6 +271,7 @@ type ScheduleEventAction struct {
 	Data               json.RawMessage    `json:"data"`
 }
 
+// CommandAction represents the command action.
 type CommandAction struct {
 	Destination string          `json:"destination"`
 	Name        string          `json:"name"`
@@ -299,6 +299,8 @@ const (
 	EffectTypeEmit EffectType = "emit"
 	// EffectTypeEmitEvent identifies the effect type emit_event value.
 	EffectTypeEmitEvent EffectType = "emit_event"
+	// EffectTypeScheduleEvent identifies a durable scheduled-event intent.
+	EffectTypeScheduleEvent EffectType = "schedule_event"
 	// EffectTypeCommand identifies the effect type command value.
 	EffectTypeCommand EffectType = "command"
 	// EffectTypeServiceEvent identifies the effect type service_event value.
