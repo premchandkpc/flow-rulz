@@ -125,3 +125,18 @@ func marshalCommittedPayload(t *testing.T, commit ExecutionCommittedPayload) jso
 	}
 	return payload
 }
+
+func TestExecutionCommittedRejectsNondeterministicExecutionID(t *testing.T) {
+	record := validExecutionCommittedRecord(t)
+	var commit ExecutionCommittedPayload
+	if err := json.Unmarshal(record.Payload, &commit); err != nil {
+		t.Fatal(err)
+	}
+	commit.ExecutionID = "random-execution-id"
+	commit.Effects[0].ExecutionID = commit.ExecutionID
+	record.ExecutionID = commit.ExecutionID
+	record.Payload = marshalCommittedPayload(t, commit)
+	if err := record.Validate(); err == nil {
+		t.Fatal("execution ID unrelated to its source event accepted")
+	}
+}
