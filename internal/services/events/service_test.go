@@ -147,8 +147,9 @@ func TestProcessDoesNotNotifySubscribersWithoutActiveRule(t *testing.T) {
 		t.Fatalf("no-active-rule event had subscriber lookups=%d outbox=%d committed=%t",
 			subscribers.lookups, len(outbox.inserted), tx.committed)
 	}
-	if !inbox.inserted {
-		t.Fatal("expected inbox insert in the rolled-back transaction")
+	// New behavior: inbox is not inserted when no active rule exists (checked before dedup)
+	if inbox.inserted {
+		t.Fatal("unexpected inbox insert when no active rule")
 	}
 }
 

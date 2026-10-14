@@ -22,6 +22,7 @@ type EventRepository interface {
 type InboxRepository interface {
 	Insert(ctx context.Context, entry *domain.InboxEntry) (bool, error)
 	Get(ctx context.Context, tenantID, eventID string) (*domain.InboxEntry, error)
+	GetByRuleSet(ctx context.Context, tenantID, eventID, ruleSet string) (*domain.InboxEntry, error)
 	MarkCommitted(ctx context.Context, tenantID, eventID, executionID string) error
 }
 
@@ -147,6 +148,15 @@ type ContractRegistry interface {
 	Get(ctx context.Context, name, version string) (*domain.ContractSchema, error)
 	List(ctx context.Context, name string) ([]*domain.ContractSchema, error)
 	Delete(ctx context.Context, name, version string) error
+}
+
+// BindingRepository manages contract-to-ruleset bindings for explicit routing.
+type BindingRepository interface {
+	Save(ctx context.Context, binding *domain.ContractBinding) error
+	Get(ctx context.Context, tenantID, bindingID string) (*domain.ContractBinding, error)
+	ListByContract(ctx context.Context, tenantID, contractName, contractVersion string) ([]*domain.ContractBinding, error)
+	ListByRuleSet(ctx context.Context, tenantID, ruleSet string) ([]*domain.ContractBinding, error)
+	Delete(ctx context.Context, tenantID, bindingID string) error
 }
 
 // DomainServiceRepository manages tenant domains, callback services, and matching subscriptions.

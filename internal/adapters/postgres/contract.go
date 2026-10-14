@@ -237,8 +237,38 @@ func (r *ContractRegistry) List(ctx context.Context, name string) ([]*domain.Con
 }
 
 // Delete removes a contract schema by name and version.
+// Returns ErrContractReferenced if the contract is referenced by rule revisions or bindings.
 func (r *ContractRegistry) Delete(ctx context.Context, name, version string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM contract_schemas WHERE name = $1 AND version = $2`, name, version)
+	// Check if referenced by rule_revisions.InputContract
+	var count int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM rule_revisions
+		WHERE input_contract IS NOT NULL
+		  AND input_contract->>'name' = $1
+		  AND input_contract->>'version' = $2
+	`, name, version).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check rule_revisions references: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: contract %s@%s is referenced by %d rule revision(s)",
+			domain.ErrContractReferenced, name, version, count)
+	}
+
+	// Check if referenced by contract_bindings
+	err = r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM contract_bindings
+		WHERE contract_name = $1 AND contract_version = $2
+	`, name, version).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check contract_bindings references: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: contract %s@%s is referenced by %d binding(s)",
+			domain.ErrContractReferenced, name, version, count)
+	}
+
+	_, err = r.db.Exec(ctx, `DELETE FROM contract_schemas WHERE name = $1 AND version = $2`, name, version)
 	if err != nil {
 		return fmt.Errorf("delete contract: %w", err)
 	}

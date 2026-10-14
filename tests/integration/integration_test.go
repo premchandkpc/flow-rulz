@@ -38,6 +38,12 @@ func (m *mockInbox) Get(_ context.Context, tenantID string, eventID string) (*do
 	return m.entries[key], nil
 }
 
+// GetByRuleSet retrieves the requested value by tenant, event ID, and ruleset.
+func (m *mockInbox) GetByRuleSet(_ context.Context, tenantID, eventID, ruleSet string) (*domain.InboxEntry, error) {
+	key := tenantID + ":" + eventID + ":" + ruleSet
+	return m.entries[key], nil
+}
+
 // MarkCommitted persists the supplied value.
 func (m *mockInbox) MarkCommitted(_ context.Context, tenantID string, eventID string, executionID string) error {
 	key := tenantID + ":" + eventID
@@ -338,6 +344,7 @@ func setupTestUseCase(t *testing.T) (*svcevents.Service, *mockInbox, *mockExecut
 			Outbox:         outbox,
 			ShardLeases:    newMockShardLease(),
 			DomainServices: noSubscribers{},
+			Bindings:       newMockBinding(),
 		}, nil
 	}
 
@@ -626,3 +633,22 @@ type noSubscribers struct{ ports.DomainServiceRepository }
 func (noSubscribers) ListSubscribersForEvent(context.Context, string, string) ([]*domain.DomainService, error) {
 	return nil, nil
 }
+
+// mockBinding is a no-op binding repository for tests.
+type mockBinding struct{ ports.BindingRepository }
+
+func newMockBinding() *mockBinding {
+	return &mockBinding{}
+}
+
+func (mockBinding) ListByContract(context.Context, string, string, string) ([]*domain.ContractBinding, error) {
+	return nil, nil
+}
+
+func (mockBinding) ListByRuleSet(context.Context, string, string) ([]*domain.ContractBinding, error) {
+	return nil, nil
+}
+
+func (mockBinding) Save(context.Context, *domain.ContractBinding) error { return nil }
+func (mockBinding) Get(context.Context, string, string) (*domain.ContractBinding, error) { return nil, nil }
+func (mockBinding) Delete(context.Context, string, string) error { return nil }

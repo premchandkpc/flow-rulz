@@ -23,11 +23,11 @@ func NewInboxRepository(db Querier) *InboxRepository {
 // Insert stores an inbox entry and reports whether a new row was created.
 func (r *InboxRepository) Insert(ctx context.Context, entry *domain.InboxEntry) (bool, error) {
 	tag, err := r.db.Exec(ctx, `
-		INSERT INTO inbox (tenant_id, event_id, status, first_seen_at, partition_key, rule_set, payload, batch_id)
+		INSERT INTO inbox (tenant_id, event_id, rule_set, status, first_seen_at, partition_key, payload, batch_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (tenant_id, event_id) DO NOTHING
-	`, entry.TenantID, entry.EventID, entry.Status, entry.FirstSeenAt,
-		entry.PartitionKey, entry.RuleSet, entry.Payload, entry.BatchID)
+		ON CONFLICT (tenant_id, event_id, rule_set) DO NOTHING
+	`, entry.TenantID, entry.EventID, entry.RuleSet, entry.Status, entry.FirstSeenAt,
+		entry.PartitionKey, entry.Payload, entry.BatchID)
 	if err != nil {
 		return false, fmt.Errorf("insert inbox: %w", err)
 	}
@@ -35,23 +35,48 @@ func (r *InboxRepository) Insert(ctx context.Context, entry *domain.InboxEntry) 
 }
 
 // Get retrieves an inbox entry by tenant and event ID, or returns nil when it does not exist.
+// Note: This returns the first matching entry when multiple rulesets exist for the same event.
+// Prefer GetByRuleSet for precise lookups.
 func (r *InboxRepository) Get(ctx context.Context, tenantID string, eventID string) (*domain.InboxEntry, error) {
 	entry := &domain.InboxEntry{}
 	err := r.db.QueryRow(ctx, `
-		SELECT tenant_id, event_id, status, execution_id, first_seen_at, committed_at,
-		       COALESCE(partition_key, ''), COALESCE(rule_set, ''), payload, COALESCE(batch_id, '')
+		SELECT tenant_id, event_id, rule_set, status, execution_id, first_seen_at, committed_at,
+		       COALESCE(partition_key, ''), payload, COALESCE(batch_id, '')
 		FROM inbox
 		WHERE tenant_id = $1 AND event_id = $2
+		LIMIT 1
 	`, tenantID, eventID).Scan(
-		&entry.TenantID, &entry.EventID, &entry.Status, &entry.ExecutionID,
+		&entry.TenantID, &entry.EventID, &entry.RuleSet, &entry.Status, &entry.ExecutionID,
 		&entry.FirstSeenAt, &entry.CommittedAt,
-		&entry.PartitionKey, &entry.RuleSet, &entry.Payload, &entry.BatchID,
+		&entry.PartitionKey, &entry.Payload, &entry.BatchID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get inbox: %w", err)
+	}
+	return entry, nil
+}
+
+// GetByRuleSet retrieves an inbox entry by tenant, event ID, and ruleset.
+func (r *InboxRepository) GetByRuleSet(ctx context.Context, tenantID, eventID, ruleSet string) (*domain.InboxEntry, error) {
+	entry := &domain.InboxEntry{}
+	err := r.db.QueryRow(ctx, `
+		SELECT tenant_id, event_id, rule_set, status, execution_id, first_seen_at, committed_at,
+		       COALESCE(partition_key, ''), payload, COALESCE(batch_id, '')
+		FROM inbox
+		WHERE tenant_id = $1 AND event_id = $2 AND rule_set = $3
+	`, tenantID, eventID, ruleSet).Scan(
+		&entry.TenantID, &entry.EventID, &entry.RuleSet, &entry.Status, &entry.ExecutionID,
+		&entry.FirstSeenAt, &entry.CommittedAt,
+		&entry.PartitionKey, &entry.Payload, &entry.BatchID,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get inbox by ruleset: %w", err)
 	}
 	return entry, nil
 }

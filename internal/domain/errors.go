@@ -96,6 +96,13 @@ var (
 	// ErrActivationConflict indicates an activation conflict.
 	ErrActivationConflict = errors.New("activation conflict")
 
+	// ErrContractRequired indicates that an event contract is required but not provided.
+	ErrContractRequired = errors.New("event contract is required")
+	// ErrContractMismatch indicates that the event contract does not match the rule's expected contract.
+	ErrContractMismatch = errors.New("event contract mismatch")
+	// ErrContractReferenced indicates a contract cannot be deleted because it is referenced.
+	ErrContractReferenced = errors.New("contract is referenced and cannot be deleted")
+
 	// ErrWorkflowNotFound indicates a workflow was not found.
 	ErrWorkflowNotFound = errors.New("workflow not found")
 	// ErrWorkflowConflict indicates a workflow version conflict.
@@ -196,7 +203,10 @@ func ClassifyError(err error) ErrorClass {
 		errors.Is(err, ErrRuleExceedsLimits),
 		errors.Is(err, ErrInvalidRuleSchema),
 		errors.Is(err, ErrRuleNotFound),
-		errors.Is(err, ErrRuleNotActive):
+		errors.Is(err, ErrRuleNotActive),
+		errors.Is(err, ErrContractRequired),
+		errors.Is(err, ErrContractMismatch),
+		errors.Is(err, ErrContractReferenced):
 		return ErrorClassRule
 	case errors.Is(err, ErrRuleNotReady):
 		return ErrorClassBroker

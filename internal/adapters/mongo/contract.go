@@ -135,9 +135,39 @@ func (r *ContractRegistry) List(ctx context.Context, name string) ([]*domain.Con
 }
 
 // Delete deletes the requested record.
+// Returns ErrContractReferenced if the contract is referenced by rule revisions or bindings.
 func (r *ContractRegistry) Delete(ctx context.Context, name, version string) error {
+	// Check if referenced by rule_revisions.InputContract
+	ruleColl := r.collection(collectionRuleRevisions)
+	count, err := ruleColl.CountDocuments(ctx, bson.M{
+		"input_contract": bson.M{"$ne": nil},
+		"input_contract.name": name,
+		"input_contract.version": version,
+	})
+	if err != nil {
+		return fmt.Errorf("check rule_revisions references: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: contract %s@%s is referenced by %d rule revision(s)",
+			domain.ErrContractReferenced, name, version, count)
+	}
+
+	// Check if referenced by contract_bindings
+	bindingColl := r.collection(collectionContractBindings)
+	count, err = bindingColl.CountDocuments(ctx, bson.M{
+		"contract_name": name,
+		"contract_version": version,
+	})
+	if err != nil {
+		return fmt.Errorf("check contract_bindings references: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: contract %s@%s is referenced by %d binding(s)",
+			domain.ErrContractReferenced, name, version, count)
+	}
+
 	coll := r.collection(collectionContractSchemas)
-	_, err := coll.DeleteOne(ctx, bson.M{"name": name, "version": version})
+	_, err = coll.DeleteOne(ctx, bson.M{"name": name, "version": version})
 	if err != nil {
 		return fmt.Errorf("delete contract: %w", err)
 	}

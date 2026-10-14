@@ -58,6 +58,24 @@ func (r *InboxRepository) Get(ctx context.Context, tenantID string, eventID stri
 	return doc.ToDomain(), nil
 }
 
+// GetByRuleSet retrieves the requested value by tenant, event ID, and ruleset.
+func (r *InboxRepository) GetByRuleSet(ctx context.Context, tenantID, eventID, ruleSet string) (*domain.InboxEntry, error) {
+	coll := r.collection(collectionInbox)
+	var doc InboxDoc
+	err := coll.FindOne(ctx, bson.M{
+		"tenant_id": tenantID,
+		"event_id":  eventID,
+		"rule_set":  ruleSet,
+	}).Decode(&doc)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get inbox by ruleset: %w", err)
+	}
+	return doc.ToDomain(), nil
+}
+
 // MarkCommitted persists the supplied value.
 func (r *InboxRepository) MarkCommitted(ctx context.Context, tenantID string, eventID string, executionID string) error {
 	coll := r.collection(collectionInbox)

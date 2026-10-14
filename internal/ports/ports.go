@@ -34,6 +34,7 @@ type EventTxRepos struct {
 	Outbox         OutboxRepository
 	ShardLeases    ShardLeaseRepository
 	DomainServices DomainServiceRepository
+	Bindings       BindingRepository
 }
 
 // RuleTxRepos contains only the repositories needed to activate a rule revision.

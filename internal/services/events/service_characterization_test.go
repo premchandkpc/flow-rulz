@@ -26,6 +26,21 @@ func (*countingTransactionManager) WithTransaction(context.Context, func(context
 	return nil
 }
 
+// bindingStub is a no-op binding repository for legacy test compatibility.
+type bindingStub struct{ ports.BindingRepository }
+
+func (bindingStub) ListByContract(context.Context, string, string, string) ([]*domain.ContractBinding, error) {
+	return nil, nil
+}
+
+func (bindingStub) ListByRuleSet(context.Context, string, string) ([]*domain.ContractBinding, error) {
+	return nil, nil
+}
+
+func (bindingStub) Save(context.Context, *domain.ContractBinding) error { return nil }
+func (bindingStub) Get(context.Context, string, string) (*domain.ContractBinding, error) { return nil, nil }
+func (bindingStub) Delete(context.Context, string, string) error { return nil }
+
 type failingShardLeaseRepository struct {
 	ports.ShardLeaseRepository
 	err error
@@ -70,6 +85,7 @@ func TestProcessValidatesShardLeaseBeforeMutatingInbox(t *testing.T) {
 	repos := ports.EventTxRepos{
 		Inbox:       inbox,
 		ShardLeases: failingShardLeaseRepository{err: leaseErr},
+		Bindings:    bindingStub{},
 	}
 	manager := &countingTransactionManager{tx: tx}
 	service := NewService(
@@ -135,12 +151,13 @@ func TestProcessReturnsExistingExecutionForRedelivery(t *testing.T) {
 	ctx := context.Background()
 	existing := &domain.Execution{ID: "execution-existing", EventID: "event-1", TenantID: "tenant-a"}
 	inbox := &duplicateInboxRepository{
-		entry: &domain.InboxEntry{TenantID: "tenant-a", EventID: "event-1", ExecutionID: existing.ID},
+		entry: &domain.InboxEntry{TenantID: "tenant-a", EventID: "event-1", ExecutionID: existing.ID, RuleSet: "orders.created"},
 	}
 	executions := &existingExecutionRepository{execution: existing}
 	tx := &eventTxStub{ctx: ctx}
 	repos := ports.EventTxRepos{
 		Inbox: inbox, Executions: executions, ShardLeases: shardLeaseStub{},
+		Activations: activationStub{active: true}, RuleRepo: ruleRepositoryStub{}, Bindings: bindingStub{},
 	}
 	service := NewService(
 		nil, nil, nil, domain.SystemClock{}, transactionManagerStub{tx: tx},
@@ -167,7 +184,10 @@ func TestProcessReturnsDuplicateErrorWhenInboxInsertLosesRaceWithoutExecution(t 
 	ctx := context.Background()
 	inbox := &duplicateInboxRepository{}
 	tx := &eventTxStub{ctx: ctx}
-	repos := ports.EventTxRepos{Inbox: inbox, ShardLeases: shardLeaseStub{}}
+	repos := ports.EventTxRepos{
+		Inbox: inbox, ShardLeases: shardLeaseStub{},
+		Activations: activationStub{active: true}, RuleRepo: ruleRepositoryStub{}, Bindings: bindingStub{},
+	}
 	service := NewService(
 		nil, nil, nil, domain.SystemClock{}, transactionManagerStub{tx: tx},
 		func(ports.Transaction) (ports.EventTxRepos, error) { return repos, nil },

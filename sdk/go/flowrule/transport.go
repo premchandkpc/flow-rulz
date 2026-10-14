@@ -29,8 +29,17 @@ type Envelope struct {
 	CausationID   string            `json:"causation_id,omitempty"`
 	OccurredAt    time.Time         `json:"occurred_at"`
 	Data          json.RawMessage   `json:"data"`
+	Contract      *ContractRef      `json:"contract,omitempty"`
+	MessageKind   string            `json:"message_kind,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
 	SchemaVersion string            `json:"schema_version,omitempty"`
+}
+
+// ContractRef identifies a contract by name, version, and schema hash.
+type ContractRef struct {
+	Name       string `json:"name"`
+	Version    string `json:"version"`
+	SchemaHash string `json:"schema_hash,omitempty"`
 }
 
 // EnvelopeOption configures an envelope
@@ -87,6 +96,20 @@ func WithEnvelopeSchemaVersion(version string) EnvelopeOption {
 func WithEnvelopeOccurredAt(t time.Time) EnvelopeOption {
 	return func(e *Envelope) {
 		e.OccurredAt = t
+	}
+}
+
+// WithEnvelopeContract sets the contract reference on the envelope
+func WithEnvelopeContract(name, version, schemaHash string) EnvelopeOption {
+	return func(e *Envelope) {
+		e.Contract = &ContractRef{Name: name, Version: version, SchemaHash: schemaHash}
+	}
+}
+
+// WithEnvelopeMessageKind sets the message kind (e.g., "event", "command")
+func WithEnvelopeMessageKind(kind string) EnvelopeOption {
+	return func(e *Envelope) {
+		e.MessageKind = kind
 	}
 }
 

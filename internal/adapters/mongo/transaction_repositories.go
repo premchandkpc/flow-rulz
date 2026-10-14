@@ -24,6 +24,7 @@ func NewEventTxRepositories(tx ports.Transaction) (ports.EventTxRepos, error) {
 		Outbox:         NewOutboxRepository(q),
 		ShardLeases:    NewShardLeaseRepository(q),
 		DomainServices: NewDomainServiceRepository(q),
+		Bindings:       NewBindingRepository(q),
 	}, nil
 }
 

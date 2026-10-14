@@ -140,7 +140,7 @@ func indexModels() map[string][]mongo.IndexModel {
 			{Keys: bson.D{{Key: "tenant_scope", Value: 1}, {Key: "rule_set", Value: 1}}, Options: options.Index().SetUnique(true)},
 		},
 		"inbox": {
-			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "event_id", Value: 1}}, Options: options.Index().SetUnique(true)},
+			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "event_id", Value: 1}, {Key: "rule_set", Value: 1}}, Options: options.Index().SetUnique(true)},
 			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "partition_key", Value: 1}, {Key: "first_seen_at", Value: 1}}, Options: options.Index().SetPartialFilterExpression(bson.M{"status": "committed", "batch_id": bson.M{"$exists": false}})},
 		},
 		"executions": {

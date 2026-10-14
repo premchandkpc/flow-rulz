@@ -25,7 +25,7 @@ func NewRuleRepository(db Querier) *RuleRepository {
 func (r *RuleRepository) GetActive(ctx context.Context, tenantScope string, ruleSet string) (*domain.RuleRevision, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT r.tenant_scope, r.rule_id, r.revision, r.source, r.compiled, r.content_hash, 
-		       r.compiler_version, r.match_mode, r.created_at
+		       r.compiler_version, r.match_mode, r.created_at, r.input_contract
 		FROM rule_revisions r
 		JOIN rule_activations a ON r.tenant_scope = a.tenant_scope AND r.rule_id = a.rule_set AND r.revision = a.revision
 		WHERE a.tenant_scope = $1 AND a.rule_set = $2
@@ -33,9 +33,11 @@ func (r *RuleRepository) GetActive(ctx context.Context, tenantScope string, rule
 
 	rev := &domain.RuleRevision{}
 	var source, compiled []byte
+	var inputContract []byte
 	err := row.Scan(
 		&rev.TenantScope, &rev.RuleID, &rev.Revision, &source, &compiled,
 		&rev.ContentHash, &rev.CompilerVersion, &rev.MatchMode, &rev.CreatedAt,
+		&inputContract,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -48,6 +50,13 @@ func (r *RuleRepository) GetActive(ctx context.Context, tenantScope string, rule
 	if err := json.Unmarshal(compiled, &rev.Compiled); err != nil {
 		return nil, fmt.Errorf("unmarshal compiled: %w", err)
 	}
+	if len(inputContract) > 0 {
+		var ic domain.ContractRef
+		if err := json.Unmarshal(inputContract, &ic); err != nil {
+			return nil, fmt.Errorf("unmarshal input_contract: %w", err)
+		}
+		rev.InputContract = &ic
+	}
 	return rev, nil
 }
 
@@ -57,12 +66,19 @@ func (r *RuleRepository) Save(ctx context.Context, revision *domain.RuleRevision
 	if err != nil {
 		return fmt.Errorf("marshal compiled: %w", err)
 	}
+	var inputContract []byte
+	if revision.InputContract != nil {
+		inputContract, err = json.Marshal(revision.InputContract)
+		if err != nil {
+			return fmt.Errorf("marshal input_contract: %w", err)
+		}
+	}
 	_, err = r.db.Exec(ctx, `
-		INSERT INTO rule_revisions (tenant_scope, rule_id, revision, source, compiled, content_hash, compiler_version, match_mode, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO rule_revisions (tenant_scope, rule_id, revision, source, compiled, content_hash, compiler_version, match_mode, created_at, input_contract)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (tenant_scope, rule_id, revision) DO NOTHING
 	`, revision.TenantScope, revision.RuleID, revision.Revision, revision.Source, compiled,
-		revision.ContentHash, revision.CompilerVersion, revision.MatchMode, revision.CreatedAt)
+		revision.ContentHash, revision.CompilerVersion, revision.MatchMode, revision.CreatedAt, inputContract)
 	if err != nil {
 		return fmt.Errorf("save revision: %w", err)
 	}
@@ -72,16 +88,18 @@ func (r *RuleRepository) Save(ctx context.Context, revision *domain.RuleRevision
 // Get performs the get operation.
 func (r *RuleRepository) Get(ctx context.Context, tenantScope string, ruleSet string, revision int64) (*domain.RuleRevision, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT tenant_scope, rule_id, revision, source, compiled, content_hash, compiler_version, match_mode, created_at
+		SELECT tenant_scope, rule_id, revision, source, compiled, content_hash, compiler_version, match_mode, created_at, input_contract
 		FROM rule_revisions
 		WHERE tenant_scope = $1 AND rule_id = $2 AND revision = $3
 	`, tenantScope, ruleSet, revision)
 
 	rev := &domain.RuleRevision{}
 	var source, compiled []byte
+	var inputContract []byte
 	err := row.Scan(
 		&rev.TenantScope, &rev.RuleID, &rev.Revision, &source, &compiled,
 		&rev.ContentHash, &rev.CompilerVersion, &rev.MatchMode, &rev.CreatedAt,
+		&inputContract,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -94,13 +112,20 @@ func (r *RuleRepository) Get(ctx context.Context, tenantScope string, ruleSet st
 	if err := json.Unmarshal(compiled, &rev.Compiled); err != nil {
 		return nil, fmt.Errorf("unmarshal compiled: %w", err)
 	}
+	if len(inputContract) > 0 {
+		var ic domain.ContractRef
+		if err := json.Unmarshal(inputContract, &ic); err != nil {
+			return nil, fmt.Errorf("unmarshal input_contract: %w", err)
+		}
+		rev.InputContract = &ic
+	}
 	return rev, nil
 }
 
 // List performs the list operation.
 func (r *RuleRepository) List(ctx context.Context, tenantScope string) ([]*domain.RuleRevision, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT tenant_scope, rule_id, revision, source, compiled, content_hash, compiler_version, match_mode, created_at
+		SELECT tenant_scope, rule_id, revision, source, compiled, content_hash, compiler_version, match_mode, created_at, input_contract
 		FROM rule_revisions
 		WHERE tenant_scope = $1
 		ORDER BY rule_id, revision DESC
@@ -114,15 +139,24 @@ func (r *RuleRepository) List(ctx context.Context, tenantScope string) ([]*domai
 	for rows.Next() {
 		rev := &domain.RuleRevision{}
 		var source, compiled []byte
+		var inputContract []byte
 		if err := rows.Scan(
 			&rev.TenantScope, &rev.RuleID, &rev.Revision, &source, &compiled,
 			&rev.ContentHash, &rev.CompilerVersion, &rev.MatchMode, &rev.CreatedAt,
+			&inputContract,
 		); err != nil {
 			return nil, fmt.Errorf("scan revision: %w", err)
 		}
 		rev.Source = source
 		if err := json.Unmarshal(compiled, &rev.Compiled); err != nil {
 			return nil, fmt.Errorf("unmarshal compiled: %w", err)
+		}
+		if len(inputContract) > 0 {
+			var ic domain.ContractRef
+			if err := json.Unmarshal(inputContract, &ic); err != nil {
+				return nil, fmt.Errorf("unmarshal input_contract: %w", err)
+			}
+			rev.InputContract = &ic
 		}
 		revisions = append(revisions, rev)
 	}

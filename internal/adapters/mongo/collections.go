@@ -18,5 +18,6 @@ const (
 	collectionContractSchemas     = "contract_schemas"
 	collectionTenantDomains       = "tenant_domains"
 	collectionDomainServices      = "domain_services"
+	collectionContractBindings    = "contract_bindings"
 	collectionTransactionChecks   = "_flowrulz_transaction_checks"
 )
