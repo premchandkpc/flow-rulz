@@ -28,16 +28,26 @@ func (r *ContractRegistry) collection(name string) *mongo.Collection {
 	return r.querier.Collection(name)
 }
 
-// Register persists the supplied value.
+// Register publishes an immutable contract version. A semantic change requires a new version.
 func (r *ContractRegistry) Register(ctx context.Context, schema *domain.ContractSchema) error {
+	if err := schema.NormalizeAndValidate(); err != nil { return fmt.Errorf("validate contract: %w", err) }
+	existing, err := r.Get(ctx, schema.Name, schema.Version)
+	if err != nil { return err }
+	if existing != nil {
+		if existing.SchemaHash == "" { if err := existing.NormalizeAndValidate(); err != nil { return err } }
+		if existing.SchemaHash != schema.SchemaHash { return fmt.Errorf("contract %s@%s is immutable; publish a new version", schema.Name, schema.Version) }
+		return nil
+	}
 	coll := r.collection(collectionContractSchemas)
 	doc := ContractSchemaDocFromDomain(schema)
-	_, err := coll.UpdateOne(ctx,
-		bson.M{"name": schema.Name, "version": schema.Version},
-		bson.M{"$set": doc},
-		options.Update().SetUpsert(true),
-	)
+	_, err = coll.InsertOne(ctx, doc)
 	if err != nil {
+		// A concurrent registration can win the unique-index race. Treat identical content as idempotent.
+		existing, getErr := r.Get(ctx, schema.Name, schema.Version)
+		if getErr == nil && existing != nil {
+			if existing.SchemaHash == "" { _ = existing.NormalizeAndValidate() }
+			if existing.SchemaHash == schema.SchemaHash { return nil }
+		}
 		return fmt.Errorf("register contract: %w", err)
 	}
 	return nil
@@ -102,7 +112,11 @@ type ContractSchemaDoc struct {
 	Version       string                          `bson:"version"`
 	Namespace     string                          `bson:"namespace,omitempty"`
 	Description   string                          `bson:"description,omitempty"`
-	Fields        map[string]domain.ContractField `bson:"fields"`
+	Fields          map[string]domain.ContractField `bson:"fields"`
+	Kind            domain.ContractKind             `bson:"kind,omitempty"`
+	Parent          *domain.ContractRef              `bson:"parent,omitempty"`
+	AllowedChildren []domain.ContractRef             `bson:"allowed_children,omitempty"`
+	SchemaHash      string                           `bson:"schema_hash,omitempty"`
 	Compatibility string                          `bson:"compatibility,omitempty"`
 	Owner         string                          `bson:"owner,omitempty"`
 	Deprecated    bool                            `bson:"deprecated,omitempty"`
@@ -117,7 +131,11 @@ func ContractSchemaDocFromDomain(s *domain.ContractSchema) *ContractSchemaDoc {
 		Version:       s.Version,
 		Namespace:     s.Namespace,
 		Description:   s.Description,
-		Fields:        s.Fields,
+		Fields:          s.Fields,
+		Kind:            s.Kind,
+		Parent:          s.Parent,
+		AllowedChildren: s.AllowedChildren,
+		SchemaHash:      s.SchemaHash,
 		Compatibility: s.Compatibility,
 		Owner:         s.Owner,
 		Deprecated:    s.Deprecated,
@@ -133,7 +151,11 @@ func (d *ContractSchemaDoc) ToDomain() *domain.ContractSchema {
 		Version:       d.Version,
 		Namespace:     d.Namespace,
 		Description:   d.Description,
-		Fields:        d.Fields,
+		Fields:          d.Fields,
+		Kind:            d.Kind,
+		Parent:          d.Parent,
+		AllowedChildren: d.AllowedChildren,
+		SchemaHash:      d.SchemaHash,
 		Compatibility: d.Compatibility,
 		Owner:         d.Owner,
 		Deprecated:    d.Deprecated,
