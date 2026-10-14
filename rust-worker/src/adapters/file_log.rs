@@ -862,4 +862,22 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+
+    #[tokio::test]
+    async fn fencing_epochs_are_monotonic_and_stale_retries_are_rejected() {
+        let dir = temp_dir();
+        let log = FileEventLog::open(&dir).await.unwrap();
+        assert_eq!(
+            log.advance_fence(PartitionId(7), 1).await.unwrap(),
+            LogPosition(1)
+        );
+        assert_eq!(
+            log.advance_fence(PartitionId(7), 2).await.unwrap(),
+            LogPosition(2)
+        );
+        let error = log.advance_fence(PartitionId(7), 1).await.unwrap_err();
+        assert!(matches!(error, LogError::Fenced { attempted: 1, current: 2 }));
+        let _ = fs::remove_dir_all(dir);
+    }
+
 }
