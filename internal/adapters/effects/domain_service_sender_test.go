@@ -39,7 +39,7 @@ func serviceEventPayload(t *testing.T) []byte {
 	t.Helper()
 	data, err := json.Marshal(domain.EventEnvelope{
 		ID: "source-event-1", Type: "orders.created", TenantID: "tenant-a",
-		PartitionKey: "order-1", OccurredAt: time.Now().UTC(), Data: json.RawMessage(`{"order_id":"order-1"}`),
+		PartitionKey: "order-1", OccurredAt: time.Unix(10, 0).UTC(), Data: json.RawMessage(`{"order_id":"order-1"}`),
 	})
 	if err != nil {
 		t.Fatal(err)
