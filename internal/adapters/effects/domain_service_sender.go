@@ -21,7 +21,7 @@ type DomainServiceSender struct {
 }
 
 // NewDomainServiceSender creates a NATS-backed domain service sender.
-func NewDomainServiceSender(services ports.DomainServiceRepository, publisher ports.BrokerPublisher) *DomainServiceSender {
+func NewDomainServiceSender(services ports.DomainServiceRepository, publisher ports.SubjectPublisher) *DomainServiceSender {
 	return &DomainServiceSender{services: services, publisher: publisher}
 }
 
