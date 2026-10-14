@@ -3,6 +3,7 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -118,18 +119,28 @@ type TenantDomain struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-// DomainService is a tenant-owned HTTP consumer and its domain subscriptions.
+// DomainService is a tenant-owned NATS consumer and its domain subscriptions.
 // nolint:revive // type name stutters with package name but is a domain concept
 // DomainService represents the domain service.
 type DomainService struct {
 	ID          string    `json:"id"`
 	TenantID    string    `json:"tenant_id"`
 	Name        string    `json:"name"`
-	EndpointURL string    `json:"endpoint_url"`
+	NATSSubject string    `json:"nats_subject"`
+	EndpointURL string    `json:"endpoint_url,omitempty"` // Deprecated legacy field; never used for delivery.
 	DomainIDs   []string  `json:"domain_ids"`
 	Active      bool      `json:"active"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// DomainServiceSubject returns a stable, tenant-isolated NATS subject for a service.
+// Hashing identifiers keeps subjects valid and prevents tenant/service names from
+// leaking into broker monitoring while ensuring each subscriber gets its own copy.
+func DomainServiceSubject(tenantID, serviceID string) string {
+	tenantHash := sha256.Sum256([]byte(tenantID))
+	serviceHash := sha256.Sum256([]byte(serviceID))
+	return "services." + hex.EncodeToString(tenantHash[:12]) + "." + hex.EncodeToString(serviceHash[:12])
 }
 
 // ContractField represents the contract field.
@@ -253,8 +264,9 @@ type Effect struct {
 	Destination string          `json:"destination"`
 	Name        string          `json:"name"`
 	Payload     json.RawMessage `json:"payload"`
-	EffectType  EffectType      `json:"effect_type"`
-	CreatedAt   time.Time       `json:"created_at"`
+	EffectType     EffectType      `json:"effect_type"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
 }
 
 // EffectType represents the effect type.
