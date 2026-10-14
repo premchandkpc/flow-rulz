@@ -296,11 +296,12 @@ impl EventLog for FileEventLog {
     async fn commit_execution(&self, commit: ExecutionCommit) -> Result<LogPosition, LogError> {
         commit.validate().map_err(LogError::Invalid)?;
         let expected_execution_id = deterministic_id(
-            "execution",
+            "execution.committed",
             &[
                 &commit.event.tenant_id,
                 &commit.event.partition_key,
                 &commit.event.event_id,
+                "execution",
             ],
         );
         if commit.execution_id != expected_execution_id {
@@ -354,7 +355,15 @@ impl EventLog for FileEventLog {
         });
         let payload = serde_json::to_vec(&payload).map_err(storage_error)?;
         let payload = Bytes::from(payload);
-        let record_id = deterministic_id("execution.committed", &[&commit.execution_id]);
+        let record_id = deterministic_id(
+            "execution.committed",
+            &[
+                &commit.event.tenant_id,
+                &commit.event.partition_key,
+                &commit.event.event_id,
+                &commit.execution_id,
+            ],
+        );
         self.append(NewLogRecord {
             record_id,
             partition: partition_for_key(&commit.event.tenant_id, &commit.event.partition_key),
@@ -422,7 +431,10 @@ impl EventLog for FileEventLog {
         .map_err(storage_error)?;
         let payload = Bytes::from(payload);
         self.append(NewLogRecord {
-            record_id: deterministic_id("fence.advanced", &[&partition_text, &epoch_text]),
+            record_id: deterministic_id(
+                "fence.advanced",
+                &["_system", &partition_text, &format!("fence:{partition_text}:{epoch_text}"), ""],
+            ),
             partition,
             kind: LogRecordKind::FenceAdvanced,
             tenant_id: "_system".into(),
