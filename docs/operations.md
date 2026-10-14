@@ -60,8 +60,8 @@ The authoritative Compose variable template is `.env.example`; copy it to `.env`
 | `DATABASE_URL` | Local PostgreSQL DSN; `STORAGE_BACKEND=postgres` is the default |
 | `STORAGE_BACKEND` | `postgres` or `mongodb` |
 | `MONGODB_URI`, `MONGODB_DATABASE` | Required when `STORAGE_BACKEND=mongodb`; transactions require replica-set/sharded MongoDB |
-| `NATS_URL`, `NATS_STREAM` | NATS JetStream connection and durable stream used for events, commands, and tenant-service deliveries |
-| `NATS_STREAM`, `NATS_CONSUMER` | Stream and optional durable consumer identifiers |
+| `NATS_URL` | NATS JetStream connection URL; use Docker DNS service name `nats` inside Compose |
+| `NATS_STREAM`, `NATS_CONSUMER` | Durable stream for events/effects/commands/service deliveries and optional consumer identifier |
 | `NUM_SHARDS` | 4096 virtual shards by default; must match producer/SDK/scheduler settings |
 | `WORKER_REPLICAS` | `3` in Compose; must match the configured worker replica count on every worker. This is fixed membership, not automatic rebalance after replica loss. |
 | `BATCH_MODE` | Must remain `none` until batch execution uses a valid shard fencing token and the per-key queue; other values fail startup validation |
