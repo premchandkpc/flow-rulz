@@ -3,7 +3,7 @@ module github.com/flowrulz/flow-rulz-sdk/go
 go 1.26.0
 
 require (
-	github.com/flowrulz/flow-rulz-sdk/go/flowrule v0.0.0
+	github.com/flowrulz/flow-rulz-sdk/go/flowrulz v0.0.0
 	github.com/google/uuid v1.6.0
 )
 
@@ -16,4 +16,4 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 )
 
-replace github.com/flowrulz/flow-rulz-sdk/go/flowrule => ./flowrulz
+replace github.com/flowrulz/flow-rulz-sdk/go/flowrulz => ./flowrulz
