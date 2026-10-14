@@ -37,7 +37,7 @@ func (s *DomainServiceSender) Send(ctx context.Context, effect *domain.Effect, i
 	if err != nil {
 		return err
 	}
-	subject := domain.DomainServiceSubject(service.TenantID, service.ID)
+	subject := domain.ServiceSubject(service.TenantID, service.ID)
 	message := *effect
 	message.IdempotencyKey = idempotencyKey
 	payload, err := json.Marshal(&message)
