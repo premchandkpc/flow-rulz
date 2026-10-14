@@ -4,7 +4,6 @@ use std::{env, time::Duration};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config {
-    pub(crate) app_env: String,
     pub(crate) nats_url: String,
     pub(crate) stream: String,
     pub(crate) durable: String,
@@ -18,14 +17,12 @@ pub(crate) struct Config {
     pub(crate) retry_delay: Duration,
     pub(crate) fetch_batch_size: usize,
     pub(crate) rulesets: Vec<String>,
-    pub(crate) effect_destination_url: String,
     pub(crate) effect_poll_interval: Duration,
     pub(crate) scheduler_poll_interval: Duration,
     pub(crate) scheduler_batch_size: i64,
 }
 
 struct ConnectionSettings {
-    app_env: String,
     nats_url: String,
     stream: String,
     durable: String,
@@ -45,7 +42,6 @@ struct DeliverySettings {
     retry_delay: Duration,
     fetch_batch_size: usize,
     rulesets: Vec<String>,
-    effect_destination_url: String,
     effect_poll_interval: Duration,
     scheduler_poll_interval: Duration,
     scheduler_batch_size: i64,
@@ -58,7 +54,6 @@ impl Config {
         let delivery = load_delivery_settings()?;
 
         let config = Self {
-            app_env: connection.app_env,
             nats_url: connection.nats_url,
             stream: connection.stream,
             durable: connection.durable,
@@ -72,7 +67,6 @@ impl Config {
             retry_delay: delivery.retry_delay,
             fetch_batch_size: delivery.fetch_batch_size,
             rulesets: delivery.rulesets,
-            effect_destination_url: delivery.effect_destination_url,
             effect_poll_interval: delivery.effect_poll_interval,
             scheduler_poll_interval: delivery.scheduler_poll_interval,
             scheduler_batch_size: delivery.scheduler_batch_size,
@@ -89,7 +83,6 @@ fn load_connection_settings() -> Result<ConnectionSettings> {
     }
 
     Ok(ConnectionSettings {
-        app_env: env::var("APP_ENV").unwrap_or_else(|_| "production".into()),
         nats_url: env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into()),
         stream: env::var("NATS_STREAM").unwrap_or_else(|_| "flowrulz".into()),
         durable: env::var("NATS_CONSUMER").unwrap_or_else(|_| "flowrulz-worker".into()),
@@ -120,7 +113,6 @@ fn load_delivery_settings() -> Result<DeliverySettings> {
         retry_delay: Duration::from_millis(parse_u64("EVENT_RETRY_DELAY_MS", 5_000)?),
         fetch_batch_size: usize::try_from(parse_u64("FETCH_BATCH_SIZE", 100)?)?,
         rulesets,
-        effect_destination_url: env::var("EFFECT_DESTINATION_URL").unwrap_or_default(),
         effect_poll_interval: Duration::from_millis(parse_u64("EFFECT_PUBLISH_INTERVAL_MS", 5_000)?),
         scheduler_poll_interval: Duration::from_millis(parse_u64("SCHEDULER_POLL_MS", 5_000)?),
         scheduler_batch_size: i64::try_from(parse_u64("SCHEDULER_BATCH_SIZE", 100)?)?,
