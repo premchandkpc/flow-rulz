@@ -671,3 +671,59 @@ func TestCompareNumericEqualPreservesLargeJSONIntegerPrecision(t *testing.T) {
 		t.Fatal("equivalent JSON numeric values should compare equal")
 	}
 }
+
+func TestEvaluateScheduleEventCreatesDurableIntent(t *testing.T) {
+	source := json.RawMessage(`{
+		"rule_set":"order.created",
+		"revision":1,
+		"mode":"first_match",
+		"rules":[{
+			"id":"schedule-reminder",
+			"priority":1,
+			"when":{"path":"$.order_id","op":"exists"},
+			"then":[{
+				"schedule_event":{
+					"type":"order.reminder",
+					"delay_seconds":60,
+					"partition_key_policy":"inherit",
+					"data":{"order_id":"{{$.order_id}}"}
+				}
+			}]
+		}]
+	}`)
+	revision, err := NewCompiler(DefaultLimits()).Compile(source)
+	if err != nil {
+		t.Fatalf("compile schedule action: %v", err)
+	}
+	now := time.Now().UTC()
+	decision, err := NewEvaluator(domain.SystemClock{}).Evaluate(revision, &domain.EventEnvelope{
+		ID:"evt-schedule", Type:"order.created", TenantID:"tenant-a", PartitionKey:"order-7",
+		WorkflowID:"wf-7", OccurredAt:now, Data:json.RawMessage(`{"order_id":"order-7"}`),
+	}, nil)
+	if err != nil {
+		t.Fatalf("evaluate schedule action: %v", err)
+	}
+	if len(decision.Effects) != 1 || decision.Effects[0].EffectType != domain.EffectTypeScheduleEvent {
+		t.Fatalf("effects = %#v, want one schedule_event effect", decision.Effects)
+	}
+	var scheduled domain.ScheduledEvent
+	if err := json.Unmarshal(decision.Effects[0].Payload, &scheduled); err != nil {
+		t.Fatalf("decode scheduled intent: %v", err)
+	}
+	if scheduled.EventID == "" || scheduled.TenantID != "tenant-a" || scheduled.EventType != "order.reminder" {
+		t.Fatalf("scheduled identity = %#v", scheduled)
+	}
+	if scheduled.PartitionKey != "order-7" || scheduled.WorkflowID != "wf-7" {
+		t.Fatalf("scheduled routing = %#v", scheduled)
+	}
+	if !scheduled.ScheduledAt.After(now) || scheduled.Status != domain.ScheduledEventStatusPending {
+		t.Fatalf("scheduled state = %#v, want future pending event", scheduled)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(scheduled.Payload, &payload); err != nil {
+		t.Fatalf("decode scheduled payload: %v", err)
+	}
+	if payload["order_id"] != "order-7" {
+		t.Fatalf("scheduled payload = %#v, want order_id order-7", payload)
+	}
+}
