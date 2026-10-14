@@ -227,7 +227,8 @@ mod tests {
     fn templates_preserve_single_placeholder_type_and_expand_nested_strings() {
         let event = EventEnvelope { id: "e".into(), event_type: "orders".into(), tenant_id: "t".into(),
             partition_key: "p".into(), workflow_id: None, occurred_at: Utc::now(),
-            data: json!({"amount": 12, "customer": {"name": "Ada"}}), headers: Default::default() };
+            data: json!({"amount": 12, "customer": {"name": "Ada"}}), headers: Default::default(),
+            contract: None, message_kind: None, correlation_id: None, causation_id: None };
         assert_eq!(expand_template("{{$.amount}}", &event, "child-1"), json!(12));
         assert_eq!(expand_template("amount={{$.amount}} for {{$.customer.name}}", &event, "child-1"), json!("amount=12 for Ada"));
         assert_eq!(expand_template("{{new_id}}", &event, "child-1"), json!("child-1"));
