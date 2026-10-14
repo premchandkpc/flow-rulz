@@ -11,6 +11,10 @@ import (
 type LogPosition uint64
 
 // EventLog is the application boundary for the durable processing log.
+// Append commits exactly one immutable fact durably before returning. An
+// execution.committed fact must carry the execution outcome and the complete
+// effect-intent set in its payload, so a crash cannot persist a result while
+// losing its effects. Adapters must not split this fact into non-atomic appends.
 // Append must be idempotent for a stable RecordID across the full configured
 // recovery horizon, not merely within a transport duplicate window. A repeated
 // RecordID with identical immutable content returns the original position. A
