@@ -31,7 +31,7 @@ func TestNATSDestinationPublishesCommandWithStableIdempotencyKey(t *testing.T) {
 	err := destination.Send(context.Background(), &domain.Effect{
 		ID: "effect-1", ExecutionID: "execution-1", TenantID: "tenant-a",
 		Destination: "payment", Name: "authorize",
-		EffectType: domain.EffectTypeEmit, Payload: json.RawMessage(`{"order_id":"order-1"}`),
+		EffectType: domain.EffectTypeCommand, Payload: json.RawMessage(`{"order_id":"order-1"}`),
 	}, "effect-effect-1")
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
@@ -71,5 +71,20 @@ func TestNATSDestinationReturnsPublishErrorForOutboxRetry(t *testing.T) {
 	}, "effect-effect-1")
 	if err == nil || !strings.Contains(err.Error(), "publish command") {
 		t.Fatalf("Send() error = %v, want wrapped publish error", err)
+	}
+}
+
+func TestNATSDestinationRoutesEmitTopicAsEffectsSubject(t *testing.T) {
+	publisher := &commandPublisherStub{}
+	destination := NewNATSDestination(publisher)
+	err := destination.Send(context.Background(), &domain.Effect{
+		ID: "effect-2", Destination: "orders.created", Name: "orders.created",
+		EffectType: domain.EffectTypeEmit, Payload: json.RawMessage(`{"order_id":"order-2"}`),
+	}, "effect-effect-2")
+	if err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	if got, want := publisher.subject, "effects.orders.created"; got != want {
+		t.Fatalf("subject = %q, want %q", got, want)
 	}
 }
