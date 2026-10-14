@@ -45,6 +45,7 @@ struct PartitionState {
     next_position: u64,
     records: Vec<LogRecord>,
     by_id: HashMap<String, (LogRecord, LogPosition)>,
+    highest_fencing_epoch: u64,
 }
 
 pub struct FileEventLog {
@@ -77,7 +78,7 @@ impl FileEventLog {
                 LogError::Integrity(format!("invalid WAL filename {name}"))
             })?;
             let partition = PartitionId(partition_number);
-            let (file, records, next_position, by_id) =
+            let (file, records, next_position, by_id, highest_fencing_epoch) =
                 recover_partition(entry.path(), partition)?;
             for (record_id, (record, position)) in &by_id {
                 if record_index
@@ -96,6 +97,7 @@ impl FileEventLog {
                     next_position,
                     records,
                     by_id,
+                    highest_fencing_epoch,
                 },
             );
         }
@@ -185,6 +187,40 @@ impl EventLog for FileEventLog {
         let mut partitions = self.partitions.lock().await;
         let state = self.ensure_partition(&mut partitions, record.partition).await?;
 
+        match record.kind {
+            LogRecordKind::FenceAdvanced => {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&record.payload).map_err(|error| {
+                        LogError::Invalid(format!("invalid fencing payload: {error}"))
+                    })?;
+                let attempted = value["fencing_epoch"].as_u64().ok_or_else(|| {
+                    LogError::Invalid("fencing payload requires fencing_epoch".into())
+                })?;
+                if attempted <= state.highest_fencing_epoch {
+                    return Err(LogError::Fenced {
+                        attempted,
+                        current: state.highest_fencing_epoch,
+                    });
+                }
+            }
+            LogRecordKind::ExecutionCommitted => {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&record.payload).map_err(|error| {
+                        LogError::Invalid(format!("invalid execution commit payload: {error}"))
+                    })?;
+                let attempted = value["fencing_epoch"].as_u64().ok_or_else(|| {
+                    LogError::Invalid("execution commit requires fencing_epoch".into())
+                })?;
+                if attempted != state.highest_fencing_epoch {
+                    return Err(LogError::Fenced {
+                        attempted,
+                        current: state.highest_fencing_epoch,
+                    });
+                }
+            }
+            _ => {}
+        }
+
         let position = LogPosition(state.next_position + 1);
         let stored = LogRecord {
             record_id: record.record_id.clone(),
@@ -235,6 +271,15 @@ impl EventLog for FileEventLog {
             return Err(storage_error(error));
         }
 
+        if stored.kind == LogRecordKind::FenceAdvanced {
+            let value: serde_json::Value =
+                serde_json::from_slice(&stored.payload).map_err(|error| {
+                    LogError::Integrity(format!("invalid durable fencing payload: {error}"))
+                })?;
+            state.highest_fencing_epoch = value["fencing_epoch"]
+                .as_u64()
+                .ok_or_else(|| LogError::Integrity("fencing epoch missing after append".into()))?;
+        }
         state.next_position = position.0;
         state.records.push(stored.clone());
         state
@@ -358,6 +403,34 @@ impl EventLog for FileEventLog {
                 .unwrap_or(0),
         ))
     }
+
+    async fn advance_fence(
+        &self,
+        partition: PartitionId,
+        fencing_epoch: u64,
+    ) -> Result<LogPosition, LogError> {
+        if fencing_epoch == 0 {
+            return Err(LogError::Invalid("fencing epoch must be positive".into()));
+        }
+        let partition_text = partition.0.to_string();
+        let epoch_text = fencing_epoch.to_string();
+        let payload = serde_json::to_vec(&json!({
+            "partition": partition.0,
+            "fencing_epoch": fencing_epoch,
+        }))
+        .map_err(storage_error)?;
+        let payload = Bytes::from(payload);
+        self.append(NewLogRecord {
+            record_id: deterministic_id("fence.advanced", &[&partition_text, &epoch_text]),
+            partition,
+            kind: LogRecordKind::FenceAdvanced,
+            tenant_id: "_system".into(),
+            event_id: format!("fence:{partition_text}:{epoch_text}"),
+            checksum_sha256: sha256_hex(&payload),
+            payload,
+        })
+        .await
+    }
 }
 
 fn recover_partition(
@@ -375,6 +448,7 @@ fn recover_partition(
     let mut records = Vec::new();
     let mut by_id = HashMap::new();
     let mut expected_position = 1_u64;
+    let mut highest_fencing_epoch = 0_u64;
 
     while offset < file_len {
         let remaining = file_len - offset;
@@ -428,6 +502,30 @@ fn recover_partition(
             checksum_sha256: frame.body.payload_sha256,
         };
         record.validate().map_err(LogError::Integrity)?;
+        match record.kind {
+            LogRecordKind::FenceAdvanced => {
+                let value: serde_json::Value = serde_json::from_slice(&record.payload)
+                    .map_err(|error| LogError::Integrity(error.to_string()))?;
+                if value["partition"].as_u64() != Some(u64::from(partition.0)) {
+                    return Err(LogError::Integrity("fencing partition mismatch".into()));
+                }
+                let epoch = value["fencing_epoch"]
+                    .as_u64()
+                    .ok_or_else(|| LogError::Integrity("fencing epoch missing".into()))?;
+                if epoch <= highest_fencing_epoch {
+                    return Err(LogError::Integrity("fencing epochs must increase monotonically".into()));
+                }
+                highest_fencing_epoch = epoch;
+            }
+            LogRecordKind::ExecutionCommitted => {
+                let value: serde_json::Value = serde_json::from_slice(&record.payload)
+                    .map_err(|error| LogError::Integrity(error.to_string()))?;
+                if value["fencing_epoch"].as_u64() != Some(highest_fencing_epoch) {
+                    return Err(LogError::Integrity("execution commit has stale fencing epoch".into()));
+                }
+            }
+            _ => {}
+        }
         if by_id.contains_key(&record.record_id) {
             return Err(LogError::Integrity(format!(
                 "duplicate record ID {} exists in WAL",
@@ -444,7 +542,7 @@ fn recover_partition(
     }
 
     file.seek(SeekFrom::End(0)).map_err(storage_error)?;
-    Ok((file, records, expected_position - 1, by_id))
+    Ok((file, records, expected_position - 1, by_id, highest_fencing_epoch))
 }
 
 fn partition_path(root: &Path, partition: PartitionId) -> PathBuf {
