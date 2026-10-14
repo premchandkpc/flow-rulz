@@ -164,13 +164,14 @@ impl FileEventLog {
         })
     }
 
-    async fn ensure_partition<'a>(
-        &'a self,
-        partitions: &'a mut HashMap<PartitionId, PartitionState>,
+    async fn ensure_partition(
+        &self,
+        partitions: &mut HashMap<PartitionId, PartitionState>,
         partition: PartitionId,
-    ) -> Result<&'a mut PartitionState, LogError> {
-        if let Some(state) = existing_partition_mut(partitions, partition) {
-            return Ok(state);
+    ) -> Result<(), LogError> {
+        if let std::collections::hash_map::Entry::Occupied(entry) = partitions.entry(partition) {
+            drop(entry);
+            return Ok(());
         }
 
         let path = partition_path(&self.root, partition);
@@ -198,9 +199,7 @@ impl FileEventLog {
                 highest_fencing_epoch: 0,
             },
         );
-        partitions
-            .get_mut(&partition)
-            .ok_or_else(|| LogError::Integrity("partition state disappeared".into()))
+        Ok(())
     }
 }
 
@@ -254,7 +253,10 @@ impl EventLog for FileEventLog {
         }
 
         let mut partitions = self.partitions.lock().await;
-        let state = self.ensure_partition(&mut partitions, record.partition).await?;
+        self.ensure_partition(&mut partitions, record.partition).await?;
+        let state = partitions
+            .get_mut(&record.partition)
+            .ok_or_else(|| LogError::Integrity("partition state disappeared".into()))?;
 
         match record.kind {
             LogRecordKind::EventAccepted => {
@@ -829,13 +831,6 @@ fn acquire_process_lock(root: &Path) -> Result<File, LogError> {
     }
 
     Ok(file)
-}
-
-fn existing_partition_mut(
-    partitions: &mut HashMap<PartitionId, PartitionState>,
-    partition: PartitionId,
-) -> Option<&mut PartitionState> {
-    partitions.get_mut(&partition)
 }
 
 fn partition_path(root: &Path, partition: PartitionId) -> PathBuf {
