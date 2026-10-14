@@ -277,8 +277,11 @@ impl EventLog for FileEventLog {
                     "execution.committed",
                     &[&record.tenant_id, partition_key, &record.event_id, execution_id],
                 );
-                if execution_id != expected_execution_id || record.record_id != expected_record_id {
-                    return Err(LogError::Invalid("execution commit has non-canonical identity".into()));
+                if execution_id != expected_execution_id
+                    || record.record_id != expected_record_id
+                    || partition_for_key(&record.tenant_id, partition_key) != record.partition
+                {
+                    return Err(LogError::Invalid("execution commit has non-canonical identity or partition".into()));
                 }
                 if attempted != state.highest_fencing_epoch {
                     return Err(LogError::Fenced {
@@ -614,6 +617,33 @@ fn recover_partition(
         };
         record.validate().map_err(LogError::Integrity)?;
         match record.kind {
+            LogRecordKind::EventAccepted => {
+                let value: serde_json::Value = serde_json::from_slice(&record.payload)
+                    .map_err(|error| LogError::Integrity(error.to_string()))?;
+                let tenant_id = value["identity"]["tenant_id"].as_str()
+                    .ok_or_else(|| LogError::Integrity("accepted event tenant ID missing".into()))?;
+                let event_id = value["identity"]["event_id"].as_str()
+                    .ok_or_else(|| LogError::Integrity("accepted event ID missing".into()))?;
+                let partition_key = value["identity"]["partition_key"].as_str()
+                    .ok_or_else(|| LogError::Integrity("accepted event partition key missing".into()))?;
+                let payload_hex = value["payload_hex"].as_str()
+                    .ok_or_else(|| LogError::Integrity("accepted event payload bytes missing".into()))?;
+                let payload_hash = value["payload_sha256"].as_str()
+                    .ok_or_else(|| LogError::Integrity("accepted event payload hash missing".into()))?;
+                let original_payload = decode_hex(payload_hex)?;
+                let expected_record_id = deterministic_id(
+                    "event.accepted",
+                    &[tenant_id, partition_key, event_id, ""],
+                );
+                if tenant_id != record.tenant_id
+                    || event_id != record.event_id
+                    || record.record_id != expected_record_id
+                    || partition_for_key(tenant_id, partition_key) != partition
+                    || sha256_hex(&original_payload) != payload_hash
+                {
+                    return Err(LogError::Integrity("accepted event identity or payload hash is invalid".into()));
+                }
+            }
             LogRecordKind::FenceAdvanced => {
                 let value: serde_json::Value = serde_json::from_slice(&record.payload)
                     .map_err(|error| LogError::Integrity(error.to_string()))?;
