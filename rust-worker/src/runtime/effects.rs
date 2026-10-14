@@ -1,33 +1,29 @@
 use crate::{config::Config, engine::{EventEnvelope, sha256_hex}, runtime::{scheduler::event_subject, uuid_token, validate_subject}};
 use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream;
-use chrono::Utc;
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
-use std::time::Duration;
 use tokio::time::{interval, MissedTickBehavior};
 use tracing::{info, warn};
 
 pub(super) async fn outbox_loop(pool: PgPool, js: jetstream::Context, config: Config) -> Result<()> {
-    let http = build_http_client()?;
     let mut ticker = interval(config.effect_poll_interval);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
     loop {
         ticker.tick().await;
-        process_outbox_batch(&pool, &js, &http, &config).await?;
+        process_outbox_batch(&pool, &js, &config).await?;
     }
 }
 
 async fn process_outbox_batch(
     pool: &PgPool,
     js: &jetstream::Context,
-    http: &reqwest::Client,
     config: &Config,
 ) -> Result<()> {
     let claim = format!("{}-{}", config.worker_id, uuid_token());
     let rows = claim_outbox_batch(pool, &claim, config.fetch_batch_size).await?;
-    process_claimed_rows(pool, js, http, config, &claim, rows).await
+    process_claimed_rows(pool, js, config, &claim, rows).await
 }
 
 async fn process_claimed_rows(
@@ -39,7 +35,7 @@ async fn process_claimed_rows(
     rows: Vec<sqlx::postgres::PgRow>,
 ) -> Result<()> {
     for row in rows {
-        process_claimed_effect(pool, js, http, config, claim, row).await?;
+        process_claimed_effect(pool, js, config, claim, row).await?;
     }
     Ok(())
 }
@@ -54,12 +50,6 @@ struct ClaimedEffect {
     effect_type: String,
     attempts: i32,
     max_attempts: i32,
-}
-
-fn build_http_client() -> Result<reqwest::Client> {
-    Ok(reqwest::Client::builder().no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(10)).build()?)
 }
 
 async fn claim_outbox_batch(pool: &PgPool, claim: &str, batch_size: usize) -> Result<Vec<sqlx::postgres::PgRow>> {
@@ -98,7 +88,7 @@ async fn process_claimed_effect(
     row: sqlx::postgres::PgRow,
 ) -> Result<()> {
     let effect = decode_claimed_effect(&row)?;
-    match send_effect(pool, js, http, config, &effect).await {
+    match send_effect(pool, js, config, &effect).await {
         Ok(()) => mark_effect_delivered(pool, claim, &effect.id).await,
         Err(error) => record_effect_failure(pool, claim, &effect, &error.to_string()).await,
     }
@@ -191,238 +181,111 @@ async fn schedule_effect_retry(pool: &PgPool, claim: &str, effect_id: &str, atte
 async fn send_effect(
     pool: &PgPool,
     js: &jetstream::Context,
-    http: &reqwest::Client,
     config: &Config,
     effect: &ClaimedEffect,
 ) -> Result<()> {
-    match effect.effect_type.as_str() {
+    let subject = match effect.effect_type.as_str() {
         "emit" => {
-            validate_subject(&effect.destination)?;
-            js.publish(effect.destination.clone(), serde_json::to_vec(&effect.payload)?.into())
-                .await
-                .context("publish effect to JetStream")?;
-            Ok(())
+            validate_subject_path(&effect.destination)?;
+            format!("effects.{}", effect.destination)
         }
-        "command" => send_external_effect(http, config, effect).await,
+        "command" => {
+            validate_subject_token(&effect.destination, "command destination")?;
+            validate_subject_path(&effect.name)?;
+            format!("commands.{}.{}", effect.destination, effect.name)
+        }
         "emit_event" => {
             let event: EventEnvelope =
                 serde_json::from_value(effect.payload.clone()).context("decode child event")?;
+            event.validate().context("validate child event")?;
             let shard = event.virtual_shard(config.num_shards)?;
             let subject = event_subject(&event.event_type, shard, &config.rulesets);
-            js.publish(subject, serde_json::to_vec(&event)?.into())
-                .await
-                .context("publish child event to JetStream")?;
-            Ok(())
+            publish(js, &subject, serde_json::to_vec(&event)?, "publish child event").await?;
+            return Ok(());
         }
-        "service_event" => send_domain_service_effect(pool, http, config, effect).await,
+        "service_event" => {
+            let event: EventEnvelope =
+                serde_json::from_value(effect.payload.clone()).context("decode service event")?;
+            event.validate().context("validate service event")?;
+            if event.tenant_id != effect.tenant_id || event.event_type != effect.name {
+                bail!("service event identity does not match its outbox effect");
+            }
+            let active: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM tenant_domain_services WHERE tenant_id=$1 AND service_id=$2 AND active=TRUE)"
+            )
+            .bind(&effect.tenant_id)
+            .bind(&effect.destination)
+            .fetch_one(pool)
+            .await
+            .context("verify active tenant service")?;
+            if !active {
+                bail!("active tenant service {:?} was not found", effect.destination);
+            }
+            format!(
+                "services.{}.{}",
+                &sha256_hex(effect.tenant_id.as_bytes())[..24],
+                &sha256_hex(effect.destination.as_bytes())[..24]
+            )
+        }
         other => bail!("unsupported outbox effect type {other:?}"),
-    }
+    };
+
+    validate_concrete_subject(&subject)?;
+    let envelope = json!({
+        "id": effect.id,
+        "execution_id": effect.execution_id,
+        "tenant_id": effect.tenant_id,
+        "destination": effect.destination,
+        "name": effect.name,
+        "payload": effect.payload,
+        "effect_type": effect.effect_type,
+        "idempotency_key": format!("effect-{}", effect.id),
+    });
+    publish(js, &subject, serde_json::to_vec(&envelope)?, "publish outbox effect").await
 }
 
-async fn send_external_effect(
-    http: &reqwest::Client,
-    config: &Config,
-    effect: &ClaimedEffect,
+async fn publish(
+    js: &jetstream::Context,
+    subject: &str,
+    payload: Vec<u8>,
+    context: &str,
 ) -> Result<()> {
-    if accept_development_effect(config, &effect.id, &effect.destination, &effect.name)? {
-        return Ok(());
-    }
-
-    let url = build_external_destination_url(config, &effect.destination, &effect.name)?;
-    let payload = build_external_effect_payload(
-        &effect.id,
-        &effect.execution_id,
-        &effect.tenant_id,
-        &effect.destination,
-        &effect.name,
-        &effect.payload,
-        &effect.effect_type,
-    );
-    post_external_effect(http, url, &effect.id, &effect.execution_id, &payload).await
-}
-
-fn accept_development_effect(config: &Config, id: &str, destination: &str, name: &str) -> Result<bool> {
-    if !config.effect_destination_url.trim().is_empty() {
-        return Ok(false);
-    }
-    if is_local_environment(&config.app_env) {
-        info!(effect_id = id, destination, name, "development fake destination accepted effect");
-        return Ok(true);
-    }
-    bail!("EFFECT_DESTINATION_URL is required for external effects")
-}
-
-fn build_external_destination_url(config: &Config, destination: &str, name: &str) -> Result<reqwest::Url> {
-    let mut url = reqwest::Url::parse(&config.effect_destination_url)
-        .context("parse EFFECT_DESTINATION_URL")?;
-    let mut segments = url.path_segments_mut()
-        .map_err(|_| anyhow!("EFFECT_DESTINATION_URL cannot be a base URL"))?;
-    segments.pop_if_empty();
-    segments.push(destination);
-    segments.push(name);
-    drop(segments);
-    Ok(url)
-}
-
-fn build_external_effect_payload(
-    id: &str,
-    execution_id: &str,
-    tenant_id: &str,
-    destination: &str,
-    name: &str,
-    payload: &Value,
-    effect_type: &str,
-) -> Value {
-    json!({
-        "id": id,
-        "execution_id": execution_id,
-        "tenant_id": tenant_id,
-        "destination": destination,
-        "name": name,
-        "payload": payload,
-        "effect_type": effect_type,
-        "created_at": Utc::now()
-    })
-}
-
-async fn post_external_effect(
-    http: &reqwest::Client,
-    url: reqwest::Url,
-    id: &str,
-    execution_id: &str,
-    effect: &Value,
-) -> Result<()> {
-    let response = http.post(url)
-        .header("Content-Type", "application/json")
-        .header("X-Effect-ID", id)
-        .header("X-Execution-ID", execution_id)
-        .header("Idempotency-Key", format!("effect-{id}"))
-        .json(effect)
-        .send()
+    js.publish(subject.to_owned(), payload.into())
         .await
-        .context("send external effect")?;
-    if !response.status().is_success() {
-        bail!("external effect endpoint returned {}", response.status());
+        .with_context(|| format!("{context} to {subject}"))?;
+    Ok(())
+}
+
+fn validate_subject_token(value: &str, label: &str) -> Result<()> {
+    let valid = !value.is_empty()
+        && value.len() <= 63
+        && value.as_bytes()[0].is_ascii_lowercase()
+        && value.bytes().all(|byte| byte.is_ascii_lowercase()
+            || byte.is_ascii_digit() || byte == b'_' || byte == b'-');
+    if !valid {
+        bail!("invalid {label} {value:?}");
     }
     Ok(())
 }
 
-async fn send_domain_service_effect(
-    pool: &PgPool,
-    http: &reqwest::Client,
-    config: &Config,
-    effect: &ClaimedEffect,
-) -> Result<()> {
-    let endpoint = load_active_service_endpoint(pool, &effect.tenant_id, &effect.destination).await?;
-    let url = validate_service_endpoint(&endpoint, config)?;
-    post_service_callback(http, url, effect).await
-}
-
-async fn load_active_service_endpoint(pool: &PgPool, tenant_id: &str, service_id: &str) -> Result<String> {
-    sqlx::query_scalar(
-        "SELECT endpoint_url FROM tenant_domain_services WHERE tenant_id=$1 AND service_id=$2 AND active=TRUE"
-    )
-    .bind(tenant_id)
-    .bind(service_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| anyhow!("active tenant domain service {service_id:?} was not found"))
-}
-
-fn validate_service_endpoint(endpoint: &str, config: &Config) -> Result<reqwest::Url> {
-    let url = reqwest::Url::parse(endpoint).context("parse tenant service endpoint URL")?;
-    let local_env = is_local_environment(&config.app_env);
-
-    validate_service_url_components(&url, local_env)?;
-    validate_service_ip_literal(&url, local_env)?;
-    Ok(url)
-}
-
-fn is_local_environment(app_env: &str) -> bool {
-    matches!(app_env.to_ascii_lowercase().as_str(), "dev" | "development" | "test")
-}
-
-fn validate_service_url_components(url: &reqwest::Url, local_env: bool) -> Result<()> {
-    if url.scheme() != "https" && !local_env {
-        bail!("tenant service endpoint must use HTTPS outside development/test");
+fn validate_subject_path(value: &str) -> Result<()> {
+    if value.is_empty() || value.len() > 128 {
+        bail!("effect subject path must contain 1..=128 bytes");
     }
-    if url.host_str().is_none() || !url.username().is_empty()
-        || url.password().is_some() || url.fragment().is_some()
+    for token in value.split('.') {
+        validate_subject_token(token, "subject token")?;
+    }
+    Ok(())
+}
+
+fn validate_concrete_subject(subject: &str) -> Result<()> {
+    if subject.is_empty()
+        || subject.split('.').any(|token| token.is_empty() || token.contains('*') || token.contains('>'))
     {
-        bail!("tenant service endpoint URL contains invalid authority components");
+        bail!("invalid concrete NATS subject {subject:?}");
     }
     Ok(())
 }
-
-fn validate_service_ip_literal(url: &reqwest::Url, local_env: bool) -> Result<()> {
-    if local_env {
-        return Ok(());
-    }
-    let Some(host) = url.host_str() else {
-        bail!("tenant service endpoint must contain a host");
-    };
-    let Ok(ip) = host.parse::<std::net::IpAddr>() else {
-        // DNS names are not resolved here; validating all resolved IPs remains a known security gap.
-        return Ok(());
-    };
-    let private = is_non_public_ip(ip);
-    if private {
-        bail!("tenant service endpoint resolves to a non-public IP literal");
-    }
-    Ok(())
-}
-
-fn is_non_public_ip(ip: std::net::IpAddr) -> bool {
-    match ip {
-        std::net::IpAddr::V4(ip) => {
-            ip.is_private() || ip.is_loopback() || ip.is_link_local() || ip.is_unspecified()
-        }
-        std::net::IpAddr::V6(ip) => {
-            ip.is_loopback() || ip.is_unspecified() || ip.is_unique_local() || ip.is_unicast_link_local()
-        }
-    }
-}
-
-async fn post_service_callback(
-    http: &reqwest::Client,
-    url: reqwest::Url,
-    effect: &ClaimedEffect,
-) -> Result<()> {
-    let event_id = effect.payload.get("id").and_then(Value::as_str).unwrap_or_default();
-    let request = build_service_callback_request(http, url, effect, event_id);
-    let response = request
-        .send()
-        .await
-        .context("send tenant service event callback")?;
-    ensure_successful_callback(response.status())
-}
-
-fn build_service_callback_request(
-    http: &reqwest::Client,
-    url: reqwest::Url,
-    effect: &ClaimedEffect,
-    event_id: &str,
-) -> reqwest::RequestBuilder {
-    http.post(url)
-        .header("Content-Type", "application/json")
-        .header("Idempotency-Key", format!("effect-{}", effect.id))
-        .header("X-FlowRulz-Tenant-ID", &effect.tenant_id)
-        .header("X-FlowRulz-Service-ID", &effect.destination)
-        .header("X-FlowRulz-Effect-ID", &effect.id)
-        .header("X-FlowRulz-Event-ID", event_id)
-        .header("X-Effect-ID", &effect.id)
-        .header("X-Execution-ID", &effect.execution_id)
-        .header("X-FlowRulz-Event-Type", &effect.name)
-        .json(&effect.payload)
-}
-
-fn ensure_successful_callback(status: reqwest::StatusCode) -> Result<()> {
-    if !status.is_success() {
-        bail!("tenant service callback returned {status}");
-    }
-    Ok(())
-}
-
 
 #[cfg(test)]
 mod outbox_claim_tests {
