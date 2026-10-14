@@ -51,6 +51,8 @@ struct PartitionState {
 
 pub struct FileEventLog {
     root: PathBuf,
+    // Holding this file keeps the OS advisory lock for the adapter lifetime.
+    _lock_file: File,
     partitions: Mutex<HashMap<PartitionId, PartitionState>>,
     record_index: Mutex<HashMap<String, (PartitionId, LogRecord, LogPosition)>>,
 }
@@ -62,6 +64,7 @@ impl FileEventLog {
     pub async fn open(root: impl AsRef<Path>) -> Result<Self, LogError> {
         let root = root.as_ref().to_path_buf();
         fs::create_dir_all(&root).map_err(storage_error)?;
+        let lock_file = acquire_process_lock(&root)?;
         let mut partitions = HashMap::new();
         let mut record_index = HashMap::new();
         let entries = fs::read_dir(&root).map_err(storage_error)?;
@@ -105,6 +108,7 @@ impl FileEventLog {
 
         Ok(Self {
             root,
+            _lock_file: lock_file,
             partitions: Mutex::new(partitions),
             record_index: Mutex::new(record_index),
         })
@@ -617,6 +621,44 @@ fn recover_partition(
     Ok((file, records, expected_position - 1, by_id, highest_fencing_epoch))
 }
 
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn flock(fd: std::os::raw::c_int, operation: std::os::raw::c_int) -> std::os::raw::c_int;
+}
+
+fn acquire_process_lock(root: &Path) -> Result<File, LogError> {
+    let path = root.join(".flow-rulz-wal.lock");
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(storage_error)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsRawFd;
+        // LOCK_EX | LOCK_NB: fail instead of allowing two writers to interleave frames.
+        let result = unsafe { flock(file.as_raw_fd(), 2 | 4) };
+        if result != 0 {
+            return Err(LogError::Unavailable(format!(
+                "WAL directory is already locked: {}",
+                std::io::Error::last_os_error()
+            )));
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        return Err(LogError::Unavailable(
+            "FileEventLog currently requires Unix advisory file locks".into(),
+        ));
+    }
+
+    Ok(file)
+}
+
 fn partition_path(root: &Path, partition: PartitionId) -> PathBuf {
     root.join(format!("partition-{:010}.wal", partition.0))
 }
@@ -878,6 +920,18 @@ mod tests {
         );
         let error = log.advance_fence(PartitionId(7), 1).await.unwrap_err();
         assert!(matches!(error, LogError::Fenced { attempted: 1, current: 2 }));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+
+    #[tokio::test]
+    async fn wal_directory_rejects_a_second_writer() {
+        let dir = temp_dir();
+        let first = FileEventLog::open(&dir).await.unwrap();
+        let second = FileEventLog::open(&dir).await;
+        assert!(matches!(second, Err(LogError::Unavailable(_))));
+        drop(first);
+        assert!(FileEventLog::open(&dir).await.is_ok());
         let _ = fs::remove_dir_all(dir);
     }
 
