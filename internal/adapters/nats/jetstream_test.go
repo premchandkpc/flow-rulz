@@ -45,11 +45,11 @@ func TestNewConsumerRejectsFiniteMaxDeliverWithoutRecovery(t *testing.T) {
 func TestStreamSubjectsIncludeApplicationCommandAndServiceRoutes(t *testing.T) {
 	got := streamSubjects(Config{Subjects: []string{"events"}})
 	want := map[string]bool{
-		"events.shard.*": true,
+		"events.shard.*":           true,
 		"events.ruleset.*.shard.*": true,
-		"commands.>": true,
-		"effects.>": true,
-		"services.>": true,
+		"commands.>":               true,
+		"effects.>":                true,
+		"services.>":               true,
 	}
 	for _, subject := range got {
 		delete(want, subject)
