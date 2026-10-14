@@ -24,7 +24,7 @@ func newNATSConfig(cfg *config.Config) nats.Config {
 	}
 }
 
-func newExternalSender(publisher ports.SubjectPublisher) (ports.EffectSender, error) {
+func newCommandSender(publisher ports.SubjectPublisher) (ports.EffectSender, error) {
 	if publisher == nil {
 		return nil, errors.New("NATS publisher is required for command effects")
 	}
