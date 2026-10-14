@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
@@ -290,7 +291,7 @@ func compareEq(actual interface{}, expected interface{}) bool {
 	// json.Number vs json.Number: compare as decimal strings
 	if a, aok := actual.(json.Number); aok {
 		if b, bok := expected.(json.Number); bok {
-			return a.String() == b.String()
+			return compareNumericEqual(a, b)
 		}
 		// json.Number vs other numeric type
 		if isNumeric(expected) {
@@ -344,145 +345,62 @@ func isNumeric(v interface{}) bool {
 }
 
 func compareNumericEqual(a, b interface{}) bool {
-	// Convert both to int64 if possible, otherwise float64
-	var ai, bi int64
-	var af, bf float64
-	var aIsInt, bIsInt bool
-
-	switch av := a.(type) {
-	case int:
-		ai, aIsInt = int64(av), true
-	case int8:
-		ai, aIsInt = int64(av), true
-	case int16:
-		ai, aIsInt = int64(av), true
-	case int32:
-		ai, aIsInt = int64(av), true
-	case int64:
-		ai, aIsInt = av, true
-	case uint:
-		ai, aIsInt = int64(av), true
-	case uint8:
-		ai, aIsInt = int64(av), true
-	case uint16:
-		ai, aIsInt = int64(av), true
-	case uint32:
-		ai, aIsInt = int64(av), true
-	case uint64:
-		ai, aIsInt = int64(av), true
-	case float32:
-		af = float64(av)
-	case float64:
-		if av == float64(int64(av)) {
-			ai, aIsInt = int64(av), true
-		} else {
-			af = av
-		}
-	case json.Number:
-		if iv, err := av.Int64(); err == nil {
-			ai, aIsInt = iv, true
-		} else if fv, err := av.Float64(); err == nil {
-			af = fv
-		}
-	}
-
-	switch bv := b.(type) {
-	case int:
-		bi, bIsInt = int64(bv), true
-	case int8:
-		bi, bIsInt = int64(bv), true
-	case int16:
-		bi, bIsInt = int64(bv), true
-	case int32:
-		bi, bIsInt = int64(bv), true
-	case int64:
-		bi, bIsInt = bv, true
-	case uint:
-		bi, bIsInt = int64(bv), true
-	case uint8:
-		bi, bIsInt = int64(bv), true
-	case uint16:
-		bi, bIsInt = int64(bv), true
-	case uint32:
-		bi, bIsInt = int64(bv), true
-	case uint64:
-		bi, bIsInt = int64(bv), true
-	case float32:
-		bf = float64(bv)
-	case float64:
-		if bv == float64(int64(bv)) {
-			bi, bIsInt = int64(bv), true
-		} else {
-			bf = bv
-		}
-	case json.Number:
-		if iv, err := bv.Int64(); err == nil {
-			bi, bIsInt = iv, true
-		} else if fv, err := bv.Float64(); err == nil {
-			bf = fv
-		}
-	}
-
-	if aIsInt && bIsInt {
-		return ai == bi
-	}
-	return af == bf
+	ar, aOK := numericRat(a)
+	br, bOK := numericRat(b)
+	return aOK && bOK && ar.Cmp(br) == 0
 }
 
-func normalizeNumber(v interface{}) interface{} {
-	switch n := v.(type) {
-	case float64:
-		if n == float64(int64(n)) {
-			return int64(n)
-		}
-		return n
+// numericRat converts supported numeric values to exact rational values where
+// possible. This avoids overflow when comparing uint64 values and avoids
+// silently equating distinct integers after conversion to float64.
+func numericRat(value interface{}) (*big.Rat, bool) {
+	var raw string
+	switch n := value.(type) {
+	case int:
+		raw = strconv.FormatInt(int64(n), 10)
+	case int8:
+		raw = strconv.FormatInt(int64(n), 10)
+	case int16:
+		raw = strconv.FormatInt(int64(n), 10)
+	case int32:
+		raw = strconv.FormatInt(int64(n), 10)
 	case int64:
-		return n
+		raw = strconv.FormatInt(n, 10)
+	case uint:
+		raw = strconv.FormatUint(uint64(n), 10)
+	case uint8:
+		raw = strconv.FormatUint(uint64(n), 10)
+	case uint16:
+		raw = strconv.FormatUint(uint64(n), 10)
+	case uint32:
+		raw = strconv.FormatUint(uint64(n), 10)
+	case uint64:
+		raw = strconv.FormatUint(n, 10)
+	case float32:
+		raw = strconv.FormatFloat(float64(n), 'g', -1, 32)
+	case float64:
+		raw = strconv.FormatFloat(n, 'g', -1, 64)
 	case json.Number:
-		if i, err := n.Int64(); err == nil {
-			return i
-		}
-		if f, err := n.Float64(); err == nil {
-			return f
-		}
+		raw = n.String()
+	case string:
+		// Preserve existing support for numeric strings in ordered comparisons.
+		raw = n
+	default:
+		return nil, false
 	}
-	return v
+	rat, ok := new(big.Rat).SetString(raw)
+	return rat, ok
 }
 
 func compareCmp(actual interface{}, expected interface{}) int {
-	a, aOk := toFloat64(actual)
-	b, bOk := toFloat64(expected)
-	if aOk && bOk {
-		if a > b {
-			return 1
-		}
-		if a < b {
-			return -1
-		}
-		return 0
+	a, aOK := numericRat(actual)
+	b, bOK := numericRat(expected)
+	if !aOK || !bOK {
+		// Indicates incompatible types for numeric comparison.
+		return 2
 	}
-	// If either value cannot be converted to a number, return an error indicator
-	// by returning a special value that will cause the comparison to fail
-	// This prevents incorrect lexical comparison like "100" < "20"
-	return 2 // Indicates incompatible types for numeric comparison
+	return a.Cmp(b)
 }
-
-func toFloat64(v interface{}) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int64:
-		return float64(n), true
-	case json.Number:
-		f, err := n.Float64()
-		return f, err == nil
-	case string:
-		f, err := strconv.ParseFloat(n, 64)
-		return f, err == nil
-	}
-	return 0, false
-}
-
 func compareIn(val interface{}, list interface{}) bool {
 	arr, ok := list.([]interface{})
 	if !ok {
