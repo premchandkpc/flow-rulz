@@ -18,8 +18,8 @@ type scheduledEventRepositoryStub struct {
 }
 
 func (r *scheduledEventRepositoryStub) Save(_ context.Context, event *domain.ScheduledEvent) error {
-	copy := *event
-	r.saved = &copy
+	eventCopy := *event
+	r.saved = &eventCopy
 	return r.err
 }
 
