@@ -15,6 +15,7 @@ type commandPublisherStub struct {
 	payload []byte
 	err     error
 }
+
 func (p *commandPublisherStub) Publish(_ context.Context, subject string, payload []byte) error {
 	p.subject = subject
 	p.payload = append([]byte(nil), payload...)
