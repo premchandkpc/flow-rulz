@@ -15,9 +15,13 @@ import (
 type ContractKind string
 
 const (
+	// ContractKindEnvelope identifies the common message envelope schema.
 	ContractKindEnvelope ContractKind = "envelope"
+	// ContractKindEvent identifies an event payload schema.
 	ContractKindEvent ContractKind = "event"
+	// ContractKindCommand identifies a command payload schema.
 	ContractKindCommand ContractKind = "command"
+	// ContractKindEffect identifies an effect payload schema.
 	ContractKindEffect ContractKind = "effect"
 )
 
