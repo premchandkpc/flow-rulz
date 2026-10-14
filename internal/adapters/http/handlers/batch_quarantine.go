@@ -24,6 +24,10 @@ func NewBatchHandler(batchSvc ports.BatchService) *BatchHandler {
 
 // RegisterControlPlaneRoutes exposes batch status only. Batch submission and execution
 // are runtime operations and must be initiated through the worker data plane.
+func (h *BatchHandler) RegisterRoutes(mux *http.ServeMux) {
+	h.RegisterControlPlaneRoutes(mux)
+}
+
 func (h *BatchHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/batches/{batchID}", h.GetBatch)
 	mux.HandleFunc("GET /v1/batches", h.ListBatches)
@@ -31,7 +35,7 @@ func (h *BatchHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
 
 // RegisterRoutes preserves the complete handler route set for focused handler tests.
 // The production API router must use RegisterControlPlaneRoutes.
-func (h *BatchHandler) RegisterRoutes(mux *http.ServeMux) {
+func (h *BatchHandler) RegisterAllRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/batches", h.CreateBatch)
 	mux.HandleFunc("GET /v1/batches/{batchID}", h.GetBatch)
 	mux.HandleFunc("GET /v1/batches", h.ListBatches)
@@ -139,6 +143,10 @@ func NewQuarantineHandler(quarantineSvc ports.QuarantineService) *QuarantineHand
 
 // RegisterControlPlaneRoutes exposes read-only quarantine inspection. Replay and
 // deletion mutate runtime state and are deliberately not part of the control plane.
+func (h *QuarantineHandler) RegisterRoutes(mux *http.ServeMux) {
+	h.RegisterControlPlaneRoutes(mux)
+}
+
 func (h *QuarantineHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/quarantine", h.ListQuarantine)
 	mux.HandleFunc("GET /v1/quarantine/{id}", h.GetQuarantine)
@@ -146,7 +154,7 @@ func (h *QuarantineHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
 
 // RegisterRoutes preserves the complete handler route set for focused handler tests.
 // The production API router must use RegisterControlPlaneRoutes.
-func (h *QuarantineHandler) RegisterRoutes(mux *http.ServeMux) {
+func (h *QuarantineHandler) RegisterAllRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/quarantine", h.ListQuarantine)
 	mux.HandleFunc("GET /v1/quarantine/{id}", h.GetQuarantine)
 	mux.HandleFunc("POST /v1/quarantine/{id}/replay", h.ReplayQuarantine)
