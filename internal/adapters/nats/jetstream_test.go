@@ -48,6 +48,7 @@ func TestStreamSubjectsIncludeApplicationCommandAndServiceRoutes(t *testing.T) {
 		"events.shard.*": true,
 		"events.ruleset.*.shard.*": true,
 		"commands.>": true,
+		"effects.>": true,
 		"services.>": true,
 	}
 	for _, subject := range got {
