@@ -48,7 +48,7 @@ docker compose down
 
 To retain local database volumes, use `docker compose down` without `-v`. Only remove volumes when you intentionally want to destroy development data.
 
-API/worker startup initializes the configured storage backend and applies migrations. The worker may use a fake effect destination only when `APP_ENV=development` or `test` and `EFFECT_DESTINATION_URL` is empty. In other environments, the worker fails startup if the external destination is missing.
+API/worker startup initializes the configured storage backend and applies migrations. The Go worker publishes command and tenant-service effects through NATS JetStream. There is no `EFFECT_DESTINATION_URL` setting and HTTP callback delivery is unsupported. Receivers must use durable consumers for their exact `commands.*` or assigned `services.*` subjects and deduplicate stable effect IDs.
 
 ## Configuration
 
@@ -70,7 +70,7 @@ The authoritative Compose variable template is `.env.example`; copy it to `.env`
 | `EFFECT_PUBLISH_INTERVAL_MS`, `EFFECT_PUBLISH_BATCH_SIZE`, `EVENT_RETRY_DELAY_MS` | Outbox publishing cadence/batch and event retry delay |
 | `SCHEDULER_POLL_MS`, `SCHEDULER_BATCH_SIZE` | Scheduled-event polling cadence and batch size |
 | `LEASE_TTL_MS`, `LEASE_RENEWAL_INTERVAL_MS` | Shard lease duration and renewal cadence; renewal must remain within configured validation limits |
-| `EFFECT_DESTINATION_URL` | External HTTP destination for command effects; required outside development/test |
+| `NATS_URL`, `NATS_STREAM` | NATS JetStream connection and durable message stream used for events, commands, and tenant-service deliveries |
 | `SHUTDOWN_TIMEOUT` | Bounded graceful-shutdown interval |
 
 Some optional observability and generation settings are also accepted by config. Verify the concrete entry point uses a setting before assuming it starts a listener or service; unused configuration should not be treated as an implemented feature.
