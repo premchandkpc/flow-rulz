@@ -2,9 +2,9 @@ module examples/banking
 
 go 1.26.0
 
-require github.com/flowrulz/flow-rulz-sdk/go/flowrule v0.0.0
+require github.com/flowrulz/flow-rulz-sdk/go/flowrulz v0.0.0
 
-replace github.com/flowrulz/flow-rulz-sdk/go/flowrule => ../../sdk/go/flowrule
+replace github.com/flowrulz/flow-rulz-sdk/go/flowrulz => ../../sdk/go/flowrule
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
