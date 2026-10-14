@@ -185,7 +185,7 @@ func isSHA256Hex(value string) bool {
 }
 
 // payloadSHA256 hashes compact JSON bytes, making insignificant whitespace
-// irrelevant while keeping the exact encoded field ordering part of identity.
+// irrelevant while preserving encoded field ordering as part of identity.
 func payloadSHA256(payload json.RawMessage) string {
 	var compact bytes.Buffer
 	if err := json.Compact(&compact, payload); err != nil {
