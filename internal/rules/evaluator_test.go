@@ -172,7 +172,7 @@ func TestEvaluateEmitEventDeterministicChildID(t *testing.T) {
 	if child1.ID != child2.ID {
 		t.Errorf("child event ID not deterministic: %s != %s", child1.ID, child2.ID)
 	}
-	if child1.ID != domain.ComputeChildEventID("evt-parent", "request-payment", 0) {
+	if child1.ID != domain.ComputeChildEventID("tenant-a", "evt-parent", "request-payment", 0) {
 		t.Errorf("child event ID doesn't match ComputeChildEventID: %s", child1.ID)
 	}
 }
