@@ -14,7 +14,7 @@ The API and worker had overlapping responsibilities: the API could publish busin
 3. Producers publish business events directly to NATS JetStream using the platform event envelope and subject/shard contract.
 4. `cmd/worker` is the core event data plane: consume, validate, resolve a published revision, evaluate flow instructions, persist durable transitions and output intents, and ACK only after durable commit.
 5. The worker process is stateless with respect to authoritative business state. Execution progress, inbox/deduplication, outbox effects, waits, schedules, retries and workflow resumptions are durable.
-6. Flow definitions use a validated and versioned instruction set. Keywords such as `when`, `if`, `emit`, `call`, `wait` and `schedule` describe behavior; they are not arbitrary executable code.
+6. Rule definitions use validated typed actions. `schedule_event` is a supported durable action: the event execution writes a schedule intent to the transactional outbox, the outbox dispatcher persists it idempotently, and the worker-owned scheduler later publishes it. Correlated workflow `wait`/resume semantics remain unsupported until durable workflow state transitions are implemented.
 7. HTTP event ingestion is not part of the management API. The Go SDK must use NATS for event publication.
 
 ## Consequences
@@ -23,7 +23,7 @@ The API and worker had overlapping responsibilities: the API could publish busin
 - Producer credentials and NATS subject permissions become explicit ingress security boundaries.
 - The HTTP SDK transport is rejected with an actionable configuration error instead of targeting a removed endpoint.
 - A future dedicated receiver, if needed, must be a separate deployable with its own authentication, validation and backpressure policy. It must not be embedded in the control-plane API.
-- Schedule and wait definitions still require a separate durable runtime implementation; this ADR does not claim those workflow keywords are fully implemented.
+- `schedule_event` is supported through the durable outbox and scheduler. Correlated workflow wait/resume remains future work and must not be simulated with in-memory timers.
 
 ## Required invariants
 
