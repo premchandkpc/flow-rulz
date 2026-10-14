@@ -66,7 +66,7 @@ func TestNATSDestinationReturnsPublishErrorForOutboxRetry(t *testing.T) {
 		ID: "effect-1", Destination: "payment", Name: "authorize",
 		EffectType: domain.EffectTypeCommand, Payload: json.RawMessage(`{}`),
 	}, "effect-effect-1")
-	if err == nil || !strings.Contains(err.Error(), "publish command") {
+	if err == nil || !strings.Contains(err.Error(), "publish effect") {
 		t.Fatalf("Send() error = %v, want wrapped publish error", err)
 	}
 }
