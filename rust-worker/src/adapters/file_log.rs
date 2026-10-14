@@ -15,7 +15,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
@@ -199,12 +199,7 @@ impl EventLog for FileEventLog {
         encoded.extend_from_slice(&bytes);
 
         let old_len = state.file.metadata().await.map_err(storage_error)?.len();
-        if let Err(error) = state
-            .file
-            .write_all(&encoded)
-            .await
-            .and_then(|_| async { Ok(()) }.await)
-        {
+        if let Err(error) = state.file.write_all(&encoded).await {
             let _ = state.file.set_len(old_len).await;
             let _ = state.file.sync_data().await;
             return Err(storage_error(error));
@@ -465,6 +460,7 @@ fn storage_error(error: impl std::fmt::Display) -> LogError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
