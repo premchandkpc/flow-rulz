@@ -3,7 +3,6 @@ package domainservices
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -114,7 +113,7 @@ func TestSaveDomainValidatesInputsAndTenantScopedNames(t *testing.T) {
 	}
 }
 
-func TestSaveServiceRequiresTenantOwnedDomainsAndSafeEndpointScheme(t *testing.T) {
+func TestSaveServiceRequiresTenantOwnedDomainsAndRejectsHTTPCallbacks(t *testing.T) {
 	repo := newRepositoryStub()
 	service := NewService(repo, fixedClock{now: time.Unix(20, 0).UTC()}, false)
 	domainA, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
@@ -124,50 +123,36 @@ func TestSaveServiceRequiresTenantOwnedDomainsAndSafeEndpointScheme(t *testing.T
 		t.Fatal(err)
 	}
 	if _, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
-		Name: "receiver", EndpointURL: "http://callback.example/hook", DomainIDs: []string{domainA.ID},
+		Name: "receiver", EndpointURL: "https://callback.example/hook", DomainIDs: []string{domainA.ID},
 	}); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("production HTTP endpoint error = %v, want ErrInvalidInput", err)
+		t.Fatalf("HTTP callback error = %v, want ErrInvalidInput", err)
 	}
 	if _, err := service.SaveService(context.Background(), "tenant-b", &domain.DomainService{
-		Name: "receiver", EndpointURL: "https://callback.example/hook", DomainIDs: []string{domainA.ID},
+		Name: "receiver", DomainIDs: []string{domainA.ID},
 	}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("cross-tenant domain subscription error = %v, want ErrInvalidInput", err)
 	}
-	if _, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
-		Name: "receiver", EndpointURL: "https://user:pass@callback.example/hook",
-	}); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("endpoint credentials error = %v, want ErrInvalidInput", err)
-	}
 }
 
-func TestSaveServiceAllowsHTTPOnlyWhenConfiguredAndRejectsDuplicateName(t *testing.T) {
+func TestSaveServiceAssignsStableNATSSubjectAndRejectsDuplicateName(t *testing.T) {
 	repo := newRepositoryStub()
 	service := NewService(repo, fixedClock{now: time.Unix(30, 0).UTC()}, true)
 	item, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
-		Name: "receiver", EndpointURL: "http://127.0.0.1:8080/callback",
+		Name: "receiver",
 	})
 	if err != nil {
-		t.Fatalf("development SaveService() error = %v", err)
+		t.Fatalf("SaveService() error = %v", err)
 	}
 	if !item.Active || item.ID == "" {
 		t.Fatalf("new service must be active and identified: %#v", item)
 	}
+	if want := domain.DomainServiceSubject("tenant-a", item.ID); item.NATSSubject != want {
+		t.Fatalf("NATS subject = %q, want %q", item.NATSSubject, want)
+	}
 	if _, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
-		Name: "receiver", EndpointURL: "https://callback.example/hook",
+		Name: "receiver",
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate service name error = %v, want ErrConflict", err)
 	}
 }
 
-func TestValidateEndpointRejectsCredentialsFragmentsAndOversizedURLs(t *testing.T) {
-	oversized := "https://" + strings.Repeat("a", 2050) + ".example"
-	for _, raw := range []string{
-		"https://user:pass@example.com/hook",
-		"https://example.com/hook#secret",
-		oversized,
-	} {
-		if err := validateEndpoint(raw, false); err == nil {
-			t.Errorf("validateEndpoint(%q) error = nil, want invalid endpoint", raw)
-		}
-	}
-}
