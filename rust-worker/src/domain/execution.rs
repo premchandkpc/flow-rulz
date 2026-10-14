@@ -40,8 +40,15 @@ impl ExecutionCommit {
         }
         serde_json::from_slice::<serde_json::Value>(&self.result_payload)
             .map_err(|_| "execution result payload must be valid JSON".to_string())?;
-        if matches!(&self.outcome, ExecutionOutcome::Quarantined { .. }) && !self.effects.is_empty() {
-            return Err("quarantined execution cannot emit effects".into());
+        if matches!(
+            &self.outcome,
+            ExecutionOutcome::Quarantined { .. } | ExecutionOutcome::NoMatch
+        ) && !self.effects.is_empty()
+        {
+            return Err("no-match or quarantined execution cannot emit effects".into());
+        }
+        if !is_sha256_hex(&self.decision_hash) {
+            return Err("decision_hash must be a SHA-256 hex digest".into());
         }
         for revision in &self.rule_revisions {
             if revision.tenant_id != self.event.tenant_id
@@ -53,8 +60,12 @@ impl ExecutionCommit {
                 return Err("rule revision is incomplete or belongs to another tenant".into());
             }
         }
+        let mut effect_ids = std::collections::HashSet::with_capacity(self.effects.len());
         for effect in &self.effects {
             effect.validate()?;
+            if !effect_ids.insert(&effect.effect_id) {
+                return Err("duplicate effect_id in execution commit".into());
+            }
             if effect.execution_id != self.execution_id {
                 return Err("effect execution_id does not match execution commit".into());
             }
@@ -67,4 +78,11 @@ impl ExecutionCommit {
         }
         Ok(())
     }
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
