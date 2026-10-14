@@ -371,7 +371,7 @@ function RuleFlowMap({ settings, scenario, startRuleSet, events, running }: { se
   const nodes = useMemo(() => layoutRuleFlow(stored, startRuleSet), [stored, startRuleSet]);
   const seen = useMemo(() => {
     const result: FlowObservation = { ran: new Map(), types: new Set() };
-    events.filter(event => event.scenario === scenario).forEach(event => observeTrace(event.trace, result));
+    events.filter(event => event.scenario === scenario || event.scenario === "external").forEach(event => observeTrace(event.trace, result));
     return result;
   }, [events, scenario]);
   const levels = [...new Set(nodes.map(node => node.level))];
@@ -1380,7 +1380,7 @@ export default function App() {
 
     // Check which nodes have been observed in traces
     const observedRuleSets = new Set<string>();
-    events.filter(e => e.scenario === scenario).forEach(e => {
+    events.filter(e => e.scenario === scenario || e.scenario === "external").forEach(e => {
       if (e.trace?.execution?.rule_set) observedRuleSets.add(e.trace.execution.rule_set);
       e.trace?.effects.forEach(fx => {
         if (fx.child?.execution?.rule_set) observedRuleSets.add(fx.child.execution.rule_set);
@@ -1523,7 +1523,7 @@ export default function App() {
         
         {/* Step-by-step flow visualization */}
         <div className="simulation-flow" aria-label="Live event processing path">
-          <div className={`simulation-flow-step flow-${flowStepState(0)}`}><span className="flow-step-icon">A</span><span><strong>Source service</strong><small>{latestSimulationEvent ? `${latestSimulationEvent.scenario} · ${latestSimulationEvent.type}` : "Example producer sends the event"}</small></span></div><span className={`flow-connector flow-${flowConnectorState(0)}`}>→</span>
+          <div className={`simulation-flow-step flow-${flowStepState(0)}`}><span className="flow-step-icon">A</span><span><strong>Source service</strong><small>{latestSimulationEvent ? `${latestSimulationEvent.scenario} · ${latestSimulationEvent.type}` : "Producer sends event to NATS JetStream"}</small></span></div><span className={`flow-connector flow-${flowConnectorState(0)}`}>→</span>
           <div className={`simulation-flow-step flow-${flowStepState(1)}`}><span className="flow-step-icon">N</span><span><strong>NATS JetStream</strong><small>{latestSimulationEvent ? `events.shard.${latestSimulationEvent.shard}` : "Shared tenant shard routing"}</small></span></div><span className={`flow-connector flow-${flowConnectorState(1)}`}>→</span>
           <div className={`simulation-flow-step flow-${flowStepState(2)}`}><span className="flow-step-icon">W</span><span><strong>Worker + rule set</strong><small>{latestSimulationEvent?.trace?.execution ? `${latestSimulationEvent.trace.execution.rule_set} · ${latestSimulationEvent.trace.execution.status}` : "Waiting for matching rule set"}</small></span></div><span className={`flow-connector flow-${flowConnectorState(2)}`}>→</span>
           <div className={`simulation-flow-step flow-${flowStepState(3)}`}><span className="flow-step-icon">B</span><span><strong>Outbox destination</strong><small>{latestSimulationEvent?.trace?.effects[0] ? `${latestSimulationEvent.trace.effects[0].destination} · ${latestSimulationEvent.trace.effects[0].status}` : "Child event or configured service"}</small></span></div>
@@ -1538,8 +1538,8 @@ export default function App() {
         />
         
         <div className="metric-grid simulation-metrics">
-          <MetricCard label="Simulation" value={simulationRunning ? simulationStopping ? "Stopping" : "Running" : "Stopped"} hint={`Tenant · ${settings.tenant || "not configured"}`} icon={simulationRunning ? "●" : "○"}/>
-          <MetricCard label="Events tracked" value={simulationEvents.length} hint="Recent simulator events, newest first" icon="↗"/>
+          <MetricCard label="Runtime" value={simulationRunning ? "Running" : "Trace viewer"} hint={`Tenant · ${settings.tenant || "not configured"}`} icon={simulationRunning ? "●" : "○"}/>
+          <MetricCard label="Events tracked" value={simulationEvents.length} hint="Events looked up in this session, newest first" icon="↗"/>
           <MetricCard label="Worker processed" value={simulationProcessed} hint="Completed executions in current event list" icon="⚙"/>
           <MetricCard label="Effects delivered" value={simulationDelivered} hint="Outbox deliveries in observed traces" icon="⇢"/>
         </div>
