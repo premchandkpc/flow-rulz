@@ -12,7 +12,7 @@ func validExecutionCommittedRecord(t *testing.T) EventLogRecord {
 
 	const tenantID = "tenant-a"
 	const eventID = "event-1"
-	const executionID = DeterministicLogRecordID(LogRecordExecutionCommitted, tenantID, "order-1", eventID, "")
+	executionID := DeterministicLogRecordID(LogRecordExecutionCommitted, tenantID, "order-1", eventID, "")
 	effectPayload := json.RawMessage(`{"type":"orders.approved","order_id":"order-1"}`)
 	commit := ExecutionCommittedPayload{
 		ExecutionID:    executionID,
