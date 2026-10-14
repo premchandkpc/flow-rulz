@@ -136,3 +136,23 @@ func TestCompileStableSortSamePriorityByID(t *testing.T) {
 		t.Errorf("expected ambiguous priority error, got: %v", err)
 	}
 }
+
+func TestCompileRejectsInvalidScheduledEventDelay(t *testing.T) {
+	source := json.RawMessage(`{
+		"rule_set":"order.created","revision":1,"mode":"first_match",
+		"rules":[{
+			"id":"bad-schedule","priority":1,
+			"when":{"path":"$.order_id","op":"exists"},
+			"then":[{
+				"schedule_event":{
+					"type":"order.reminder","delay_seconds":0,
+					"partition_key_policy":"inherit","data":{}
+				}
+			}]
+		}]
+	}`)
+	_, err := NewCompiler(DefaultLimits()).Compile(source)
+	if !errors.Is(err, domain.ErrInvalidAction) {
+		t.Fatalf("Compile() error = %v, want ErrInvalidAction", err)
+	}
+}
