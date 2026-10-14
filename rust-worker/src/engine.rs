@@ -27,6 +27,22 @@ pub struct EventEnvelope {
     pub data: Value,
     #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub headers: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<ContractRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ContractRef {
+    pub name: String,
+    pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_hash: Option<String>,
 }
 
 impl EventEnvelope {
@@ -203,7 +219,7 @@ mod tests {
     #[test]
     fn rejects_empty_partition_key_for_child_event() {
         let revision = RuleRevision { tenant_scope:"t".into(), rule_id:"r".into(), revision:1, content_hash:"h".into(), match_mode:"all_matches".into(), compiled:vec![] };
-        let event = EventEnvelope { id:"e".into(), event_type:"r".into(), tenant_id:"t".into(), partition_key:"p".into(), workflow_id:None, occurred_at:Utc::now(), data:json!({}), headers:Default::default() };
+        let event = EventEnvelope { id:"e".into(), event_type:"r".into(), tenant_id:"t".into(), partition_key:"p".into(), workflow_id:None, occurred_at:Utc::now(), data:json!({}), headers:Default::default(), contract:None, message_kind:None, correlation_id:None, causation_id:None };
         let action: Action = serde_json::from_value(json!({"emit_event":{"type":"child","partition_key_policy":"from_data","partition_key_path":"$.missing","data":{}}})).unwrap();
         assert!(build_effect(&revision, &event, "rule", 0, &action).is_err());
     }
@@ -211,7 +227,8 @@ mod tests {
     fn templates_preserve_single_placeholder_type_and_expand_nested_strings() {
         let event = EventEnvelope { id: "e".into(), event_type: "orders".into(), tenant_id: "t".into(),
             partition_key: "p".into(), workflow_id: None, occurred_at: Utc::now(),
-            data: json!({"amount": 12, "customer": {"name": "Ada"}}), headers: Default::default() };
+            data: json!({"amount": 12, "customer": {"name": "Ada"}}), headers: Default::default(),
+            contract: None, message_kind: None, correlation_id: None, causation_id: None };
         assert_eq!(expand_template("{{$.amount}}", &event, "child-1"), json!(12));
         assert_eq!(expand_template("amount={{$.amount}} for {{$.customer.name}}", &event, "child-1"), json!("amount=12 for Ada"));
         assert_eq!(expand_template("{{new_id}}", &event, "child-1"), json!("child-1"));
@@ -221,6 +238,33 @@ mod tests {
     fn numeric_string_comparison_matches_go_rules() {
         assert!(compare_eq(&json!(10), Some(&json!("10"))));
         assert!(!eval_predicate(&Predicate { all: None, any: None, not: None, path: Some("$.missing".into()), op: Some("neq".into()), value: Some(json!(1)) }, &json!({})).unwrap());
+    }
+
+    #[test]
+    fn event_envelope_round_trip_preserves_go_metadata() {
+        let input = json!({
+            "id": "event-1",
+            "type": "orders.created",
+            "tenant_id": "tenant-a",
+            "partition_key": "order-1",
+            "occurred_at": "2026-10-14T00:00:00Z",
+            "data": {"amount": 12},
+            "contract": {"name": "orders.created", "version": "1", "schema_hash": "schema-hash"},
+            "message_kind": "event",
+            "correlation_id": "correlation-1",
+            "causation_id": "causation-1",
+            "headers": {"source": "test"}
+        });
+        let event: EventEnvelope = serde_json::from_value(input).unwrap();
+        let encoded = serde_json::to_value(event).unwrap();
+
+        assert_eq!(encoded["contract"]["name"], "orders.created");
+        assert_eq!(encoded["contract"]["version"], "1");
+        assert_eq!(encoded["contract"]["schema_hash"], "schema-hash");
+        assert_eq!(encoded["message_kind"], "event");
+        assert_eq!(encoded["correlation_id"], "correlation-1");
+        assert_eq!(encoded["causation_id"], "causation-1");
+        assert_eq!(encoded["headers"]["source"], "test");
     }
 
 }

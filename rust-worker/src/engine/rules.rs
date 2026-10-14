@@ -323,7 +323,7 @@ fn build_child_event_payload(
     child_id: &str,
     partition_key: &str,
 ) -> Value {
-    json!({
+    let mut payload = json!({
         "id": child_id,
         "type": action.event_type,
         "tenant_id": event.tenant_id,
@@ -334,7 +334,15 @@ fn build_child_event_payload(
             "flowrulz_parent_event_id": event.id,
             "flowrulz_child_event_id": child_id
         }
-    })
+    });
+    if let Some(workflow_id) = &event.workflow_id {
+        payload["workflow_id"] = json!(workflow_id);
+    }
+    if let Some(correlation_id) = &event.correlation_id {
+        payload["correlation_id"] = json!(correlation_id);
+    }
+    payload["causation_id"] = json!(event.id);
+    payload
 }
 
 fn build_command_effect(effect_id: String, event: &EventEnvelope, command: &CommandAction) -> Result<Effect> {
@@ -366,6 +374,10 @@ mod tests {
             occurred_at: Utc::now(),
             data: json!({"approved": true}),
             headers: HashMap::new(),
+            contract: None,
+            message_kind: None,
+            correlation_id: None,
+            causation_id: None,
         }
     }
 
@@ -414,4 +426,22 @@ mod tests {
         let revision = revision("tenant-a", "all_matches", vec![matching_rule("rule-1", 1)]);
         assert!(evaluate(&revision, &event("tenant-b")).is_err());
     }
+    #[test]
+    fn child_event_preserves_workflow_correlation_and_causation() {
+        let mut parent = event("tenant-a");
+        parent.workflow_id = Some("workflow-1".into());
+        parent.correlation_id = Some("correlation-1".into());
+        let action: EmitEventAction = serde_json::from_value(json!({
+            "type": "orders.approved",
+            "partition_key_policy": "inherit",
+            "data": {"order_id": "{{$.order_id}}"}
+        })).unwrap();
+
+        let payload = build_child_event_payload(&action, &parent, "child-1", "order-1");
+        assert_eq!(payload["workflow_id"], "workflow-1");
+        assert_eq!(payload["correlation_id"], "correlation-1");
+        assert_eq!(payload["causation_id"], "event-1");
+        assert_eq!(payload["headers"]["flowrulz_parent_event_id"], "event-1");
+    }
+
 }

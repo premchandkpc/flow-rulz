@@ -10,8 +10,7 @@ FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /build/rust-worker/target/release/flow-rulz-rust-worker ./worker-rust
-ENV APP_ENV=production \
-    NUM_SHARDS=4096 \
+ENV NUM_SHARDS=4096 \
     WORKER_REPLICAS=3 \
     LEASE_TTL_MS=30000 \
     LEASE_RENEWAL_INTERVAL_MS=10000 \

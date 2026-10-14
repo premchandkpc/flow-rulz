@@ -5,13 +5,13 @@ mod quarantine;
 mod scheduler;
 
 use crate::{config::Config, engine};
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream;
 use chrono::Utc;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::collections::HashMap;
 use tokio::task::JoinSet;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 pub async fn run(config: Config) -> Result<()> {
     let (pool, js) = connect_services(&config).await?;
@@ -22,11 +22,11 @@ pub async fn run(config: Config) -> Result<()> {
     let mut tasks = JoinSet::new();
     spawn_consumer_tasks(&mut tasks, &pool, &js, &config, &leases);
     spawn_background_tasks(&mut tasks, &pool, &js, &config);
-    wait_for_shutdown(&mut tasks).await;
+    let shutdown_result = wait_for_shutdown(&mut tasks).await;
     abort_remaining_tasks(&mut tasks).await;
     release_owned_leases(&pool, &leases, &config.worker_id).await;
     pool.close().await;
-    Ok(())
+    shutdown_result
 }
 
 fn bail_no_leases(config: &Config) -> Result<()> {
@@ -49,7 +49,7 @@ async fn connect_services(config: &Config) -> Result<(PgPool, jetstream::Context
 }
 
 fn spawn_consumer_tasks(
-    tasks: &mut JoinSet<()>,
+    tasks: &mut JoinSet<Result<()>>,
     pool: &PgPool,
     js: &jetstream::Context,
     config: &Config,
@@ -63,52 +63,66 @@ fn spawn_consumer_tasks(
             let shard = *shard;
             let token = *token;
             tasks.spawn(async move {
-                if let Err(error) = consumer::consume_shard_subject(pool, js, config, shard, token, subject, durable).await {
-                    error!(shard, error = %error, "shard consumer stopped");
-                }
+                consumer::consume_shard_subject(pool, js, config, shard, token, subject, durable)
+                    .await
+                    .with_context(|| format!("shard {shard} consumer stopped"))
             });
         }
     }
 }
 
-fn spawn_background_tasks(tasks: &mut JoinSet<()>, pool: &PgPool, js: &jetstream::Context, config: &Config) {
+fn spawn_background_tasks(tasks: &mut JoinSet<Result<()>>, pool: &PgPool, js: &jetstream::Context, config: &Config) {
     let outbox_pool = pool.clone();
     let outbox_js = js.clone();
     let outbox_config = config.clone();
     tasks.spawn(async move {
-        if let Err(error) = effects::outbox_loop(outbox_pool, outbox_js, outbox_config).await {
-            error!(error = %error, "outbox publisher stopped");
-        }
+        effects::outbox_loop(outbox_pool, outbox_js, outbox_config)
+            .await
+            .context("outbox publisher stopped")
     });
 
     let scheduler_pool = pool.clone();
     let scheduler_js = js.clone();
     let scheduler_config = config.clone();
     tasks.spawn(async move {
-        if let Err(error) = scheduler::scheduler_loop(scheduler_pool, scheduler_js, scheduler_config).await {
-            error!(error = %error, "scheduled-event publisher stopped");
-        }
+        scheduler::scheduler_loop(scheduler_pool, scheduler_js, scheduler_config)
+            .await
+            .context("scheduled-event publisher stopped")
     });
 }
 
-async fn wait_for_shutdown(tasks: &mut JoinSet<()>) {
+async fn wait_for_shutdown(tasks: &mut JoinSet<Result<()>>) -> Result<()> {
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .context("install SIGTERM handler")?;
     tokio::select! {
-        _ = tokio::signal::ctrl_c() => info!("shutdown signal received"),
+        signal = tokio::signal::ctrl_c() => {
+            signal.context("wait for Ctrl-C signal")?;
+            info!("Ctrl-C received; shutting down");
+            Ok(())
+        }
+        _ = terminate.recv() => {
+            info!("SIGTERM received; shutting down");
+            Ok(())
+        }
         result = tasks.join_next() => {
-            if let Some(Err(error)) = result { warn!(error=%error, "runtime task join failed"); }
-            warn!("a core runtime task exited; shutting down remaining tasks");
+            match result {
+                Some(Ok(Ok(()))) => Err(anyhow!("core runtime task exited unexpectedly")),
+                Some(Ok(Err(error))) => Err(error.context("core runtime task failed")),
+                Some(Err(error)) => Err(anyhow!("core runtime task panicked: {error}")),
+                None => Err(anyhow!("all core runtime tasks exited unexpectedly")),
+            }
         }
     }
 }
 
-async fn abort_remaining_tasks(tasks: &mut JoinSet<()>) {
+async fn abort_remaining_tasks(tasks: &mut JoinSet<Result<()>>) {
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
 }
 
 async fn release_owned_leases(pool: &PgPool, leases: &HashMap<u32, i64>, worker_id: &str) {
-    for shard in leases.keys() {
-        if let Err(error) = engine::release_lease(pool, *shard, worker_id).await {
+    for (shard, token) in leases {
+        if let Err(error) = engine::release_lease(pool, *shard, worker_id, *token).await {
             warn!(shard, error = %error, "failed to release shard lease");
         }
     }
@@ -129,13 +143,6 @@ async fn acquire_initial_leases(pool: &PgPool, config: &Config) -> Result<HashMa
         }
     }
     Ok(leases)
-}
-
-fn validate_subject(subject: &str) -> Result<()> {
-    if subject.trim().is_empty() || subject.split('.').any(|part| part.is_empty() || (part.contains('*') || part.contains('>'))) {
-        bail!("invalid concrete NATS subject");
-    }
-    Ok(())
 }
 
 fn uuid_token() -> String {

@@ -1,8 +1,10 @@
 # Rust worker service (experimental)
 
-## Legacy status
+## Experimental status
 
-This optional Rust worker has not been migrated to the NATS-only command and tenant-service effect routes introduced for the Go worker. Do not run the Rust profile against this version of the application; its effect delivery path is incompatible. The Rust worker switch is intentionally left for a separate removal/migration change.
+The Rust worker now publishes generic effects, commands, child events, and tenant-service deliveries through NATS JetStream, matching the Go worker's transport boundary. It also waits for JetStream publish acknowledgements before settling outbox/scheduler state.
+
+It is still experimental, not a production replacement for Go. Rule/contract behavior, key ordering, lease rebalancing, observability, and crash/recovery behavior have not been proven equivalent with differential tests and live PostgreSQL/NATS integration tests. Keep Go selected until those gates pass.
 
 ## Isolation from Go
 
@@ -29,7 +31,7 @@ docker compose up -d worker
 - `src/runtime.rs`: lifecycle orchestration, migration bootstrap, initial lease acquisition, task supervision.
 - `src/runtime/consumer.rs`: JetStream consumers, event validation, ACK/NAK decisions.
 - `src/runtime/quarantine.rs`: durable quarantine writes.
-- `src/runtime/effects.rs`: outbox claiming, effect routing, callback delivery and retry settlement.
+- `src/runtime/effects.rs`: outbox claiming, NATS JetStream effect routing and retry settlement.
 - `src/runtime/scheduler.rs`: scheduled-event claiming and publication.
 - `src/engine.rs`: event-processing transaction orchestration and stable event/shard contracts.
 - `src/engine/persistence.rs`: inbox, active revision, execution, outbox and subscriber persistence.
