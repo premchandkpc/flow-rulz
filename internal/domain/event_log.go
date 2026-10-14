@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -45,10 +44,21 @@ type EventLogRecord struct {
 // discriminator should be a revision, effect ID, or settlement attempt identity
 // when more than one fact of the same kind can exist for an event.
 func DeterministicLogRecordID(kind LogRecordKind, tenantID, partitionKey, eventID, discriminator string) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{
-		string(kind), tenantID, partitionKey, eventID, discriminator,
-	}, "\x00")))
-	return hex.EncodeToString(sum[:])
+	// Length-prefix each UTF-8 field. Delimiter-based encodings are ambiguous
+	// when values themselves contain the delimiter.
+	h := sha256.New()
+	fields := []string{string(kind), tenantID, partitionKey, eventID, discriminator}
+	var length [8]byte
+	for _, field := range fields {
+		n := uint64(len(field))
+		for i := len(length) - 1; i >= 0; i-- {
+			length[i] = byte(n)
+			n >>= 8
+		}
+		_, _ = h.Write(length[:])
+		_, _ = h.Write([]byte(field))
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Validate checks the required identity and payload invariants for a log record.
@@ -72,6 +82,17 @@ func (r EventLogRecord) Validate() error {
 	}
 	if (r.Kind == LogRecordEffectRequested || r.Kind == LogRecordEffectSettled) && r.EffectID == "" {
 		return errors.New("effect record requires effect_id")
+	}
+	discriminator := ""
+	switch r.Kind {
+	case LogRecordExecutionRecorded:
+		discriminator = r.ExecutionID
+	case LogRecordEffectRequested, LogRecordEffectSettled:
+		discriminator = r.EffectID
+	}
+	expected := DeterministicLogRecordID(r.Kind, r.TenantID, r.PartitionKey, r.EventID, discriminator)
+	if r.RecordID != expected {
+		return fmt.Errorf("record_id does not match deterministic identity for kind %q", r.Kind)
 	}
 	return nil
 }
