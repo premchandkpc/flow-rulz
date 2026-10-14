@@ -23,6 +23,7 @@ use tokio::sync::Mutex;
 
 const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
 const DEFAULT_SEGMENT_BYTES: u64 = 256 * 1024 * 1024;
+type RecoveredPartition = (File, Vec<LogRecord>, u64, u64);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FrameBody {
@@ -168,33 +169,35 @@ impl FileEventLog {
         partitions: &'a mut HashMap<PartitionId, PartitionState>,
         partition: PartitionId,
     ) -> Result<&'a mut PartitionState, LogError> {
-        if !partitions.contains_key(&partition) {
-            let path = partition_path(&self.root, partition);
-            let existed = tokio::fs::try_exists(&path).await.map_err(storage_error)?;
-            let file = tokio::fs::OpenOptions::new()
-                .create(true)
-                .read(true)
-                .append(true)
-                .open(path)
-                .await
-                .map_err(storage_error)?;
-            if !existed {
-                // Persist the new directory entry as well as later frame bytes.
-                File::open(&self.root)
-                    .and_then(|directory| directory.sync_all())
-                    .map_err(storage_error)?;
-            }
-            partitions.insert(
-                partition,
-                PartitionState {
-                    file,
-                    segment_number: 0,
-                    next_position: 0,
-                    records: Vec::new(),
-                    highest_fencing_epoch: 0,
-                },
-            );
+        if let Some(state) = partitions.get_mut(&partition) {
+            return Ok(state);
         }
+
+        let path = partition_path(&self.root, partition);
+        let existed = tokio::fs::try_exists(&path).await.map_err(storage_error)?;
+        let file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .append(true)
+            .open(&path)
+            .await
+            .map_err(storage_error)?;
+        if !existed {
+            // Persist the new directory entry as well as later frame bytes.
+            File::open(&self.root)
+                .and_then(|directory| directory.sync_all())
+                .map_err(storage_error)?;
+        }
+        partitions.insert(
+            partition,
+            PartitionState {
+                file,
+                segment_number: 0,
+                next_position: 0,
+                records: Vec::new(),
+                highest_fencing_epoch: 0,
+            },
+        );
         partitions
             .get_mut(&partition)
             .ok_or_else(|| LogError::Integrity("partition state disappeared".into()))
@@ -616,17 +619,10 @@ fn recover_partition(
     partition: PartitionId,
     first_position: u64,
     initial_fencing_epoch: u64,
-) -> Result<
-    (
-        File,
-        Vec<LogRecord>,
-        u64,
-        u64,
-    ),
-    LogError,
-> {
+) -> Result<RecoveredPartition, LogError> {
     let mut file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(&path)
@@ -879,7 +875,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, LogError> {
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return Err(LogError::Integrity("hex payload has odd length".into()));
     }
     let mut decoded = Vec::with_capacity(value.len() / 2);
