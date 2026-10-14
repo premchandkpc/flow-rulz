@@ -40,7 +40,7 @@ impl ExecutionCommit {
         }
         serde_json::from_slice::<serde_json::Value>(&self.result_payload)
             .map_err(|_| "execution result payload must be valid JSON".to_string())?;
-        if matches!(self.outcome, ExecutionOutcome::Quarantined { .. }) && !self.effects.is_empty() {
+        if matches!(&self.outcome, ExecutionOutcome::Quarantined { .. }) && !self.effects.is_empty() {
             return Err("quarantined execution cannot emit effects".into());
         }
         for revision in &self.rule_revisions {
