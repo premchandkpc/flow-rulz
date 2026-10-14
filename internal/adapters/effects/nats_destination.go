@@ -66,7 +66,7 @@ func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idemp
 		return fmt.Errorf("encode command effect: %w", err)
 	}
 	if err := s.publisher.Publish(ctx, subject, payload); err != nil {
-		return fmt.Errorf("publish command to %q: %w", subject, err)
+		return fmt.Errorf("publish effect to %q: %w", subject, err)
 	}
 	return nil
 }
