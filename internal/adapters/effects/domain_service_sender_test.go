@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
+	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
 type domainServiceRepositoryStub struct {
