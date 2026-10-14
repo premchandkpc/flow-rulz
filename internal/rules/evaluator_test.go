@@ -699,7 +699,7 @@ func TestEvaluateScheduleEventCreatesDurableIntent(t *testing.T) {
 	now := time.Now().UTC()
 	decision, err := NewEvaluator(domain.SystemClock{}).Evaluate(revision, &domain.EventEnvelope{
 		ID:"evt-schedule", Type:"order.created", TenantID:"tenant-a", PartitionKey:"order-7",
-		WorkflowID:"wf-7", OccurredAt:now, Data:json.RawMessage(`{"order_id":"order-7"}`),
+		WorkflowID:"wf-7", CorrelationID:"corr-7", OccurredAt:now, Data:json.RawMessage(`{"order_id":"order-7"}`),
 	}, nil)
 	if err != nil {
 		t.Fatalf("evaluate schedule action: %v", err)
@@ -714,7 +714,7 @@ func TestEvaluateScheduleEventCreatesDurableIntent(t *testing.T) {
 	if scheduled.EventID == "" || scheduled.TenantID != "tenant-a" || scheduled.EventType != "order.reminder" {
 		t.Fatalf("scheduled identity = %#v", scheduled)
 	}
-	if scheduled.PartitionKey != "order-7" || scheduled.WorkflowID != "wf-7" {
+	if scheduled.PartitionKey != "order-7" || scheduled.WorkflowID != "wf-7" || scheduled.Headers["flowrulz_correlation_id"] != "corr-7" {
 		t.Fatalf("scheduled routing = %#v", scheduled)
 	}
 	if !scheduled.ScheduledAt.After(now) || scheduled.Status != domain.ScheduledEventStatusPending {
