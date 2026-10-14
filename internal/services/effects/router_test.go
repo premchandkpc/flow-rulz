@@ -72,3 +72,26 @@ func TestRouterPublishesChildEvent(t *testing.T) {
 		t.Fatal("external destination received an internal event")
 	}
 }
+
+func TestRouterSendsScheduledIntentToDurableSender(t *testing.T) {
+	publisher := &testPublisher{}
+	command := &testDestination{}
+	scheduled := &testDestination{}
+	router := NewRouterWithConfig(publisher, command, "events", 64, nil, scheduled)
+
+	err := router.Send(context.Background(), &domain.Effect{
+		EffectType: domain.EffectTypeScheduleEvent,
+		Destination: "scheduled_events",
+		Name: "order.reminder",
+		Payload: json.RawMessage(`{}`),
+	}, "effect-schedule-1")
+	if err != nil {
+		t.Fatalf("send scheduled intent: %v", err)
+	}
+	if !scheduled.sent {
+		t.Fatal("scheduled-event sender did not receive the intent")
+	}
+	if command.sent || publisher.subject != "" {
+		t.Fatal("scheduled intent was sent to a command or event publisher")
+	}
+}
