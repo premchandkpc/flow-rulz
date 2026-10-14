@@ -151,8 +151,8 @@ func streamSubjects(cfg Config) []string {
 	for _, base := range cfg.Subjects {
 		subjects = append(subjects, base+".shard.*", base+".ruleset.*.shard.*")
 	}
-	// Commands and per-service deliveries share the same durable messaging
-	// protocol. WorkQueue retention is safe because each command destination
+	// Emitted effects, commands, and per-service deliveries share the same durable
+	// messaging protocol. WorkQueue retention is safe because each command route
 	// and each tenant service receives a unique subject.
 	subjects = append(subjects, "commands.>", "effects.>", "services.>")
 	return subjects
