@@ -13,27 +13,27 @@ import (
 // Router sends child events and command/service effects through NATS-backed senders.
 type Router struct {
 	publisher   ports.EventPublisher
-	external    ports.EffectSender
+	command     ports.EffectSender
 	service     ports.EffectSender
 	baseSubject string
 	numShards   uint32
 }
 
 // NewRouter creates a router using the default event subject and shard count.
-func NewRouter(publisher ports.EventPublisher, external ports.EffectSender) *Router {
-	return NewRouterWithConfig(publisher, external, "events", 4096)
+func NewRouter(publisher ports.EventPublisher, commandSender ports.EffectSender) *Router {
+	return NewRouterWithConfig(publisher, commandSender, "events", 4096)
 }
 
 // NewRouterWithConfig creates a router aligned with the stream's subject family
 // and the shard count used by producers, consumers, and the scheduler.
-func NewRouterWithConfig(publisher ports.EventPublisher, external ports.EffectSender, baseSubject string, numShards uint32, serviceSenders ...ports.EffectSender) *Router {
+func NewRouterWithConfig(publisher ports.EventPublisher, commandSender ports.EffectSender, baseSubject string, numShards uint32, serviceSenders ...ports.EffectSender) *Router {
 	if baseSubject == "" {
 		baseSubject = "events"
 	}
 	if numShards == 0 {
 		numShards = 4096
 	}
-	router := &Router{publisher: publisher, external: external, baseSubject: baseSubject, numShards: numShards}
+	router := &Router{publisher: publisher, command: commandSender, baseSubject: baseSubject, numShards: numShards}
 	if len(serviceSenders) > 0 {
 		router.service = serviceSenders[0]
 	}
@@ -54,10 +54,10 @@ func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey
 			}
 			return r.service.Send(ctx, effect, idempotencyKey)
 		}
-		if r.external == nil {
+		if r.command == nil {
 			return fmt.Errorf("send external effect: destination is not configured")
 		}
-		return r.external.Send(ctx, effect, idempotencyKey)
+		return r.command.Send(ctx, effect, idempotencyKey)
 	}
 	if r.publisher == nil {
 		return fmt.Errorf("publish child event: broker publisher is not configured")
