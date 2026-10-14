@@ -42,7 +42,7 @@ func NewRouterWithConfig(publisher ports.EventPublisher, commandSender ports.Eff
 
 // Send routes an effect to the appropriate destination based on its type.
 // Child events go to the shard publisher, service events to their unique NATS subject,
-// and command effects to their destination/name subject.
+// and command/emit effects to their NATS subjects.
 func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
 	if effect == nil {
 		return fmt.Errorf("send effect: effect is nil")
@@ -55,7 +55,7 @@ func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey
 			return r.service.Send(ctx, effect, idempotencyKey)
 		}
 		if r.command == nil {
-			return fmt.Errorf("send external effect: destination is not configured")
+			return fmt.Errorf("send command or emit effect: NATS sender is not configured")
 		}
 		return r.command.Send(ctx, effect, idempotencyKey)
 	}
