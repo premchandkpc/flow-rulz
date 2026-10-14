@@ -60,7 +60,7 @@ The authoritative Compose variable template is `.env.example`; copy it to `.env`
 | `DATABASE_URL` | Local PostgreSQL DSN; `STORAGE_BACKEND=postgres` is the default |
 | `STORAGE_BACKEND` | `postgres` or `mongodb` |
 | `MONGODB_URI`, `MONGODB_DATABASE` | Required when `STORAGE_BACKEND=mongodb`; transactions require replica-set/sharded MongoDB |
-| `NATS_URL` | Local client URL `nats://localhost:4222`; containers use the Compose service name |
+| `NATS_URL`, `NATS_STREAM` | NATS JetStream connection and durable stream used for events, commands, and tenant-service deliveries |
 | `NATS_STREAM`, `NATS_CONSUMER` | Stream and optional durable consumer identifiers |
 | `NUM_SHARDS` | 4096 virtual shards by default; must match producer/SDK/scheduler settings |
 | `WORKER_REPLICAS` | `3` in Compose; must match the configured worker replica count on every worker. This is fixed membership, not automatic rebalance after replica loss. |
@@ -70,7 +70,6 @@ The authoritative Compose variable template is `.env.example`; copy it to `.env`
 | `EFFECT_PUBLISH_INTERVAL_MS`, `EFFECT_PUBLISH_BATCH_SIZE`, `EVENT_RETRY_DELAY_MS` | Outbox publishing cadence/batch and event retry delay |
 | `SCHEDULER_POLL_MS`, `SCHEDULER_BATCH_SIZE` | Scheduled-event polling cadence and batch size |
 | `LEASE_TTL_MS`, `LEASE_RENEWAL_INTERVAL_MS` | Shard lease duration and renewal cadence; renewal must remain within configured validation limits |
-| `NATS_URL`, `NATS_STREAM` | NATS JetStream connection and durable message stream used for events, commands, and tenant-service deliveries |
 | `SHUTDOWN_TIMEOUT` | Bounded graceful-shutdown interval |
 
 Some optional observability and generation settings are also accepted by config. Verify the concrete entry point uses a setting before assuming it starts a listener or service; unused configuration should not be treated as an implemented feature.
