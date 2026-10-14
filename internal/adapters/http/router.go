@@ -86,10 +86,10 @@ func NewRouterWithConfig(
 	mux.HandleFunc("GET /ready", readinessHandler(cfg.ReadinessChecks))
 
 	handlers.NewRuleHandler(ruleSvc).RegisterRoutes(mux)
-	handlers.NewWorkflowHandler(workflowSvc, nil, workflowDefRepo).RegisterRoutes(mux)
+	handlers.NewWorkflowHandler(workflowSvc, nil, workflowDefRepo).RegisterControlPlaneRoutes(mux)
 	handlers.NewContractHandler(contractRegistry).RegisterRoutes(mux)
-	handlers.NewBatchHandler(batchSvc).RegisterRoutes(mux)
-	handlers.NewQuarantineHandler(quarantineSvc).RegisterRoutes(mux)
+	handlers.NewBatchHandler(batchSvc).RegisterControlPlaneRoutes(mux)
+	handlers.NewQuarantineHandler(quarantineSvc).RegisterControlPlaneRoutes(mux)
 	handlers.NewDomainServiceHandler(cfg.DomainServices).RegisterRoutes(mux)
 
 	// Event trace is a read-only management view over durable runtime records.
