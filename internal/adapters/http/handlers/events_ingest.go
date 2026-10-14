@@ -28,12 +28,13 @@ func NewEventIngestionHandler(publisher ports.BrokerPublisher, numShards uint32)
 	return &EventIngestionHandler{publisher: publisher, numShards: numShards}
 }
 
-// RegisterRoutes registers the HTTP routes for the EventIngestionHandler.
+// WithContractRegistry configures contract validation for incoming events.
 func (h *EventIngestionHandler) WithContractRegistry(registry ports.ContractRegistry) *EventIngestionHandler {
 	h.contracts = registry
 	return h
 }
 
+// RegisterRoutes registers the HTTP routes for the EventIngestionHandler.
 func (h *EventIngestionHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/events/{eventType}", h.PublishEvent)
 }
