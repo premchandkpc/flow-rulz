@@ -21,18 +21,18 @@ The root module uses Go 1.26.0. Both sdk/go and the newer sdk/go/flowrulz client
 2. The worker consumes only shards for which it owns a lease. The key queue serializes work for each partition key within this worker process and can allow concurrency across keys. This alone does not guarantee end-to-end per-key ordering across redelivery, lease handoff, or concurrent outbox publishers.
 3. Inside one storage transaction, the event service validates the fencing token, checks the inbox for duplicates, loads the active rule revision, evaluates rules, and writes the execution plus outbox effects.
 4. The worker acknowledges the broker delivery only after the transaction commits.
-5. The outbox publisher routes emitted child events back to events.shard.N. External command effects use the configured destination; domain subscribers receive matching event envelopes at their registered HTTP callback URLs. Both deliveries carry stable idempotency keys and are at-least-once.
+5. The outbox publisher routes emitted child events back to events.shard.N. Command effects publish to `commands.<destination>.<name>`; domain subscribers receive matching event deliveries on a unique tenant-scoped `services.<tenant-hash>.<service-hash>` subject. Both are durable JetStream messages and at-least-once.
 6. The scheduler claims due scheduled events and publishes them to the same subject family.
 
 NATS delivery is at-least-once. The inbox prevents duplicate event execution when storage constraints and transaction semantics hold. External effects are effectively-once only when the destination honors the idempotency key. Do not claim exactly-once delivery.
 
 ## Tenant domains and receiving services
 
-Tenant-owned event domains and HTTP callback services are managed through the `/v1/domains` and `/v1/services` APIs (the console no longer has a page for them; example services consume from NATS directly). A domain groups event type names; a service subscribes to one or more domains. After a matching event commits a successful active-rule execution, the worker adds one service delivery per active subscriber to the same transaction's outbox. Events that have no active rule do not trigger service callbacks.
+Tenant-owned event domains and receiver registrations are managed through the `/v1/domains` and `/v1/services` management APIs. The management API remains HTTP; application messages between producers, workers, and receivers use NATS JetStream. A domain groups event type names; a service subscribes to one or more domains. After a matching event commits a successful active-rule execution, the worker adds one service delivery per active subscriber to the same transaction's outbox. Events that have no active rule do not trigger service deliveries.
 
-Callbacks are delivered as the original JSON event envelope using `POST` with `Content-Type: application/json`, `Idempotency-Key`, `X-FlowRulz-Tenant-ID`, `X-FlowRulz-Service-ID`, `X-FlowRulz-Effect-ID`, and `X-FlowRulz-Event-ID` headers. The effect ID identifies the durable outbox delivery and remains stable across retries; the event ID identifies the source event and is also present in the envelope. Respond with a 2xx status; other statuses and transport failures are retried by the outbox. Receivers must deduplicate because delivery is at-least-once.
+FlowRulz assigns each service a stable, tenant-isolated `nats_subject` such as `services.<tenant-hash>.<service-hash>`. Receivers create a durable JetStream consumer for their exact subject on the configured `NATS_STREAM`; subjects are unique per service so one receiver cannot steal another receiver's fan-out copy. Command effects publish to `commands.<destination>.<name>`, where `destination` is a single lowercase subject token and `name` is a dot-separated set of lowercase tokens.
 
-Production callback URLs must use HTTPS and resolve to public IP addresses. HTTP and private destinations are accepted only when `APP_ENV` is development/test. The worker disables environment proxies, validates resolved addresses when dialing, uses a bounded timeout, and does not follow redirects. Domain/service CRUD is tenant-scoped by the request identity; caller-controlled tenant headers are only permitted by the development/test middleware.
+Each delivery is a JSON effect envelope containing the stable outbox `id`, `idempotency_key`, `tenant_id`, `execution_id`, `destination`, `name`, `effect_type`, and original JSON `payload`. Receivers must deduplicate by `idempotency_key` (or stable effect ID), commit their own state before ACKing, and assume at-least-once delivery. Transient publish errors leave the outbox eligible for retry; a successful broker publish does not prove that the receiver completed its business operation. HTTP callback URLs are no longer supported.
 
 ## Run locally
 
@@ -85,7 +85,7 @@ err = typed.Send(ctx, &transactioninitiated.Initiated{
 
 Generated `Subscribe` methods use live core NATS subscriptions and are available only with the NATS transport. They receive matching events for the configured tenant without competing with the worker's JetStream WorkQueue consumer. They are best-effort rather than durable: events published while disconnected are not replayed, and handler failures stop the subscription without ACK/retry behavior.
 
-Environment variable names and local defaults are documented in .env.example. API and worker startup initialize storage/migrations. Outside development/test, the worker requires EFFECT_DESTINATION_URL and fails startup if it is missing.
+Environment variable names and local defaults are documented in .env.example. API and worker startup initialize storage/migrations. The Go worker publishes all command and service effects through NATS JetStream; no HTTP destination URL is required.
 
 ## Repository map
 
@@ -95,7 +95,7 @@ Environment variable names and local defaults are documented in .env.example. AP
 - internal/rules contains rule compilation and deterministic evaluation.
 - internal/services contains event, effects, tenant domain/service, rules, batch, workflow, and quarantine use cases.
 - internal/application and internal/runtime contain worker orchestration, the per-key queue, shard leases, and the scheduler.
-- internal/adapters contains HTTP, PostgreSQL, MongoDB, NATS, Redis, fake destination, and HTTP destination implementations.
+- internal/adapters contains HTTP management handlers, PostgreSQL, MongoDB, NATS, Redis, fake test destinations, and NATS effect destinations.
 - internal/storage selects and wires the configured persistence backend.
 - sdk/go/runtime is the original standalone producer/consumer SDK module.
 - sdk/go/flowrulz is a separate client SDK module with local/HTTP/gRPC/NATS transports and a basic client example.
