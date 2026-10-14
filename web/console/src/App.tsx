@@ -1516,7 +1516,6 @@ export default function App() {
             <label>Event ID<input value={traceLookupID} onChange={event => setTraceLookupID(event.target.value)} placeholder="evt-..." /></label>
             <button className="button primary" onClick={() => void loadTraceByID()}>Load trace</button>
           </div>
-          </div>
         </div>
         {simulationError && <div className="alert error"><strong>Trace lookup failed</strong><span>{simulationError}</span><button onClick={() => setSimulationError("")}>×</button></div>}
         {simulationTraceRefreshedAt && !simulationTraceError && <small className="trace-refreshed">Traces last refreshed {simulationTraceRefreshedAt}</small>}
