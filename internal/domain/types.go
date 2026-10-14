@@ -25,6 +25,10 @@ type EventEnvelope struct {
 	WorkflowID   string            `json:"workflow_id,omitempty"`
 	OccurredAt   time.Time         `json:"occurred_at"`
 	Data         json.RawMessage   `json:"data"`
+	Contract      *ContractRef      `json:"contract,omitempty"`
+	MessageKind   string            `json:"message_kind,omitempty"`
+	CorrelationID string            `json:"correlation_id,omitempty"`
+	CausationID   string            `json:"causation_id,omitempty"`
 	Headers      map[string]string `json:"headers,omitempty"`
 }
 
@@ -101,7 +105,11 @@ type ContractSchema struct {
 	Version       string                   `json:"version"`
 	Namespace     string                   `json:"namespace,omitempty"`
 	Description   string                   `json:"description,omitempty"`
-	Fields        map[string]ContractField `json:"fields"`
+	Fields          map[string]ContractField `json:"fields"`
+	Kind            ContractKind             `json:"kind,omitempty"`
+	Parent          *ContractRef             `json:"parent,omitempty"`
+	AllowedChildren []ContractRef            `json:"allowed_children,omitempty"`
+	SchemaHash      string                   `json:"schema_hash,omitempty"`
 	Compatibility string                   `json:"compatibility,omitempty"`
 	Owner         string                   `json:"owner,omitempty"`
 	Deprecated    bool                     `json:"deprecated,omitempty"`
