@@ -12,9 +12,12 @@ type LogPosition uint64
 
 // EventLog is the application boundary for the durable processing log.
 // Append must be idempotent for a stable RecordID across the full configured
-// recovery horizon, not merely within JetStream's short duplicate window. If a
-// backend cannot guarantee that itself, its adapter must reconcile against the
-// retained log before accepting a retry as a new fact.
+// recovery horizon, not merely within a transport duplicate window. A repeated
+// RecordID with identical immutable content returns the original position. A
+// repeated RecordID with different content must return an identity-conflict error.
+// Read returns records strictly after the cursor in ascending position order.
+// A non-positive limit is invalid. Cursor expiry/gaps must be reported explicitly;
+// adapters must never silently skip retained-but-unread records.
 type EventLog interface {
 	Append(ctx context.Context, record domain.EventLogRecord) (LogPosition, error)
 	Read(ctx context.Context, after LogPosition, limit int) ([]PositionedLogRecord, error)
