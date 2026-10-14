@@ -248,9 +248,12 @@ async fn publish(
     payload: Vec<u8>,
     context: &str,
 ) -> Result<()> {
-    js.publish(subject.to_owned(), payload.into())
+    let acknowledgement = js.publish(subject.to_owned(), payload.into())
         .await
-        .with_context(|| format!("{context} to {subject}"))?;
+        .with_context(|| format!("send {context} to {subject}"))?;
+    acknowledgement
+        .await
+        .with_context(|| format!("await JetStream acknowledgement for {subject}"))?;
     Ok(())
 }
 
