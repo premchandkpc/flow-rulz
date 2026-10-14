@@ -21,7 +21,7 @@ func TestDeterministicLogRecordID(t *testing.T) {
 func TestEventLogRecordValidate(t *testing.T) {
 	record := EventLogRecord{
 		RecordID: DeterministicLogRecordID(LogRecordEventAccepted, "tenant-a", "order-1", "event-1", ""),
-		Kind: LogRecordEventAccepted, TenantID: "tenant-a", PartitionKey: "order-1",
+		Kind:     LogRecordEventAccepted, TenantID: "tenant-a", PartitionKey: "order-1",
 		EventID: "event-1", Payload: json.RawMessage(`{"type":"orders.created"}`),
 		OccurredAt: time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC),
 	}
