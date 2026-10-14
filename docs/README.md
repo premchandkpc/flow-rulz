@@ -51,7 +51,7 @@ FlowRulz is a Go event-driven rules runtime. Start with the [root README](../REA
 
 ## Current HTTP routes
 
-The authoritative route registrations are in internal/adapters/http/handlers and internal/adapters/http/router.go. Current routes include:
+The authoritative route registrations are in internal/adapters/http/handlers and internal/adapters/http/router.go. The control plane exposes configuration writes and read-only runtime views. It does not expose event ingestion, workflow-instance mutation, batch submission, quarantine replay/deletion, or scheduled-event mutation. Current routes include:
 
 | Method | Path | Behavior |
 |---|---|---|
@@ -64,18 +64,13 @@ The authoritative route registrations are in internal/adapters/http/handlers and
 | GET | /v1/contracts | List contract schemas |
 | GET | /v1/contracts/{name}/{version} | Read a contract version |
 | POST | /v1/contracts/{name}/{version}/generate | Generate code/schema artifacts |
-| POST | /v1/workflows | Create workflow instance |
 | GET | /v1/workflows | List workflow instances |
 | GET | /v1/workflows/{workflowID} | Read a workflow instance |
-| POST | /v1/workflows/{workflowID}/transition | Transition an instance |
-| GET / POST | /v1/workflows/definitions | List/create definitions |
+| GET | /v1/workflows/definitions | List definitions |
+| POST | /v1/workflows/definitions | Create a global definition (platform admin scope required) |
 | GET | /v1/workflows/definitions/{workflowType} | Read a workflow definition |
-| DELETE | /v1/workflows/definitions/{workflowType}/{version} | Delete a workflow definition |
-| POST | /v1/batches | Create batch |
-| GET | /v1/batches and /v1/batches/{batchID} | List/read batches |
-| GET | /v1/quarantine and /v1/quarantine/{id} | List/read quarantined items |
-| POST | /v1/quarantine/{id}/replay | Replay a quarantined item |
-| DELETE | /v1/quarantine/{id} | Delete a quarantined item |
+| GET | /v1/batches and /v1/batches/{batchID} | Read batch status |
+| GET | /v1/quarantine and /v1/quarantine/{id} | Read quarantined items |
 | GET | /health | Process liveness only |
 
 Authentication/authorization and trusted tenant identity are not implemented. The current tenant middleware trusts caller-supplied header/query values. Do not expose the API to untrusted networks. The health endpoint does not check database or broker readiness.
