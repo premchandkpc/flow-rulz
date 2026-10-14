@@ -1,7 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://flow-rulz.io/schemas/event-envelope-v1.json",
-  "$comment": "Canonical FlowRulZ event envelope schema; keep this file versioned with the API contract.",
   "title": "FlowRulz Event Envelope",
   "type": "object",
   "required": ["id", "type", "tenant_id", "partition_key", "occurred_at", "data"],
