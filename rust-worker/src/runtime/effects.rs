@@ -219,26 +219,13 @@ async fn send_effect(
             if !active {
                 bail!("active tenant service {:?} was not found", effect.destination);
             }
-            format!(
-                "services.{}.{}",
-                &sha256_hex(effect.tenant_id.as_bytes())[..24],
-                &sha256_hex(effect.destination.as_bytes())[..24]
-            )
+            service_subject(&effect.tenant_id, &effect.destination)
         }
         other => bail!("unsupported outbox effect type {other:?}"),
     };
 
     validate_concrete_subject(&subject)?;
-    let envelope = json!({
-        "id": effect.id,
-        "execution_id": effect.execution_id,
-        "tenant_id": effect.tenant_id,
-        "destination": effect.destination,
-        "name": effect.name,
-        "payload": effect.payload,
-        "effect_type": effect.effect_type,
-        "idempotency_key": format!("effect-{}", effect.id),
-    });
+    let envelope = effect_message(effect);
     publish(js, &subject, serde_json::to_vec(&envelope)?, "publish outbox effect").await
 }
 
@@ -255,6 +242,27 @@ async fn publish(
         .await
         .with_context(|| format!("await JetStream acknowledgement for {subject}"))?;
     Ok(())
+}
+
+fn service_subject(tenant_id: &str, service_id: &str) -> String {
+    format!(
+        "services.{}.{}",
+        &sha256_hex(tenant_id.as_bytes())[..24],
+        &sha256_hex(service_id.as_bytes())[..24]
+    )
+}
+
+fn effect_message(effect: &ClaimedEffect) -> Value {
+    json!({
+        "id": effect.id,
+        "execution_id": effect.execution_id,
+        "tenant_id": effect.tenant_id,
+        "destination": effect.destination,
+        "name": effect.name,
+        "payload": effect.payload,
+        "effect_type": effect.effect_type,
+        "idempotency_key": format!("effect-{}", effect.id),
+    })
 }
 
 fn validate_subject_token(value: &str, label: &str) -> Result<()> {
@@ -312,11 +320,31 @@ mod outbox_claim_tests {
 
     #[test]
     fn service_subject_hashes_tenant_and_service_independently() {
-        let tenant = sha256_hex(b"tenant-a");
-        let service = sha256_hex(b"service-a");
-        let subject = format!("services.{}.{}", &tenant[..24], &service[..24]);
+        let subject = service_subject("tenant-a", "service-a");
         assert!(validate_concrete_subject(&subject).is_ok());
         assert_eq!(subject.split('.').count(), 3);
         assert!(subject.starts_with("services."));
+        assert_ne!(subject, service_subject("tenant-b", "service-a"));
+        assert_ne!(subject, service_subject("tenant-a", "service-b"));
+    }
+
+    #[test]
+    fn effect_message_contains_stable_idempotency_key_and_payload() {
+        let effect = ClaimedEffect {
+            id: "effect-1".into(),
+            execution_id: "execution-1".into(),
+            tenant_id: "tenant-a".into(),
+            destination: "payment".into(),
+            name: "authorize".into(),
+            payload: json!({"amount": 42}),
+            effect_type: "command".into(),
+            attempts: 0,
+            max_attempts: 5,
+        };
+        let message = effect_message(&effect);
+        assert_eq!(message["id"], "effect-1");
+        assert_eq!(message["idempotency_key"], "effect-effect-1");
+        assert_eq!(message["payload"]["amount"], 42);
+        assert_eq!(message["effect_type"], "command");
     }
 }
