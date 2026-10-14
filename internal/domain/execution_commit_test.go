@@ -15,9 +15,9 @@ func validExecutionCommittedRecord(t *testing.T) EventLogRecord {
 	executionID := DeterministicLogRecordID(LogRecordExecutionCommitted, tenantID, "order-1", eventID, "")
 	effectPayload := json.RawMessage(`{"type":"orders.approved","order_id":"order-1"}`)
 	commit := ExecutionCommittedPayload{
-		ExecutionID:    executionID,
-		Outcome:        "completed",
-		DecisionHash:   strings.Repeat("a", 64),
+		ExecutionID:  executionID,
+		Outcome:      "completed",
+		DecisionHash: strings.Repeat("a", 64),
 		RuleRevisions: []LogRuleRevisionRef{{
 			TenantID: tenantID, RuleSet: "orders", Revision: 3,
 			ContentHash: strings.Repeat("b", 64), CompilerVersion: "flowrulz-compiler-v1",
@@ -45,7 +45,7 @@ func validExecutionCommittedRecord(t *testing.T) EventLogRecord {
 	}
 	return EventLogRecord{
 		RecordID: DeterministicLogRecordID(LogRecordExecutionCommitted, tenantID, "order-1", eventID, ""),
-		Kind: LogRecordExecutionCommitted, TenantID: tenantID, PartitionKey: "order-1",
+		Kind:     LogRecordExecutionCommitted, TenantID: tenantID, PartitionKey: "order-1",
 		EventID: eventID, ExecutionID: executionID, Payload: payload,
 		OccurredAt: time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC),
 	}
