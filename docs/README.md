@@ -82,7 +82,7 @@ The authoritative route registrations are in internal/adapters/http/handlers and
 
 Authentication/authorization and trusted tenant identity are not implemented. The current tenant middleware trusts caller-supplied header/query values. Do not expose the API to untrusted networks. The health endpoint does not check database or broker readiness.
 
-## Configuration and development
+Scheduled/wait instructions belong to the durable worker runtime. The control-plane HTTP API does not create or mutate runtime scheduled events.\n\n## Configuration and development
 
 - Environment names/defaults: [.env.example](../.env.example)
 - Root build/test/check targets: [Makefile](../Makefile)
