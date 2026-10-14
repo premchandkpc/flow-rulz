@@ -38,7 +38,8 @@ type LogOutputRoute struct {
 	Processor     string `json:"processor,omitempty"`
 }
 
-// Validate checks that the route has one supported kind and exactly one target.\nfunc (r LogOutputRoute) Validate() error {
+// Validate checks that the route has one supported kind and exactly one target.
+func (r LogOutputRoute) Validate() error {
 	targets := map[string]string{
 		"consumer": r.Destination,
 		"rule_set": r.RuleSet,
