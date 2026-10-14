@@ -1,5 +1,5 @@
 use super::{ContractRef, OutputRoute};
-use crate::domain::identity::encode_hex;
+use crate::domain::identity::{deterministic_id, encode_hex};
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
 
@@ -14,6 +14,7 @@ pub enum EffectKind {
 #[derive(Debug, Clone)]
 pub struct EffectIntent {
     pub effect_id: String,
+    pub effect_key: String,
     pub tenant_id: String,
     pub source_event_id: String,
     pub execution_id: String,
@@ -27,8 +28,8 @@ pub struct EffectIntent {
 
 impl EffectIntent {
     pub fn validate(&self) -> Result<(), String> {
-        if self.effect_id.is_empty() || self.execution_id.is_empty() {
-            return Err("effect_id and execution_id are required".into());
+        if self.effect_id.is_empty() || self.effect_key.trim().is_empty() || self.execution_id.is_empty() {
+            return Err("effect_id, effect_key and execution_id are required".into());
         }
         if self.tenant_id.is_empty() || self.source_event_id.is_empty() {
             return Err("effect tenant and source event are required".into());
@@ -42,6 +43,19 @@ impl EffectIntent {
         }
         if self.partition_key.trim().is_empty() {
             return Err("effect partition key is required".into());
+        }
+        let expected_id = deterministic_id(
+            "effect",
+            &[
+                &self.tenant_id,
+                &self.partition_key,
+                &self.source_event_id,
+                &self.execution_id,
+                &self.effect_key,
+            ],
+        );
+        if self.effect_id != expected_id {
+            return Err("effect_id does not match its deterministic identity".into());
         }
         if self.payload.is_empty() {
             return Err("effect payload is required".into());
