@@ -243,8 +243,8 @@ impl EventLog for FileEventLog {
                     return Err(LogError::Invalid("execution commit identity does not match record".into()));
                 }
                 let expected_execution_id = deterministic_id(
-                    "execution.committed",
-                    &[&record.tenant_id, partition_key, &record.event_id, "execution"],
+                    "execution",
+                    &[&record.tenant_id, partition_key, &record.event_id],
                 );
                 let expected_record_id = deterministic_id(
                     "execution.committed",
@@ -337,12 +337,11 @@ impl EventLog for FileEventLog {
     async fn commit_execution(&self, commit: ExecutionCommit) -> Result<LogPosition, LogError> {
         commit.validate().map_err(LogError::Invalid)?;
         let expected_execution_id = deterministic_id(
-            "execution.committed",
+            "execution",
             &[
                 &commit.event.tenant_id,
                 &commit.event.partition_key,
                 &commit.event.event_id,
-                "execution",
             ],
         );
         if commit.execution_id != expected_execution_id {
@@ -352,12 +351,13 @@ impl EventLog for FileEventLog {
         }
 
         let outcome = match &commit.outcome {
-            ExecutionOutcome::Completed => json!({"kind": "completed"}),
-            ExecutionOutcome::NoMatch => json!({"kind": "no_match"}),
-            ExecutionOutcome::Quarantined { category, message } => {
-                json!({"kind": "quarantined", "category": category, "message": message})
-            }
+            ExecutionOutcome::Completed => "completed",
+            ExecutionOutcome::NoMatch => "no_match",
+            ExecutionOutcome::Quarantined { .. } => "quarantined",
         };
+        let result_payload: serde_json::Value =
+            serde_json::from_slice(&commit.result_payload)
+                .map_err(|error| LogError::Invalid(format!("invalid result payload: {error}")))?;
         let mut effects = Vec::with_capacity(commit.effects.len());
         for effect in &commit.effects {
             let kind = match effect.kind {
@@ -366,20 +366,25 @@ impl EventLog for FileEventLog {
                 EffectKind::Reply => "reply",
                 EffectKind::Schedule => "schedule",
             };
+            let effect_payload: serde_json::Value =
+                serde_json::from_slice(&effect.payload).map_err(|error| {
+                    LogError::Invalid(format!("invalid effect payload: {error}"))
+                })?;
             effects.push(json!({
                 "effect_id": effect.effect_id,
+                "effect_key": effect.effect_key,
                 "tenant_id": effect.tenant_id,
                 "source_event_id": effect.source_event_id,
                 "execution_id": effect.execution_id,
                 "output_contract": effect.output_contract,
                 "route": effect.route,
                 "kind": kind,
-                "payload_hex": encode_hex(&effect.payload),
+                "payload": effect_payload,
                 "payload_sha256": effect.payload_sha256,
                 "partition_key": effect.partition_key,
             }));
         }
-        let payload = json!({
+        let mut payload = json!({
             "execution_id": commit.execution_id,
             "event": {
                 "tenant_id": commit.event.tenant_id,
@@ -390,10 +395,13 @@ impl EventLog for FileEventLog {
             "outcome": outcome,
             "decision_hash": commit.decision_hash,
             "matched_rule_ids": commit.matched_rule_ids,
-            "result_payload_hex": encode_hex(&commit.result_payload),
+            "result_payload": result_payload,
             "effects": effects,
             "fencing_epoch": commit.fencing_epoch,
         });
+        if let ExecutionOutcome::Quarantined { category, message } = &commit.outcome {
+            payload["outcome_details"] = json!({"category": category, "message": message});
+        }
         let payload = serde_json::to_vec(&payload).map_err(storage_error)?;
         let payload = Bytes::from(payload);
         let record_id = deterministic_id(
@@ -829,12 +837,18 @@ mod tests {
         let event_id = "event-1";
         let partition_key = "order-1";
         let execution_id = deterministic_id(
-            "execution.committed",
-            &[tenant_id, partition_key, event_id, "execution"],
+            "execution",
+            &[tenant_id, partition_key, event_id],
+        );
+        let effect_key = "orders-approved";
+        let effect_id = deterministic_id(
+            "effect",
+            &[tenant_id, partition_key, event_id, &execution_id, effect_key],
         );
         let effect_payload = Bytes::from_static(br#"{"type":"orders.approved"}"#);
         let effect = crate::domain::EffectIntent {
-            effect_id: "effect-1".to_string(),
+            effect_id,
+            effect_key: effect_key.to_string(),
             tenant_id: tenant_id.to_string(),
             source_event_id: event_id.to_string(),
             execution_id: execution_id.clone(),

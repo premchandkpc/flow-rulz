@@ -86,6 +86,7 @@ type LogEffectIntent struct {
 type ExecutionCommittedPayload struct {
 	ExecutionID    string               `json:"execution_id"`
 	Outcome        string               `json:"outcome"`
+	OutcomeDetails json.RawMessage      `json:"outcome_details,omitempty"`
 	DecisionHash   string               `json:"decision_hash"`
 	RuleRevisions  []LogRuleRevisionRef `json:"rule_revisions"`
 	MatchedRuleIDs []string             `json:"matched_rule_ids"`
@@ -104,6 +105,9 @@ func (p ExecutionCommittedPayload) Validate(tenantID, eventID string) error {
 	case "completed", "no_match", "quarantined":
 	default:
 		return fmt.Errorf("unsupported execution outcome %q", p.Outcome)
+	}
+	if len(p.OutcomeDetails) > 0 && !json.Valid(p.OutcomeDetails) {
+		return errors.New("execution.committed outcome_details must be valid JSON")
 	}
 	if !isSHA256Hex(p.DecisionHash) {
 		return errors.New("execution.committed requires a SHA-256 decision_hash")
@@ -195,14 +199,21 @@ func isSHA256Hex(value string) bool {
 	return err == nil && len(decoded) == sha256.Size
 }
 
-// payloadSHA256 hashes compact JSON bytes, making insignificant whitespace
-// irrelevant while preserving encoded field ordering as part of identity.
+// payloadSHA256 hashes canonical JSON so Go and Rust agree regardless of
+// insignificant whitespace or object-key order.
 func payloadSHA256(payload json.RawMessage) string {
-	var compact bytes.Buffer
-	if err := json.Compact(&compact, payload); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
 		sum := sha256.Sum256(payload)
 		return hex.EncodeToString(sum[:])
 	}
-	sum := sha256.Sum256(compact.Bytes())
+	canonical, err := json.Marshal(value)
+	if err != nil {
+		sum := sha256.Sum256(payload)
+		return hex.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256(canonical)
 	return hex.EncodeToString(sum[:])
 }

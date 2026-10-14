@@ -28,7 +28,10 @@ pub struct EffectIntent {
 
 impl EffectIntent {
     pub fn validate(&self) -> Result<(), String> {
-        if self.effect_id.is_empty() || self.effect_key.trim().is_empty() || self.execution_id.is_empty() {
+        if self.effect_id.is_empty()
+            || self.effect_key.trim().is_empty()
+            || self.execution_id.is_empty()
+        {
             return Err("effect_id, effect_key and execution_id are required".into());
         }
         if self.tenant_id.is_empty() || self.source_event_id.is_empty() {
@@ -60,11 +63,13 @@ impl EffectIntent {
         if self.payload.is_empty() {
             return Err("effect payload is required".into());
         }
-        serde_json::from_slice::<serde_json::Value>(&self.payload)
+        let parsed_payload: serde_json::Value = serde_json::from_slice(&self.payload)
             .map_err(|_| "effect payload must be valid JSON".to_string())?;
-        let actual_hash = encode_hex(&Sha256::digest(&self.payload));
+        let canonical_payload = serde_json::to_vec(&parsed_payload)
+            .map_err(|_| "effect payload could not be canonicalized".to_string())?;
+        let actual_hash = encode_hex(&Sha256::digest(&canonical_payload));
         if self.payload_sha256 != actual_hash {
-            return Err("effect payload_sha256 does not match payload".into());
+            return Err("effect payload_sha256 does not match canonical JSON payload".into());
         }
         Ok(())
     }
