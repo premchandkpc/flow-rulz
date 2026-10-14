@@ -33,6 +33,9 @@ func (s *DomainServiceSender) Send(ctx context.Context, effect *domain.Effect, i
 	if s.publisher == nil {
 		return errors.New("send domain service event: NATS publisher is not configured")
 	}
+	if effect.ID == "" || idempotencyKey == "" {
+		return errors.New("send domain service event: stable effect ID and idempotency key are required")
+	}
 	service, err := s.loadActiveService(ctx, effect)
 	if err != nil {
 		return err
