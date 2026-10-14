@@ -60,7 +60,7 @@ func TestDomainServiceSenderPublishesDurableNATSDeliveryWithStableIdentity(t *te
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
-	if want := domain.DomainServiceSubject("tenant-a", "service-a"); publisher.subject != want {
+	if want := domain.ServiceSubject("tenant-a", "service-a"); publisher.subject != want {
 		t.Fatalf("subject = %q, want %q", publisher.subject, want)
 	}
 	var delivered domain.Effect
