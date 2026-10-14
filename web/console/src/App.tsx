@@ -100,6 +100,8 @@ function readSettings(): Settings {
   catch { return DEFAULT_SETTINGS; }
 }
 function normalizeBase(value: string) { return value.trim().replace(/\/+$/, ""); }
+type FlowObservation = { ran: Map<string, Set<string>>; types: Set<string> };
+
 function observeTrace(node: TraceNode | undefined, seen: FlowObservation) {
   if (!node) return;
   if (node.execution) {
