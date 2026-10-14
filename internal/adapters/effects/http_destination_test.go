@@ -2,75 +2,74 @@ package effects
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
+	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
-func TestHTTPDestinationAcceptsSuccessfulStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/orders/created" {
-			t.Errorf("request path = %q, want %q", r.URL.Path, "/orders/created")
-		}
-		if got := r.Header.Get("Idempotency-Key"); got != "effect-123" {
-			t.Errorf("idempotency key = %q, want %q", got, "effect-123")
-		}
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer server.Close()
+type commandPublisherStub struct {
+	subject string
+	payload []byte
+	err error
+}
+func (p *commandPublisherStub) Publish(_ context.Context, subject string, payload []byte) error {
+	p.subject = subject
+	p.payload = append([]byte(nil), payload...)
+	return p.err
+}
+func (p *commandPublisherStub) PublishBatch(context.Context, []ports.PublishMessage) error { return nil }
+func (p *commandPublisherStub) PublishToShard(context.Context, string, uint32, []byte) error { return nil }
+func (p *commandPublisherStub) Close() error { return nil }
 
-	destination := NewHTTPDestination(server.URL)
+func TestNATSDestinationPublishesCommandWithStableIdempotencyKey(t *testing.T) {
+	publisher := &commandPublisherStub{}
+	destination := NewNATSDestination(publisher)
 	err := destination.Send(context.Background(), &domain.Effect{
-		ID: "123", ExecutionID: "exec-1", Destination: "orders", Name: "created",
-		Payload: []byte(`{"order_id":"order-1"}`),
-	}, "effect-123")
+		ID: "effect-1", ExecutionID: "execution-1", TenantID: "tenant-a",
+		Destination: "payment", Name: "authorize",
+		EffectType: domain.EffectTypeCommand, Payload: json.RawMessage(`{"order_id":"order-1"}`),
+	}, "effect-effect-1")
 	if err != nil {
 		t.Fatalf("Send() error = %v", err)
 	}
-}
-
-func TestHTTPDestinationRejectsNon2xxStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusFound)
-	}))
-	defer server.Close()
-
-	destination := NewHTTPDestination(server.URL)
-	err := destination.Send(context.Background(), &domain.Effect{
-		ID: "123", Destination: "orders", Name: "created", Payload: []byte(`{}`),
-	}, "effect-123")
-	if err == nil {
-		t.Fatal("Send() error = nil, want non-2xx status error")
+	if got, want := publisher.subject, "commands.payment.authorize"; got != want {
+		t.Fatalf("subject = %q, want %q", got, want)
 	}
-	if !strings.Contains(err.Error(), "destination returned non-success status 302") {
-		t.Fatalf("Send() error = %q, want status 302", err)
+	var delivered domain.Effect
+	if err := json.Unmarshal(publisher.payload, &delivered); err != nil {
+		t.Fatalf("decode command: %v", err)
+	}
+	if delivered.ID != "effect-1" || delivered.IdempotencyKey != "effect-effect-1" {
+		t.Fatalf("delivery identity = (%q, %q), want stable effect identity", delivered.ID, delivered.IdempotencyKey)
 	}
 }
 
-func TestHTTPDestinationBoundsErrorResponseBody(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = w.Write([]byte(strings.Repeat("x", 1<<20)))
-	}))
-	defer server.Close()
+func TestNATSDestinationRejectsWildcardOrMalformedSubjects(t *testing.T) {
+	for _, destination := range []string{"", "payment.*", "payment>", "bad subject"} {
+		t.Run(destination, func(t *testing.T) {
+			destinationSender := NewNATSDestination(&commandPublisherStub{})
+			err := destinationSender.Send(context.Background(), &domain.Effect{
+				ID: "effect-1", Destination: destination, Name: "authorize",
+				EffectType: domain.EffectTypeCommand, Payload: json.RawMessage(`{}`),
+			}, "effect-effect-1")
+			if err == nil {
+				t.Fatal("Send() error = nil, want invalid destination error")
+			}
+		})
+	}
+}
 
-	destination := NewHTTPDestination(server.URL)
+func TestNATSDestinationReturnsPublishErrorForOutboxRetry(t *testing.T) {
+	destination := NewNATSDestination(&commandPublisherStub{err: errors.New("broker unavailable")})
 	err := destination.Send(context.Background(), &domain.Effect{
-		ID: "123", Destination: "orders", Name: "created", Payload: []byte(`{}`),
-	}, "effect-123")
-	if err == nil {
-		t.Fatal("Send() error = nil, want response error")
-	}
-	if got := len(err.Error()); got > (5 << 10) {
-		t.Fatalf("error length = %d, expected bounded error response", got)
-	}
-	if !strings.Contains(err.Error(), "destination returned non-success status 502") {
-		t.Fatalf("error = %q, want status-only error", err.Error())
-	}
-	if strings.Contains(err.Error(), strings.Repeat("x", 100)) {
-		t.Fatal("destination response body leaked into error")
+		ID: "effect-1", Destination: "payment", Name: "authorize",
+		EffectType: domain.EffectTypeCommand, Payload: json.RawMessage(`{}`),
+	}, "effect-effect-1")
+	if err == nil || !strings.Contains(err.Error(), "publish command") {
+		t.Fatalf("Send() error = %v, want wrapped publish error", err)
 	}
 }
