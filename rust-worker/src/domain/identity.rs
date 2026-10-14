@@ -4,7 +4,7 @@ pub struct EventIdentity { pub tenant_id: String, pub event_id: String, pub part
 pub fn deterministic_id(namespace: &str, parts: &[&str]) -> String {
  let mut h = Sha256::new(); field(&mut h, namespace.as_bytes());
  for part in parts { field(&mut h, part.as_bytes()); }
- format!("{:x}", h.finalize())
+ hex::encode(h.finalize())
 }
 fn field(h: &mut Sha256, value: &[u8]) { h.update((value.len() as u64).to_be_bytes()); h.update(value); }
 #[cfg(test)] mod tests { use super::*;
