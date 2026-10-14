@@ -16,7 +16,7 @@ const (
 	// LogRecordEventAccepted records an accepted input event.
 	LogRecordEventAccepted LogRecordKind = "event.accepted"
 	// LogRecordExecutionRecorded records a deterministic rule execution.
-	LogRecordExecutionRecorded LogRecordKind = "execution.recorded"
+	LogRecordExecutionCommitted LogRecordKind = "execution.committed"
 	// LogRecordEffectRequested records an effect intent.
 	LogRecordEffectRequested LogRecordKind = "effect.requested"
 	// LogRecordEffectSettled records an effect delivery outcome.
@@ -67,7 +67,7 @@ func (r EventLogRecord) Validate() error {
 		return errors.New("log record requires record_id, tenant_id, partition_key, and event_id")
 	}
 	switch r.Kind {
-	case LogRecordEventAccepted, LogRecordExecutionRecorded, LogRecordEffectRequested, LogRecordEffectSettled, LogRecordEventQuarantined:
+	case LogRecordEventAccepted, LogRecordExecutionCommitted, LogRecordEffectRequested, LogRecordEffectSettled, LogRecordEventQuarantined:
 	default:
 		return fmt.Errorf("unsupported log record kind %q", r.Kind)
 	}
@@ -77,15 +77,15 @@ func (r EventLogRecord) Validate() error {
 	if r.OccurredAt.IsZero() {
 		return errors.New("log record occurred_at is required")
 	}
-	if r.Kind == LogRecordExecutionRecorded && r.ExecutionID == "" {
-		return errors.New("execution.recorded requires execution_id")
+	if r.Kind == LogRecordExecutionCommitted && r.ExecutionID == "" {
+		return errors.New("execution.committed requires execution_id")
 	}
 	if (r.Kind == LogRecordEffectRequested || r.Kind == LogRecordEffectSettled) && r.EffectID == "" {
 		return errors.New("effect record requires effect_id")
 	}
 	discriminator := ""
 	switch r.Kind {
-	case LogRecordExecutionRecorded:
+	case LogRecordExecutionCommitted:
 		discriminator = r.ExecutionID
 	case LogRecordEffectRequested, LogRecordEffectSettled:
 		discriminator = r.EffectID
