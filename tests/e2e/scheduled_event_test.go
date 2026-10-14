@@ -68,6 +68,26 @@ func TestScheduleEventActionPersistsAndPublishesChild(t *testing.T) {
 		t.Fatalf("scheduled child execution count = %d, want exactly one", got)
 	}
 
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var status string
+		err := env.PostgresPool.QueryRow(
+			t.Context(),
+			"SELECT status FROM scheduled_events WHERE event_id = $1",
+			childID,
+		).Scan(&status)
+		if err != nil {
+			t.Fatalf("load scheduled-event status: %v", err)
+		}
+		if status == string(domain.ScheduledEventStatusReleased) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("scheduled event status = %q, want %q", status, domain.ScheduledEventStatusReleased)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	var tenantID, eventType, partitionKey, status string
 	var payload []byte
 	var headers map[string]string
