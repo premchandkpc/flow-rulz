@@ -48,7 +48,7 @@ type SimulationLogEntry = {
 type SimulationEvent = {
   id: string;
   type: string;
-  scenario: Exclude<SimulationScenario, "all">;
+  scenario: string;
   partitionKey: string;
   shard: number;
   summary: string;
@@ -530,13 +530,9 @@ export default function App() {
   const [simulationScenario, setSimulationScenario] = useState<SimulationScenario>("all");
   const [simulationPace, setSimulationPace] = useState(4000);
   const [simulationEvents, setSimulationEvents] = useState<SimulationEvent[]>([]);
-  const [simulationRunning] = useState(false);
-  const [simulationStopping, setSimulationStopping] = useState(false);
+  const simulationRunning = false;
   const [simulationError, setSimulationError] = useState("");
   const [simulationTraceError, setSimulationTraceError] = useState("");
-  const [simulationNotice, setSimulationNotice] = useState("");
-  const simulationStopRequestedRef = useRef(false);
-  const simulationWaitRef = useRef<AbortController | null>(null);
   const simulationEventsRef = useRef<SimulationEvent[]>([]);
   const simulationTraceInFlightRef = useRef(new Set<string>());
 
@@ -699,28 +695,34 @@ export default function App() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   useEffect(() => { simulationEventsRef.current = simulationEvents; }, [simulationEvents]);
-  useEffect(() => () => {
-    simulationStopRequestedRef.current = true;
-    simulationWaitRef.current?.abort();
-  }, []);
   const [simulationTraceRefreshedAt, setSimulationTraceRefreshedAt] = useState("");
-  const refreshSimulationTrace = useCallback(async (event: SimulationEvent) => {
-    if (simulationTraceInFlightRef.current.has(event.id)) return;
-    simulationTraceInFlightRef.current.add(event.id);
-    try {
-      const response = unwrap(await apiRequest(settings, `/v1/events/${encodeURIComponent(event.id)}/trace`));
-      const trace = response as TraceNode;
-      setSimulationEvents(current => current.map(item => item.id === event.id ? {
-        ...item,
-        trace: { ...trace, effects: trace.effects || [], type: trace.type || event.type, partition_key: trace.partition_key || event.partitionKey, shard: event.shard },
-      } : item));
-      setSimulationTraceError("");
-    } catch (e) {
-      setSimulationTraceError(e instanceof Error ? e.message : String(e));
-    } finally {
-      simulationTraceInFlightRef.current.delete(event.id);
+  const [traceLookupID, setTraceLookupID] = useState("");
+  const loadTraceByID = async () => {
+    const eventID = traceLookupID.trim();
+    if (!eventID) {
+      setSimulationError("Enter an event ID to inspect its durable execution trace.");
+      return;
     }
-  }, [settings]);
+    setSimulationError("");
+    try {
+      const response = unwrap(await apiRequest(settings, `/v1/events/${encodeURIComponent(eventID)}/trace`));
+      const trace = response as TraceNode;
+      const event: SimulationEvent = {
+        id: trace.event_id || eventID,
+        type: trace.type || "unknown",
+        scenario: "external",
+        partitionKey: trace.partition_key || "",
+        shard: trace.shard || 0,
+        summary: "Trace lookup",
+        sentAt: new Date().toISOString(),
+        trace: { ...trace, effects: trace.effects || [] },
+      };
+      setSimulationEvents(current => [event, ...current.filter(item => item.id !== event.id)].slice(0, 30));
+      setSimulationTraceError("");
+    } catch (error) {
+      setSimulationError(error instanceof Error ? error.message : String(error));
+    }
+  };
   useEffect(() => {
     let stopped = false;
     let failures = 0;
@@ -762,15 +764,6 @@ export default function App() {
     timer = window.setTimeout(() => void loop(), simulationPace);
     return () => { stopped = true; window.clearTimeout(timer); };
   }, [settings, simulationPace]);
-  const startSimulation = () => {
-    setSimulationError("");
-    setSimulationNotice("Business-event publishing is intentionally disabled in the control-plane console. Publish through the Go SDK with FLOWRULZ_TRANSPORT=nats; use this console for configuration and runtime observability.");
-  };
-  const stopSimulation = () => {
-    simulationStopRequestedRef.current = true;
-    setSimulationStopping(true);
-    simulationWaitRef.current?.abort();
-  };
   const loadLogs = async () => {
     if (!settings.lokiBase.trim()) { setLogsError("Configure a Loki-compatible query URL in Settings to browse runtime logs. The API currently does not expose a log-tail endpoint."); setLogs([]); return; }
     setLogsBusy(true); setLogsError("");
@@ -1516,17 +1509,16 @@ export default function App() {
       </section>}
       {nav === "simulations" && <section className="page-content simulation-page">
         <div className="simulation-hero">
-          <div className="simulation-hero-copy"><div className="eyebrow">LIVE EVENT FLOW</div><h2>Send a service event through the real worker.</h2><p>The simulator publishes the existing example-domain events to this tenant. Follow the actual shard, active rule set, execution, and outbox destinations below.</p></div>
+          <div className="simulation-hero-copy"><div className="eyebrow">RUNTIME OBSERVABILITY</div><h2>Inspect an event processed by the worker.</h2><p>Business events enter through NATS JetStream. The control-plane console does not publish events; use the Go SDK or your producer, then look up the event ID here.</p></div>
           <div className="simulation-controls">
-            <label>Domain<select value={simulationScenario} disabled={simulationRunning} onChange={event => setSimulationScenario(event.target.value as SimulationScenario)}><option value="all">Rotate all example domains</option><option value="ecommerce">E-commerce</option><option value="banking">Banking</option><option value="food-delivery">Food delivery</option></select></label>
-            <label>Refresh pace<select value={simulationPace} disabled={simulationRunning} onChange={event => setSimulationPace(Number(event.target.value))}><option value={4000}>Slow · every 4 seconds</option><option value={7000}>Very slow · every 7 seconds</option><option value={10000}>Extra slow · every 10 seconds</option></select></label>
-            {simulationRunning
-              ? <button className="button stop-button" onClick={stopSimulation} disabled={simulationStopping}>{simulationStopping ? "Stopping…" : "■ Stop simulation"}</button>
-              : <button className="button primary" onClick={startSimulation}>NATS producer required</button>}
+            <label>Domain filter<select value={simulationScenario} onChange={event => setSimulationScenario(event.target.value as SimulationScenario)}><option value="all">All example domains</option><option value="ecommerce">E-commerce</option><option value="banking">Banking</option><option value="food-delivery">Food delivery</option></select></label>
+            <label>Refresh pace<select value={simulationPace} onChange={event => setSimulationPace(Number(event.target.value))}><option value={3000}>Every 3 seconds</option><option value={7000}>Every 7 seconds</option><option value={10000}>Every 10 seconds</option></select></label>
+            <label>Event ID<input value={traceLookupID} onChange={event => setTraceLookupID(event.target.value)} placeholder="evt-..." /></label>
+            <button className="button primary" onClick={() => void loadTraceByID()}>Load trace</button>
+          </div>
           </div>
         </div>
-        {simulationNotice && <div className="alert warning"><strong>Rule availability</strong><span>{simulationNotice}</span></div>}
-        {simulationError && <div className="alert error"><strong>Simulation stopped</strong><span>{simulationError}</span><button onClick={() => setSimulationError("")}>×</button></div>}
+        {simulationError && <div className="alert error"><strong>Trace lookup failed</strong><span>{simulationError}</span><button onClick={() => setSimulationError("")}>×</button></div>}
         {simulationTraceRefreshedAt && !simulationTraceError && <small className="trace-refreshed">Traces last refreshed {simulationTraceRefreshedAt}</small>}
         {simulationTraceError && <div className="alert warning"><strong>Trace temporarily unavailable</strong><span>{simulationTraceError}</span></div>}
         
