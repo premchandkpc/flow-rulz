@@ -114,8 +114,8 @@ The event service keeps fencing validation, deduplication, evaluation persistenc
 - N is EventEnvelope.VirtualShard(NUM_SHARDS).
 - EventEnvelope.Type carries business event type such as payment.requested; it is not part of the configured broker subject.
 - The effect router and scheduler must use the same base subject and shard count as the stream/consumer. A publish to a different topic does not reach consumers if it is outside the stream subject filter.
-- External command effects go to the configured HTTP destination. Forward the stable idempotency key and keep outbound timeouts/destination validation in scope.
-- Delivery is at-least-once. External idempotency depends on the receiving endpoint, and the overall system must not be described as exactly-once.
+- Generic emitted effects, commands, and tenant-service deliveries publish through NATS JetStream to `effects.<topic>`, `commands.<destination>.<name>`, and each service's unique `services.<tenant-hash>.<service-hash>` subject. Receivers deduplicate by the stable effect ID.
+- Delivery is at-least-once. Receiver idempotency depends on durable consumer configuration and deduplication by stable effect ID; the overall system must not be described as exactly-once.
 
 ## Package and file responsibilities
 
