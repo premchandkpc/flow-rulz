@@ -806,6 +806,9 @@ export default function App() {
     return () => { stopped = true; window.clearTimeout(timer); };
   }, [settings]);
   const startSimulation = async () => {
+    setSimulationError("The console is control-plane only and cannot publish business events. Publish through the Go SDK with FLOWRULZ_TRANSPORT=nats, then use this page to inspect execution traces.");
+    return;
+
     if (simulationActiveRef.current) return;
     if (!settings.tenant.trim()) {
       setSimulationError("Set a tenant in Settings before starting a simulation.");
@@ -1631,7 +1634,7 @@ export default function App() {
             <label>Publish pace<select value={simulationPace} disabled={simulationRunning} onChange={event => setSimulationPace(Number(event.target.value))}><option value={4000}>Slow · every 4 seconds</option><option value={7000}>Very slow · every 7 seconds</option><option value={10000}>Extra slow · every 10 seconds</option></select></label>
             {simulationRunning
               ? <button className="button stop-button" onClick={stopSimulation} disabled={simulationStopping}>{simulationStopping ? "Stopping…" : "■ Stop simulation"}</button>
-              : <button className="button primary" onClick={() => void startSimulation()}>▶ Start simulation</button>}
+              : <button className="button primary" onClick={() => void startSimulation()}>NATS producer required</button>}
           </div>
         </div>
         {simulationNotice && <div className="alert warning"><strong>Rule availability</strong><span>{simulationNotice}</span></div>}
