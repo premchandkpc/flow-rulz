@@ -46,8 +46,8 @@ func TestEffectRecordRequiresEffectID(t *testing.T) {
 }
 
 func TestDeterministicLogRecordIDDoesNotConflateDelimiterValues(t *testing.T) {
-	first := DeterministicLogRecordID(LogRecordEventAccepted, "tenant", "a\\x00b", "event", "c")
-	second := DeterministicLogRecordID(LogRecordEventAccepted, "tenant", "a", "b\\x00event", "c")
+	first := DeterministicLogRecordID(LogRecordEventAccepted, "tenant", "a\x00b", "event", "c")
+	second := DeterministicLogRecordID(LogRecordEventAccepted, "tenant", "a", "b\x00event", "c")
 	if first == second {
 		t.Fatal("different field boundaries must produce different IDs")
 	}
