@@ -3,7 +3,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_nats::jetstream;
 use chrono::Utc;
 use serde_json::{json, Value};
-use sqlx::{Acquire, PgPool, Row};
+use sqlx::{PgPool, Row};
 use std::time::Duration;
 use tokio::time::{interval, MissedTickBehavior};
 use tracing::{info, warn};
