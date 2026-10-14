@@ -104,7 +104,7 @@ Environment variable names and local defaults are documented in .env.example. AP
 - internal/adapters contains HTTP management handlers, PostgreSQL, MongoDB, NATS, Redis, fake test destinations, and NATS effect destinations.
 - internal/storage selects and wires the configured persistence backend.
 - sdk/go/runtime is the original standalone producer/consumer SDK module.
-- sdk/go/flowrulz is a separate client SDK module with local/HTTP/gRPC/NATS transports and a basic client example.
+- sdk/go/flowrulz is a separate client SDK module. NATS is the supported event transport; HTTP ingestion, gRPC transport and local evaluation are not available in the current runtime.
 - examples contains banking, e-commerce, and food-delivery contracts, rules, workflows, and sample applications. Typed domain code lives in `domains/<domain>/builds/go` (separate Go modules) and is produced by `make generate-domain DOMAIN=<domain>` from the contracts stored in the database; example services import it from there and the SDK from `sdk/go/flowrulz`.
 - migrations contains numbered PostgreSQL migrations.
 - docs contains architecture diagrams, rules, operations, roadmap, and dated audit notes.
