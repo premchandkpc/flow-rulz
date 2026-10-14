@@ -426,4 +426,22 @@ mod tests {
         let revision = revision("tenant-a", "all_matches", vec![matching_rule("rule-1", 1)]);
         assert!(evaluate(&revision, &event("tenant-b")).is_err());
     }
+    #[test]
+    fn child_event_preserves_workflow_correlation_and_causation() {
+        let mut parent = event("tenant-a");
+        parent.workflow_id = Some("workflow-1".into());
+        parent.correlation_id = Some("correlation-1".into());
+        let action: EmitEventAction = serde_json::from_value(json!({
+            "type": "orders.approved",
+            "partition_key_policy": "inherit",
+            "data": {"order_id": "{{$.order_id}}"}
+        })).unwrap();
+
+        let payload = build_child_event_payload(&action, &parent, "child-1", "order-1");
+        assert_eq!(payload["workflow_id"], "workflow-1");
+        assert_eq!(payload["correlation_id"], "correlation-1");
+        assert_eq!(payload["causation_id"], "event-1");
+        assert_eq!(payload["headers"]["flowrulz_parent_event_id"], "event-1");
+    }
+
 }
