@@ -7,7 +7,7 @@ impl AcceptEventUseCase {pub fn new(log:Arc<dyn EventLog>,contracts:Arc<dyn Cont
 #[async_trait] impl AcceptEvent for AcceptEventUseCase {async fn accept(&self,event:&EventEnvelope,partition:PartitionId)->Result<LogPosition,AcceptError>{
 event.validate(self.max_payload_bytes).map_err(AcceptError::Invalid)?;
 let _contract=self.contracts.get_contract(&event.input_contract).await?;
-let payload_hash=format!("{:x}",Sha256::digest(&event.payload));
+let payload_hash=hex::encode(Sha256::digest(&event.payload));
 let record_id=deterministic_id("event.accepted",&[&event.identity.tenant_id,&event.identity.partition_key,&event.identity.event_id,&event.input_contract.content_hash,&payload_hash]);
 Ok(self.log.append(NewLogRecord{record_id,partition,kind:LogRecordKind::EventAccepted,tenant_id:event.identity.tenant_id.clone(),event_id:event.identity.event_id.clone(),payload:event.payload.clone(),checksum_sha256:payload_hash}).await?)
 }}
