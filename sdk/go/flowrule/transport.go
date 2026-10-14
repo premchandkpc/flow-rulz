@@ -127,7 +127,7 @@ func NewTransport(cfg *Config) (Transport, error) {
 	case TransportGRPC:
 		return newGRPCTransport(tcfg)
 	case TransportHTTP:
-		return newHTTPTransport(tcfg)
+		return nil, ErrConfig("HTTP event ingestion is not supported by the control-plane API; use the NATS transport")
 	case TransportLocal:
 		return newLocalTransport(tcfg)
 	default:
