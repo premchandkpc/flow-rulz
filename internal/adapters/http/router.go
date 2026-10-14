@@ -41,11 +41,10 @@ func NewRouter(
 	contractRegistry ports.ContractRegistry,
 	batchSvc ports.BatchService,
 	quarantineSvc ports.QuarantineService,
-	scheduledRepo ports.ScheduledEventRepository,
 ) *Router {
 	return NewRouterWithConfig(
 		ruleSvc, workflowSvc, workflowDefRepo, contractRegistry,
-		batchSvc, quarantineSvc, scheduledRepo, RouterConfig{},
+		batchSvc, quarantineSvc, RouterConfig{},
 	)
 }
 
@@ -59,7 +58,6 @@ func NewRouterWithConfig(
 	contractRegistry ports.ContractRegistry,
 	batchSvc ports.BatchService,
 	quarantineSvc ports.QuarantineService,
-	scheduledRepo ports.ScheduledEventRepository,
 	cfg RouterConfig,
 ) *Router {
 	mux := http.NewServeMux()
@@ -92,7 +90,6 @@ func NewRouterWithConfig(
 	handlers.NewContractHandler(contractRegistry).RegisterRoutes(mux)
 	handlers.NewBatchHandler(batchSvc).RegisterRoutes(mux)
 	handlers.NewQuarantineHandler(quarantineSvc).RegisterRoutes(mux)
-	handlers.NewScheduledHandler(scheduledRepo).RegisterRoutes(mux)
 	handlers.NewDomainServiceHandler(cfg.DomainServices).RegisterRoutes(mux)
 
 	// Event trace is a read-only management view over durable runtime records.
