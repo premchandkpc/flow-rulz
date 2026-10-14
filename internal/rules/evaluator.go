@@ -576,7 +576,7 @@ func (e *Evaluator) buildEmitEventEffect(
 	actionIndex int,
 	action *domain.EmitEventAction,
 ) (domain.Effect, error) {
-	childID := domain.ComputeChildEventID(event.ID, ruleID, actionIndex)
+	childID := domain.ComputeChildEventID(event.TenantID, event.ID, ruleID, actionIndex)
 	partitionKey, err := resolveEmitEventPartitionKey(action, event)
 	if err != nil {
 		return domain.Effect{}, err
