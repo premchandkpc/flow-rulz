@@ -113,7 +113,7 @@ func run() (runErr error) {
 	clock := domain.SystemClock{}
 	evaluator := rules.NewEvaluator(clock)
 
-	externalSender, err := newExternalSender(publisher)
+	commandSender, err := newCommandSender(publisher)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func run() (runErr error) {
 	// Each registered service has a unique subject for durable fan-out.
 	serviceSender := effects.NewDomainServiceSender(repositories.DomainServices, publisher)
 	effectSender := svceffects.NewRouterWithConfig(
-		publisher, externalSender, eventSubject, cfg.Worker.NumShards, serviceSender,
+		publisher, commandSender, eventSubject, cfg.Worker.NumShards, serviceSender,
 	)
 	workerID := cfg.WorkerID()
 	eventsSvc := svcevents.NewService(
