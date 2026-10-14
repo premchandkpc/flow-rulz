@@ -36,7 +36,7 @@ impl EffectIntent {
         self.route.validate()?;
         if self.output_contract.name.trim().is_empty()
             || self.output_contract.version.trim().is_empty()
-            || self.output_contract.content_hash.trim().is_empty()
+            || !is_sha256_hex(&self.output_contract.content_hash)
         {
             return Err("output contract must be immutable and versioned".into());
         }
@@ -54,4 +54,11 @@ impl EffectIntent {
         }
         Ok(())
     }
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
