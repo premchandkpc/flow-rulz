@@ -36,6 +36,8 @@ jobs:
         run: cargo fmt --all
       - name: Run Rust unit tests
         run: cargo test --all-targets
+      - name: Run Rust Clippy
+        run: cargo clippy --all-targets -- -D warnings
       - name: Build standalone Rust worker image
         working-directory: .
         run: docker build -f Dockerfile.worker-rust -t flow-rulz-rust-worker:test .

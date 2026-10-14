@@ -18,8 +18,6 @@ pub(super) struct RuleRevision {
 #[derive(Debug, Deserialize)]
 pub(super) struct Rule {
     pub(super) id: String,
-    #[serde(default)]
-    pub(super) name: String,
     pub(super) priority: i64,
     #[serde(rename = "when")]
     pub(super) predicate: Predicate,
@@ -85,9 +83,17 @@ pub(super) struct Effect {
 }
 
 pub(super) fn evaluate(revision: &RuleRevision, event: &EventEnvelope) -> Result<(Vec<String>, Vec<Effect>)> {
+    if revision.tenant_scope != event.tenant_id {
+        bail!("rule revision tenant scope does not match event tenant");
+    }
+
     let mut matched = Vec::new();
     let mut effects = Vec::new();
-    for rule in &revision.compiled {
+    let mut ordered_rules: Vec<&Rule> = revision.compiled.iter().collect();
+    ordered_rules.sort_by(|left, right| {
+        right.priority.cmp(&left.priority).then_with(|| left.id.cmp(&right.id))
+    });
+    for rule in ordered_rules {
         let is_match = eval_predicate(&rule.predicate, &event.data)?;
         let actions = if is_match { &rule.then } else { &rule.otherwise };
         if is_match { matched.push(rule.id.clone()); }
@@ -205,10 +211,11 @@ fn interpolate_templates(value: &Value, event: &EventEnvelope, child_id: &str) -
 pub(super) fn expand_template(text: &str, event: &EventEnvelope, child_id: &str) -> Value {
     static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{\s*([^{}]+?)\s*\}\}").expect("static template regex"));
     if !text.contains("{{") { return Value::String(text.to_owned()); }
-    if let Some(captures) = PLACEHOLDER.captures(text) {
-        if captures.get(0).is_some_and(|whole| whole.as_str() == text) {
-            return template_lookup(captures.get(1).map(|m| m.as_str()).unwrap_or_default(), event, child_id).unwrap_or(Value::String(String::new()));
-        }
+    if let Some(captures) = PLACEHOLDER.captures(text)
+        && captures.get(0).is_some_and(|whole| whole.as_str() == text)
+    {
+        return template_lookup(captures.get(1).map(|m| m.as_str()).unwrap_or_default(), event, child_id)
+            .unwrap_or(Value::String(String::new()));
     }
     let rendered = PLACEHOLDER.replace_all(text, |captures: &regex::Captures<'_>| {
         match template_lookup(captures.get(1).map(|m| m.as_str()).unwrap_or_default(), event, child_id) {
@@ -342,4 +349,69 @@ fn build_command_effect(effect_id: String, event: &EventEnvelope, command: &Comm
         payload: command.data.clone(),
         effect_type: "command",
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn event(tenant_id: &str) -> EventEnvelope {
+        EventEnvelope {
+            id: "event-1".into(),
+            event_type: "orders.created".into(),
+            tenant_id: tenant_id.into(),
+            partition_key: "order-1".into(),
+            workflow_id: None,
+            occurred_at: Utc::now(),
+            data: json!({"approved": true}),
+            headers: HashMap::new(),
+        }
+    }
+
+    fn matching_rule(id: &str, priority: i64) -> Rule {
+        Rule {
+            id: id.into(),
+            priority,
+            predicate: Predicate {
+                all: None,
+                any: None,
+                not: None,
+                path: Some("$.approved".into()),
+                op: Some("eq".into()),
+                value: Some(json!(true)),
+            },
+            then: Vec::new(),
+            otherwise: Vec::new(),
+        }
+    }
+
+    fn revision(tenant_scope: &str, match_mode: &str, compiled: Vec<Rule>) -> RuleRevision {
+        RuleRevision {
+            tenant_scope: tenant_scope.into(),
+            rule_id: "orders.created".into(),
+            revision: 1,
+            content_hash: "contract-hash".into(),
+            match_mode: match_mode.into(),
+            compiled,
+        }
+    }
+
+    #[test]
+    fn first_match_uses_descending_priority_with_deterministic_ties() {
+        let revision = revision(
+            "tenant-a",
+            "first_match",
+            vec![matching_rule("low", 1), matching_rule("high", 100)],
+        );
+        let (matched, effects) = evaluate(&revision, &event("tenant-a")).unwrap();
+        assert_eq!(matched, vec!["high"]);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn evaluation_rejects_cross_tenant_rule_revisions() {
+        let revision = revision("tenant-a", "all_matches", vec![matching_rule("rule-1", 1)]);
+        assert!(evaluate(&revision, &event("tenant-b")).is_err());
+    }
 }
