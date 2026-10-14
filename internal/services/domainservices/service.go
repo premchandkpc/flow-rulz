@@ -42,7 +42,7 @@ type Service struct {
 }
 
 // NewService creates a new domain Service with the given repository and clock.
-func NewService(repository ports.DomainServiceRepository, clock ports.Clock, _ bool) *Service {
+func NewService(repository ports.DomainServiceRepository, clock ports.Clock) *Service {
 	if clock == nil {
 		clock = domain.SystemClock{}
 	}
@@ -163,7 +163,7 @@ func (s *Service) DeleteDomain(ctx context.Context, tenantID, domainID string) e
 
 // SaveService creates or updates a domain service.
 func (s *Service) SaveService(ctx context.Context, tenantID string, item *domain.DomainService) (*domain.DomainService, error) {
-	if err := normalizeAndValidateService(item, tenantID, false); err != nil {
+	if err := normalizeAndValidateService(item, tenantID); err != nil {
 		return nil, err
 	}
 	if err := s.validateServiceDomains(ctx, tenantID, item.DomainIDs); err != nil {
@@ -182,7 +182,7 @@ func (s *Service) SaveService(ctx context.Context, tenantID string, item *domain
 	return item, nil
 }
 
-func normalizeAndValidateService(item *domain.DomainService, tenantID string, _ bool) error {
+func normalizeAndValidateService(item *domain.DomainService, tenantID string) error {
 	if item == nil {
 		return fmt.Errorf("%w: service is required", ErrInvalidInput)
 	}
