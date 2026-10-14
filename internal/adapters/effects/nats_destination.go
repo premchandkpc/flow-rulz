@@ -13,7 +13,7 @@ import (
 	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
-var commandToken = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
+var subjectToken = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
 // NATSDestination publishes emitted effects and commands to durable NATS JetStream subjects.
 // Receivers consume the subject with their own durable consumer and deduplicate
@@ -41,7 +41,7 @@ func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idemp
 	var subject string
 	switch effect.EffectType {
 	case domain.EffectTypeEmit:
-		if err := validateCommandName(effect.Destination); err != nil {
+		if err := validateSubjectPath(effect.Destination); err != nil {
 			return fmt.Errorf("publish emitted effect: %w", err)
 		}
 		subject = "effects." + effect.Destination
@@ -49,10 +49,10 @@ func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idemp
 		if effect.Destination == "" || effect.Name == "" {
 			return errors.New("publish command: destination and name are required")
 		}
-		if !commandToken.MatchString(effect.Destination) {
+		if !subjectToken.MatchString(effect.Destination) {
 			return fmt.Errorf("publish command: invalid destination %q", effect.Destination)
 		}
-		if err := validateCommandName(effect.Name); err != nil {
+		if err := validateSubjectPath(effect.Name); err != nil {
 			return err
 		}
 		subject = "commands." + effect.Destination + "." + effect.Name
@@ -71,13 +71,13 @@ func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idemp
 	return nil
 }
 
-func validateCommandName(name string) error {
+func validateSubjectPath(name string) error {
 	if len(name) == 0 || len(name) > 128 {
-		return errors.New("publish command: name must be between 1 and 128 characters")
+		return errors.New("publish effect: subject path must be between 1 and 128 characters")
 	}
 	for _, token := range strings.Split(name, ".") {
-		if !commandToken.MatchString(token) {
-			return fmt.Errorf("publish command: invalid name %q", name)
+		if !subjectToken.MatchString(token) {
+			return fmt.Errorf("publish effect: invalid subject path %q", name)
 		}
 	}
 	return nil
