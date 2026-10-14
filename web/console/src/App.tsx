@@ -755,9 +755,9 @@ export default function App() {
       const delay = Math.min(3000 * 2 ** failures, 60000) * (1 + Math.random() * 0.2);
       timer = window.setTimeout(() => void loop(), delay);
     };
-    timer = window.setTimeout(() => void loop(), 3000);
+    timer = window.setTimeout(() => void loop(), simulationPace);
     return () => { stopped = true; window.clearTimeout(timer); };
-  }, [settings]);
+  }, [settings, simulationPace]);
   const startSimulation = () => {
     setSimulationError("");
     setSimulationNotice("Business-event publishing is intentionally disabled in the control-plane console. Publish through the Go SDK with FLOWRULZ_TRANSPORT=nats; use this console for configuration and runtime observability.");
