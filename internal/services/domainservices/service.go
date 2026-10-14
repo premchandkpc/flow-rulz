@@ -163,7 +163,7 @@ func (s *Service) DeleteDomain(ctx context.Context, tenantID, domainID string) e
 
 // SaveService creates or updates a domain service.
 func (s *Service) SaveService(ctx context.Context, tenantID string, item *domain.DomainService) (*domain.DomainService, error) {
-	if err := normalizeAndValidateService(item, tenantID, s.allowHTTP); err != nil {
+	if err := normalizeAndValidateService(item, tenantID, false); err != nil {
 		return nil, err
 	}
 	if err := s.validateServiceDomains(ctx, tenantID, item.DomainIDs); err != nil {
