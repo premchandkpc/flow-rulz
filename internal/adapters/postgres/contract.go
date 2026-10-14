@@ -142,14 +142,14 @@ func (r *ContractRegistry) List(ctx context.Context, name string) ([]*domain.Con
 
 	if name != "" {
 		rows, err = r.db.Query(ctx, `
-			SELECT name, version, namespace, description, fields, compatibility, owner, deprecated, created_at, updated_at
+			SELECT name, version, namespace, description, fields, kind, parent_contract_name, parent_contract_version, allowed_children, schema_hash, compatibility, owner, deprecated, created_at, updated_at
 			FROM contract_schemas
 			WHERE name = $1
 			ORDER BY version DESC
 		`, name)
 	} else {
 		rows, err = r.db.Query(ctx, `
-			SELECT name, version, namespace, description, fields, compatibility, owner, deprecated, created_at, updated_at
+			SELECT name, version, namespace, description, fields, kind, parent_contract_name, parent_contract_version, allowed_children, schema_hash, compatibility, owner, deprecated, created_at, updated_at
 			FROM contract_schemas
 			ORDER BY name, version DESC
 		`)
