@@ -98,8 +98,7 @@ async fn process_claimed_effect(
     row: sqlx::postgres::PgRow,
 ) -> Result<()> {
     let effect = decode_claimed_effect(&row)?;
-    match send_effect(pool, js, http, config, &effect.id, &effect.execution_id, &effect.tenant_id,
-        &effect.destination, &effect.name, &effect.payload, &effect.effect_type).await {
+    match send_effect(pool, js, http, config, &effect).await {
         Ok(()) => mark_effect_delivered(pool, claim, &effect.id).await,
         Err(error) => record_effect_failure(pool, claim, &effect, &error.to_string()).await,
     }
@@ -190,29 +189,32 @@ async fn schedule_effect_retry(pool: &PgPool, claim: &str, effect_id: &str, atte
 }
 
 async fn send_effect(
-    pool: &PgPool, js: &jetstream::Context, http: &reqwest::Client, config: &Config,
-    id: &str, execution_id: &str, tenant_id: &str, destination: &str, name: &str, payload: &Value, effect_type: &str,
+    pool: &PgPool,
+    js: &jetstream::Context,
+    http: &reqwest::Client,
+    config: &Config,
+    effect: &ClaimedEffect,
 ) -> Result<()> {
-    match effect_type {
+    match effect.effect_type.as_str() {
         "emit" => {
-            validate_subject(destination)?;
-            js.publish(destination.to_owned(), serde_json::to_vec(payload)?.into())
-                .await.context("publish effect to JetStream")?;
+            validate_subject(&effect.destination)?;
+            js.publish(effect.destination.clone(), serde_json::to_vec(&effect.payload)?.into())
+                .await
+                .context("publish effect to JetStream")?;
             Ok(())
         }
-        "command" => {
-            send_external_effect(http, config, id, execution_id, tenant_id, destination, name, payload, effect_type).await
-        }
+        "command" => send_external_effect(http, config, effect).await,
         "emit_event" => {
-            let event: EventEnvelope = serde_json::from_value(payload.clone()).context("decode child event")?;
+            let event: EventEnvelope =
+                serde_json::from_value(effect.payload.clone()).context("decode child event")?;
             let shard = event.virtual_shard(config.num_shards)?;
             let subject = event_subject(&event.event_type, shard, &config.rulesets);
-            js.publish(subject, serde_json::to_vec(&event)?.into()).await.context("publish child event to JetStream")?;
+            js.publish(subject, serde_json::to_vec(&event)?.into())
+                .await
+                .context("publish child event to JetStream")?;
             Ok(())
         }
-        "service_event" => {
-            send_domain_service_effect(pool, http, config, id, execution_id, tenant_id, destination, name, payload).await
-        },
+        "service_event" => send_domain_service_effect(pool, http, config, effect).await,
         other => bail!("unsupported outbox effect type {other:?}"),
     }
 }
@@ -220,21 +222,23 @@ async fn send_effect(
 async fn send_external_effect(
     http: &reqwest::Client,
     config: &Config,
-    id: &str,
-    execution_id: &str,
-    tenant_id: &str,
-    destination: &str,
-    name: &str,
-    payload: &Value,
-    effect_type: &str,
+    effect: &ClaimedEffect,
 ) -> Result<()> {
-    if accept_development_effect(config, id, destination, name)? {
+    if accept_development_effect(config, &effect.id, &effect.destination, &effect.name)? {
         return Ok(());
     }
 
-    let url = build_external_destination_url(config, destination, name)?;
-    let effect = build_external_effect_payload(id, execution_id, tenant_id, destination, name, payload, effect_type);
-    post_external_effect(http, url, id, execution_id, &effect).await
+    let url = build_external_destination_url(config, &effect.destination, &effect.name)?;
+    let payload = build_external_effect_payload(
+        &effect.id,
+        &effect.execution_id,
+        &effect.tenant_id,
+        &effect.destination,
+        &effect.name,
+        &effect.payload,
+        &effect.effect_type,
+    );
+    post_external_effect(http, url, &effect.id, &effect.execution_id, &payload).await
 }
 
 fn accept_development_effect(config: &Config, id: &str, destination: &str, name: &str) -> Result<bool> {
@@ -307,18 +311,11 @@ async fn send_domain_service_effect(
     pool: &PgPool,
     http: &reqwest::Client,
     config: &Config,
-    id: &str,
-    execution_id: &str,
-    tenant_id: &str,
-    service_id: &str,
-    event_type: &str,
-    payload: &Value,
+    effect: &ClaimedEffect,
 ) -> Result<()> {
-    let endpoint = load_active_service_endpoint(pool, tenant_id, service_id).await?;
+    let endpoint = load_active_service_endpoint(pool, &effect.tenant_id, &effect.destination).await?;
     let url = validate_service_endpoint(&endpoint, config)?;
-    post_service_callback(
-        http, url, id, execution_id, tenant_id, service_id, event_type, payload,
-    ).await
+    post_service_callback(http, url, effect).await
 }
 
 async fn load_active_service_endpoint(pool: &PgPool, tenant_id: &str, service_id: &str) -> Result<String> {
@@ -389,43 +386,34 @@ fn is_non_public_ip(ip: std::net::IpAddr) -> bool {
 async fn post_service_callback(
     http: &reqwest::Client,
     url: reqwest::Url,
-    id: &str,
-    execution_id: &str,
-    tenant_id: &str,
-    service_id: &str,
-    event_type: &str,
-    payload: &Value,
+    effect: &ClaimedEffect,
 ) -> Result<()> {
-    let event_id = payload.get("id").and_then(Value::as_str).unwrap_or_default();
-    let request = build_service_callback_request(
-        http, url, id, execution_id, tenant_id, service_id, event_type, event_id, payload,
-    );
-    let response = request.send().await.context("send tenant service event callback")?;
+    let event_id = effect.payload.get("id").and_then(Value::as_str).unwrap_or_default();
+    let request = build_service_callback_request(http, url, effect, event_id);
+    let response = request
+        .send()
+        .await
+        .context("send tenant service event callback")?;
     ensure_successful_callback(response.status())
 }
 
 fn build_service_callback_request(
     http: &reqwest::Client,
     url: reqwest::Url,
-    id: &str,
-    execution_id: &str,
-    tenant_id: &str,
-    service_id: &str,
-    event_type: &str,
+    effect: &ClaimedEffect,
     event_id: &str,
-    payload: &Value,
 ) -> reqwest::RequestBuilder {
     http.post(url)
         .header("Content-Type", "application/json")
-        .header("Idempotency-Key", format!("effect-{id}"))
-        .header("X-FlowRulz-Tenant-ID", tenant_id)
-        .header("X-FlowRulz-Service-ID", service_id)
-        .header("X-FlowRulz-Effect-ID", id)
+        .header("Idempotency-Key", format!("effect-{}", effect.id))
+        .header("X-FlowRulz-Tenant-ID", &effect.tenant_id)
+        .header("X-FlowRulz-Service-ID", &effect.destination)
+        .header("X-FlowRulz-Effect-ID", &effect.id)
         .header("X-FlowRulz-Event-ID", event_id)
-        .header("X-Effect-ID", id)
-        .header("X-Execution-ID", execution_id)
-        .header("X-FlowRulz-Event-Type", event_type)
-        .json(payload)
+        .header("X-Effect-ID", &effect.id)
+        .header("X-Execution-ID", &effect.execution_id)
+        .header("X-FlowRulz-Event-Type", &effect.name)
+        .json(&effect.payload)
 }
 
 fn ensure_successful_callback(status: reqwest::StatusCode) -> Result<()> {
