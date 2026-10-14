@@ -14,20 +14,20 @@ type LogRecordKind string
 
 const (
 	// LogRecordEventAccepted records an accepted input event.
-	LogRecordEventAccepted LogRecordKind = "event.accepted"
+	LogRecordEventAccepted       LogRecordKind = "event.accepted"
 	// LogRecordExecutionCommitted records an atomic rule execution outcome and its complete effect-intent set.
-	LogRecordExecutionCommitted LogRecordKind = "execution.committed"
+	LogRecordExecutionCommitted  LogRecordKind = "execution.committed"
 	// LogRecordEffectRequested records an effect intent.
-	LogRecordEffectRequested LogRecordKind = "effect.requested"
+	LogRecordEffectRequested     LogRecordKind = "effect.requested"
 	// LogRecordEffectSettled records an effect delivery outcome.
-	LogRecordEffectSettled LogRecordKind = "effect.settled"
+	LogRecordEffectSettled       LogRecordKind = "effect.settled"
 	// LogRecordEventQuarantined records a terminal processing failure.
-	LogRecordEventQuarantined LogRecordKind = "event.quarantined"
-	LogRecordScheduleRequested LogRecordKind = "schedule.requested"
-	LogRecordScheduleCancelled LogRecordKind = "schedule.cancelled"
-	LogRecordScheduleFired LogRecordKind = "schedule.fired"
-	LogRecordConsumerProgressed LogRecordKind = "consumer.progressed"
-	LogRecordFenceAdvanced LogRecordKind = "fence.advanced"
+	LogRecordEventQuarantined    LogRecordKind = "event.quarantined"
+	LogRecordScheduleRequested   LogRecordKind = "schedule.requested"
+	LogRecordScheduleCancelled   LogRecordKind = "schedule.cancelled"
+	LogRecordScheduleFired       LogRecordKind = "schedule.fired"
+	LogRecordConsumerProgressed  LogRecordKind = "consumer.progressed"
+	LogRecordFenceAdvanced       LogRecordKind = "fence.advanced"
 )
 
 // EventLogRecord is an immutable fact in the processing log. Sequence is assigned
