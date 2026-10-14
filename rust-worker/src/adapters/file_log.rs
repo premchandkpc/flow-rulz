@@ -4,9 +4,10 @@
 //! deliberately not described as a replicated/distributed broker: it has no
 //! quorum protocol or cross-node fencing authority.
 use crate::domain::{
-    deterministic_id, encode_hex, EffectKind, ExecutionCommit, ExecutionOutcome, LogPosition,
-    LogRecord, LogRecordKind, PartitionId,
+    deterministic_id, EffectKind, ExecutionCommit, ExecutionOutcome, LogPosition, LogRecord,
+    LogRecordKind, PartitionId,
 };
+use crate::domain::identity::encode_hex;
 use crate::ports::event_log::{EventLog, LogError, NewLogRecord};
 use async_trait::async_trait;
 use bytes::Bytes;
