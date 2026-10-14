@@ -19,10 +19,10 @@ type LogContractRef struct {
 
 // LogRuleRevisionRef pins the exact rule revision and compiler used by an execution.
 type LogRuleRevisionRef struct {
-	TenantID       string `json:"tenant_id"`
-	RuleSet        string `json:"rule_set"`
-	Revision       int64  `json:"revision"`
-	ContentHash    string `json:"content_hash"`
+	TenantID        string `json:"tenant_id"`
+	RuleSet         string `json:"rule_set"`
+	Revision        int64  `json:"revision"`
+	ContentHash     string `json:"content_hash"`
 	CompilerVersion string `json:"compiler_version"`
 }
 
@@ -45,7 +45,7 @@ func (r LogOutputRoute) Validate() error {
 		"rule_set": r.RuleSet,
 		"workflow": r.WorkflowID,
 		"schedule": r.ScheduleID,
-		"reply": r.CorrelationID,
+		"reply":    r.CorrelationID,
 		"internal": r.Processor,
 	}
 	target, ok := targets[r.Kind]
@@ -83,14 +83,14 @@ type LogEffectIntent struct {
 // null. This makes it possible to distinguish "no effects" from an incomplete
 // commit written by an old or buggy producer.
 type ExecutionCommittedPayload struct {
-	ExecutionID     string               `json:"execution_id"`
-	Outcome         string               `json:"outcome"`
-	DecisionHash    string               `json:"decision_hash"`
-	RuleRevisions   []LogRuleRevisionRef `json:"rule_revisions"`
-	MatchedRuleIDs  []string             `json:"matched_rule_ids"`
-	ResultPayload   json.RawMessage      `json:"result_payload"`
-	Effects         []LogEffectIntent    `json:"effects"`
-	FencingEpoch    uint64               `json:"fencing_epoch"`
+	ExecutionID    string               `json:"execution_id"`
+	Outcome        string               `json:"outcome"`
+	DecisionHash   string               `json:"decision_hash"`
+	RuleRevisions  []LogRuleRevisionRef `json:"rule_revisions"`
+	MatchedRuleIDs []string             `json:"matched_rule_ids"`
+	ResultPayload  json.RawMessage      `json:"result_payload"`
+	Effects        []LogEffectIntent    `json:"effects"`
+	FencingEpoch   uint64               `json:"fencing_epoch"`
 }
 
 // Validate enforces the execution/effect atomicity contract before a commit can
