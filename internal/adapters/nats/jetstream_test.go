@@ -3,7 +3,10 @@ package nats
 import (
 	"context"
 	"strings"
-	"testing"\n\n\t"github.com/nats-io/nats.go/jetstream"
+	"testing"
+	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 func TestRulesetRoutingUsesDisjointSubjectToken(t *testing.T) {
