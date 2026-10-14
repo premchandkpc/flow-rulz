@@ -67,6 +67,7 @@ func (r LogOutputRoute) Validate() error {
 // dispatch index may be rebuilt from this intent after a crash.
 type LogEffectIntent struct {
 	EffectID       string          `json:"effect_id"`
+	EffectKey      string          `json:"effect_key"`
 	TenantID       string          `json:"tenant_id"`
 	SourceEventID  string          `json:"source_event_id"`
 	ExecutionID    string          `json:"execution_id"`
@@ -142,8 +143,12 @@ func (p ExecutionCommittedPayload) Validate(tenantID, eventID string) error {
 			return fmt.Errorf("effects[%d] duplicates effect_id %q", i, effect.EffectID)
 		}
 		seenEffectIDs[effect.EffectID] = struct{}{}
-		if strings.TrimSpace(effect.EffectID) == "" || strings.TrimSpace(effect.ExecutionID) == "" {
-			return fmt.Errorf("effects[%d] requires effect_id and execution_id", i)
+		if strings.TrimSpace(effect.EffectID) == "" || strings.TrimSpace(effect.EffectKey) == "" || strings.TrimSpace(effect.ExecutionID) == "" {
+			return fmt.Errorf("effects[%d] requires effect_id, effect_key and execution_id", i)
+		}
+		expectedEffectID := DeterministicID("effect", tenantID, effect.PartitionKey, eventID, p.ExecutionID, effect.EffectKey)
+		if effect.EffectID != expectedEffectID {
+			return fmt.Errorf("effects[%d] effect_id does not match its deterministic identity", i)
 		}
 		if effect.ExecutionID != p.ExecutionID {
 			return fmt.Errorf("effects[%d] belongs to a different execution", i)
