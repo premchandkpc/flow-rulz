@@ -48,11 +48,13 @@ type EventLogRecord struct {
 // DeterministicLogRecordID returns a stable ID for a logical log fact. The
 // discriminator should be a revision, effect ID, or settlement attempt identity
 // when more than one fact of the same kind can exist for an event.
-func DeterministicLogRecordID(kind LogRecordKind, tenantID, partitionKey, eventID, discriminator string) string {
-	// Length-prefix each UTF-8 field. Delimiter-based encodings are ambiguous
-	// when values themselves contain the delimiter.
+// DeterministicID hashes a namespace and any number of length-prefixed fields.
+// It is shared with the Rust runtime to keep identities byte-for-byte compatible.
+func DeterministicID(namespace string, parts ...string) string {
 	h := sha256.New()
-	fields := []string{string(kind), tenantID, partitionKey, eventID, discriminator}
+	fields := make([]string, 1, len(parts)+1)
+	fields[0] = namespace
+	fields = append(fields, parts...)
 	var length [8]byte
 	for _, field := range fields {
 		n := uint64(len(field))
@@ -64,6 +66,12 @@ func DeterministicLogRecordID(kind LogRecordKind, tenantID, partitionKey, eventI
 		_, _ = h.Write([]byte(field))
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// DeterministicLogRecordID returns a stable ID for a logical log fact.
+// The discriminator is empty for one-per-event facts and identifies effect facts.
+func DeterministicLogRecordID(kind LogRecordKind, tenantID, partitionKey, eventID, discriminator string) string {
+	return DeterministicID(string(kind), tenantID, partitionKey, eventID, discriminator)
 }
 
 // Validate checks the required identity and payload invariants for a log record.
