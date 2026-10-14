@@ -254,9 +254,8 @@ func (h *WorkflowHandler) ListWorkflowDefinitions(w http.ResponseWriter, r *http
 	})
 }
 
-// CreateWorkflowDefinition is intentionally not registered on the tenant-facing router.
-// Definitions are global platform configuration until a separately authorized admin API
-// and an explicit ownership model are introduced.
+// CreateWorkflowDefinition creates a global platform workflow definition. The control-plane
+// router exposes this operation only to callers with a platform admin scope.
 func (h *WorkflowHandler) CreateWorkflowDefinition(w http.ResponseWriter, r *http.Request) {
 	var def domain.WorkflowDefinition
 	if err := decodeRequestBody(r, &def); err != nil {
