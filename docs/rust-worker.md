@@ -1,5 +1,9 @@
 # Rust worker service (experimental)
 
+## Legacy status
+
+This optional Rust worker has not been migrated to the NATS-only command and tenant-service effect routes introduced for the Go worker. Do not run the Rust profile against this version of the application; its effect delivery path is incompatible. The Rust worker switch is intentionally left for a separate removal/migration change.
+
 ## Isolation from Go
 
 The existing Go worker source, Dockerfile, and Compose service are preserved. Rust is an independent service built by `Dockerfile.worker-rust` and defined as the opt-in `worker-rust` Compose service. It is not selected through a switch inside the Go container.
