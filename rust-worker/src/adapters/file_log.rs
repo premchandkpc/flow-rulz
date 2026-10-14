@@ -982,6 +982,39 @@ mod tests {
 
 
     #[tokio::test]
+    async fn recovery_rejects_semantically_invalid_fencing_identity_even_with_valid_checksum() {
+        let dir = temp_dir();
+        let log = FileEventLog::open(&dir).await.unwrap();
+        log.advance_fence(PartitionId(7), 1).await.unwrap();
+        drop(log);
+
+        let path = partition_path(&dir, PartitionId(7));
+        let mut file = OpenOptions::new().read(true).write(true).open(&path).unwrap();
+        let mut length = [0_u8; 4];
+        file.read_exact(&mut length).unwrap();
+        let frame_len = u32::from_be_bytes(length) as usize;
+        let mut bytes = vec![0_u8; frame_len];
+        file.read_exact(&mut bytes).unwrap();
+        let mut frame: Frame = serde_json::from_slice(&bytes).unwrap();
+
+        // Keep the frame structurally valid and recompute its checksum. Recovery
+        // must validate semantic identities, not merely accept self-consistent bytes.
+        frame.body.event_id = "fence:7:9".to_string();
+        frame.frame_sha256 = sha256_hex(&serde_json::to_vec(&frame.body).unwrap());
+        let encoded = serde_json::to_vec(&frame).unwrap();
+        assert_eq!(encoded.len(), frame_len);
+        file.seek(SeekFrom::Start(0)).unwrap();
+        file.write_all(&u32::try_from(encoded.len()).unwrap().to_be_bytes()).unwrap();
+        file.write_all(&encoded).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+
+        let error = FileEventLog::open(&dir).await.unwrap_err();
+        assert!(matches!(error, LogError::Integrity(_)));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
     async fn wal_directory_rejects_a_second_writer() {
         let dir = temp_dir();
         let first = FileEventLog::open(&dir).await.unwrap();
