@@ -20,14 +20,16 @@ The detailed current-state topology and file map live in [map.md](map.md). This 
 2. The worker obtains shard leases and uses the bounded key queue to serialize events per partition key.
 3. The event service validates the fencing token, deduplicates in the inbox, loads the active rule revision, evaluates it, and commits execution plus outbox effects inside a storage transaction.
 4. The worker ACKs only after durable commit.
-5. The effects service claims outbox entries. The effect router sends emit-event effects back to events.shard.N using the same configured shard count as the consumer; command effects go to the configured HTTP destination.
+5. The effects service claims outbox entries. The effect router sends emit-event effects back to events.shard.N using the same configured shard count as the consumer; command effects are published through NATS JetStream to typed command subjects.
 6. The scheduler claims due scheduled events and publishes them to the same stream subject family.
 
 Delivery is at-least-once. Inbox/outbox patterns improve recovery and handoff correctness but do not prove exactly-once external delivery. The external destination must honor the supplied idempotency key.
 
-## HTTP API
+## Control plane / data plane boundary
 
-Routes are registered in internal/adapters/http/handlers. Rule creation/activation is POST /v1/rules/{ruleSet}/revisions; rule revisions and active rules are exposed through GET routes; DELETE on a revision path deactivates a rule set. Contract routes are under /v1/contracts. Workflow definition routes are under /v1/workflows/definitions. See ../../README.md for the route matrix.
+The HTTP API is a control-plane adapter. It manages domains, contracts, rule revisions and workflow definitions, plus management and read-only operational views. It does not publish or consume business events. The router has no event-ingestion route and the API composition root does not construct a NATS publisher. Producers publish directly to NATS JetStream; `cmd/worker` is the only core process that consumes and evaluates business events. Schedule/wait behavior must be represented as durable workflow/runtime state and dispatched by the worker-side scheduler, never by an API request handler.
+
+Routes are registered in internal/adapters/http/handlers. Rule creation/activation is POST /v1/rules/{ruleSet}/revisions; rule revisions and active rules are exposed through GET routes; DELETE on a revision path deactivates a rule set. Contract routes are under /v1/contracts. Workflow definition routes are under /v1/workflows/definitions. Event trace remains a read-only management view. See ../../README.md for the route matrix.
 
 Security limitation: authentication and authorization are not implemented. TenantExtractor trusts X-Tenant-ID or tenant_id query values and falls back to default. ../../AGENTS.md had mistakenly described a trusted-proxy token mode that is not implemented; do not rely on such a setting. The API must not be exposed to untrusted networks until verified identity and tenant authorization are implemented. /health is process liveness only; the API has no gRPC listener. The default native HTTP bind is loopback.
 
