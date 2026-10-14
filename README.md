@@ -17,7 +17,7 @@ The root module uses Go 1.26.0. Both sdk/go and the newer sdk/go/flowrulz client
 
 ## Control plane / data plane boundary
 
-The HTTP API is a control-plane service. It creates and validates configuration (domains, contracts, rule revisions, workflow definitions, and registered provider/service capabilities) and exposes management/read-only operational views. It does not accept business events and does not connect to NATS to publish them. Producers publish `EventEnvelope` messages directly to NATS JetStream using the configured subject and shard contract. Only `cmd/worker` consumes business events and evaluates rules. The Go SDK's HTTP event transport is rejected; configure `FLOWRULZ_TRANSPORT=nats` for event publication. A schedule or wait in a workflow is a durable runtime instruction, not an API-side timer or event-processing loop.
+The HTTP API is a control-plane service. It creates and validates configuration (domains, contracts, rule revisions, workflow definitions, and registered provider/service capabilities) and exposes management/read-only operational views. It does not accept business events and does not connect to NATS to publish them. Producers publish `EventEnvelope` messages directly to NATS JetStream using the configured subject and shard contract. Only `cmd/worker` consumes business events and evaluates rules. The Go SDK's HTTP event transport is rejected; configure `FLOWRULZ_TRANSPORT=nats` for event publication. A `schedule_event` rule action is persisted through the transactional outbox and then the worker-owned scheduler. Correlated workflow `wait`/resume semantics are not yet supported.
 
 ## Event lifecycle
 
