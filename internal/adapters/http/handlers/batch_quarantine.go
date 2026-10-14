@@ -22,7 +22,15 @@ func NewBatchHandler(batchSvc ports.BatchService) *BatchHandler {
 	return &BatchHandler{batchSvc: batchSvc}
 }
 
-// RegisterRoutes registers the HTTP routes for the BatchHandler.
+// RegisterControlPlaneRoutes exposes batch status only. Batch submission and execution
+// are runtime operations and must be initiated through the worker data plane.
+func (h *BatchHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /v1/batches/{batchID}", h.GetBatch)
+	mux.HandleFunc("GET /v1/batches", h.ListBatches)
+}
+
+// RegisterRoutes preserves the complete handler route set for focused handler tests.
+// The production API router must use RegisterControlPlaneRoutes.
 func (h *BatchHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/batches", h.CreateBatch)
 	mux.HandleFunc("GET /v1/batches/{batchID}", h.GetBatch)
@@ -129,7 +137,15 @@ func NewQuarantineHandler(quarantineSvc ports.QuarantineService) *QuarantineHand
 	return &QuarantineHandler{quarantineSvc: quarantineSvc}
 }
 
-// RegisterRoutes registers the HTTP routes for the QuarantineHandler.
+// RegisterControlPlaneRoutes exposes read-only quarantine inspection. Replay and
+// deletion mutate runtime state and are deliberately not part of the control plane.
+func (h *QuarantineHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /v1/quarantine", h.ListQuarantine)
+	mux.HandleFunc("GET /v1/quarantine/{id}", h.GetQuarantine)
+}
+
+// RegisterRoutes preserves the complete handler route set for focused handler tests.
+// The production API router must use RegisterControlPlaneRoutes.
 func (h *QuarantineHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/quarantine", h.ListQuarantine)
 	mux.HandleFunc("GET /v1/quarantine/{id}", h.GetQuarantine)
