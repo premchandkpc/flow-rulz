@@ -18,6 +18,7 @@ type Service struct {
 	clock      ports.Clock
 	beginTx    ports.TransactionManager
 	newRepos   ports.EventTxRepositoryFactory
+	contracts  ports.ContractRegistry
 }
 
 // NewService constructs the event-processing service.
@@ -39,10 +40,43 @@ func NewService(
 	}
 }
 
+// WithContractRegistry enables runtime payload validation for versioned events.
+func (s *Service) WithContractRegistry(registry ports.ContractRegistry) *Service {
+	s.contracts = registry
+	return s
+}
+
 // Process processes an incoming event through the rules engine.
 func (s *Service) Process(ctx context.Context, envelope *domain.EventEnvelope, fencingToken int64, shard uint32, workerID string) (*domain.Execution, error) {
 	if err := envelope.Validate(); err != nil {
 		return nil, err
+	}
+	if envelope.Contract != nil {
+		if s.contracts == nil {
+			return nil, fmt.Errorf("event declares contract %s@%s but contract registry is not configured", envelope.Contract.Name, envelope.Contract.Version)
+		}
+		schema, err := s.contracts.Get(ctx, envelope.Contract.Name, envelope.Contract.Version)
+		if err != nil {
+			return nil, fmt.Errorf("resolve event contract: %w", err)
+		}
+		if schema == nil {
+			return nil, fmt.Errorf("event contract %s@%s not found", envelope.Contract.Name, envelope.Contract.Version)
+		}
+		if schema.Deprecated {
+			return nil, fmt.Errorf("event contract %s@%s is deprecated", schema.Name, schema.Version)
+		}
+		if err := schema.NormalizeAndValidate(); err != nil {
+			return nil, fmt.Errorf("invalid event contract: %w", err)
+		}
+		if envelope.Contract.SchemaHash == "" || envelope.Contract.SchemaHash != schema.SchemaHash {
+			return nil, fmt.Errorf("event contract schema hash mismatch for %s@%s", schema.Name, schema.Version)
+		}
+		if schema.Kind != domain.ContractKindEvent {
+			return nil, fmt.Errorf("contract %s@%s is not an event contract", schema.Name, schema.Version)
+		}
+		if err := schema.ValidatePayload(envelope.Data); err != nil {
+			return nil, fmt.Errorf("event payload violates contract %s@%s: %w", schema.Name, schema.Version, err)
+		}
 	}
 
 	// F1: Reject invalid fencing token (<= 0) for all shards including 0

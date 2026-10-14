@@ -18,14 +18,18 @@ func (SystemClock) Now() time.Time { return time.Now().UTC() }
 
 // EventEnvelope represents the event envelope.
 type EventEnvelope struct {
-	ID           string            `json:"id"`
-	Type         string            `json:"type"`
-	TenantID     string            `json:"tenant_id"`
-	PartitionKey string            `json:"partition_key"`
-	WorkflowID   string            `json:"workflow_id,omitempty"`
-	OccurredAt   time.Time         `json:"occurred_at"`
-	Data         json.RawMessage   `json:"data"`
-	Headers      map[string]string `json:"headers,omitempty"`
+	ID            string            `json:"id"`
+	Type          string            `json:"type"`
+	TenantID      string            `json:"tenant_id"`
+	PartitionKey  string            `json:"partition_key"`
+	WorkflowID    string            `json:"workflow_id,omitempty"`
+	OccurredAt    time.Time         `json:"occurred_at"`
+	Data          json.RawMessage   `json:"data"`
+	Contract      *ContractRef      `json:"contract,omitempty"`
+	MessageKind   string            `json:"message_kind,omitempty"`
+	CorrelationID string            `json:"correlation_id,omitempty"`
+	CausationID   string            `json:"causation_id,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
 }
 
 // VirtualShard provides the virtual shard.
@@ -97,16 +101,20 @@ type ContractRef struct {
 
 // ContractSchema represents the contract schema.
 type ContractSchema struct {
-	Name          string                   `json:"name"`
-	Version       string                   `json:"version"`
-	Namespace     string                   `json:"namespace,omitempty"`
-	Description   string                   `json:"description,omitempty"`
-	Fields        map[string]ContractField `json:"fields"`
-	Compatibility string                   `json:"compatibility,omitempty"`
-	Owner         string                   `json:"owner,omitempty"`
-	Deprecated    bool                     `json:"deprecated,omitempty"`
-	CreatedAt     time.Time                `json:"created_at,omitempty"`
-	UpdatedAt     time.Time                `json:"updated_at,omitempty"`
+	Name            string                   `json:"name"`
+	Version         string                   `json:"version"`
+	Namespace       string                   `json:"namespace,omitempty"`
+	Description     string                   `json:"description,omitempty"`
+	Fields          map[string]ContractField `json:"fields"`
+	Kind            ContractKind             `json:"kind,omitempty"`
+	Parent          *ContractRef             `json:"parent,omitempty"`
+	AllowedChildren []ContractRef            `json:"allowed_children,omitempty"`
+	SchemaHash      string                   `json:"schema_hash,omitempty"`
+	Compatibility   string                   `json:"compatibility,omitempty"`
+	Owner           string                   `json:"owner,omitempty"`
+	Deprecated      bool                     `json:"deprecated,omitempty"`
+	CreatedAt       time.Time                `json:"created_at,omitempty"`
+	UpdatedAt       time.Time                `json:"updated_at,omitempty"`
 }
 
 // TenantDomain groups event types that tenant services can subscribe to.

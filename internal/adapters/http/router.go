@@ -115,7 +115,7 @@ func NewRouterWithPublisher(
 	domainServicesHandler.RegisterRoutes(mux)
 
 	// Event ingestion used by the Go SDK's HTTP transport.
-	eventHandler := handlers.NewEventIngestionHandler(publisher, numShards)
+	eventHandler := handlers.NewEventIngestionHandler(publisher, numShards).WithContractRegistry(contractRegistry)
 	eventHandler.RegisterRoutes(mux)
 	if config.InboxRepo != nil && config.ExecutionRepo != nil && config.OutboxRepo != nil {
 		traceHandler := handlers.NewEventTraceHandler(config.InboxRepo, config.ExecutionRepo, config.OutboxRepo, numShards)

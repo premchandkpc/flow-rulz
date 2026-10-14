@@ -132,7 +132,7 @@ func run() (runErr error) {
 		clock,
 		repositories.Transactions,
 		repositories.NewEventTxRepositories,
-	)
+	).WithContractRegistry(repositories.Contracts)
 	effectsSvc := svceffects.NewService(
 		repositories.Outbox,
 		effectSender,

@@ -53,6 +53,10 @@ func (h *ContractHandler) CreateContract(w http.ResponseWriter, r *http.Request)
 		responses.WriteError(w, http.StatusBadRequest, "version is required", responses.CodeValidationFailed)
 		return
 	}
+	if err := schema.NormalizeAndValidate(); err != nil {
+		responses.WriteError(w, http.StatusBadRequest, err.Error(), responses.CodeValidationFailed)
+		return
+	}
 
 	if err := h.registry.Register(r.Context(), &schema); err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, err.Error(), responses.CodeInternalError)
