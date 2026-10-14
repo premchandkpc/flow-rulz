@@ -105,7 +105,7 @@ jobs:
         run: go test -race -count=1 ./...
 
       - name: Test client SDK module
-        working-directory: sdk/go/flow-rulz
+        working-directory: sdk/go/flowrule
         run: go test -race -count=1 ./...
 
       - name: Test banking example module
