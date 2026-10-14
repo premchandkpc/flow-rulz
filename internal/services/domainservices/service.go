@@ -178,6 +178,7 @@ func (s *Service) SaveService(ctx context.Context, tenantID string, item *domain
 	if err := s.persistService(ctx, item); err != nil {
 		return nil, err
 	}
+	item.EndpointURL = ""
 	item.NATSSubject = domain.DomainServiceSubject(item.TenantID, item.ID)
 	return item, nil
 }
