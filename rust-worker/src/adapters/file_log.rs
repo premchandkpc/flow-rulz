@@ -537,7 +537,7 @@ fn recover_partition(
     while offset < file_len {
         let remaining = file_len - offset;
         if remaining < 4 {
-            file.set_len(offset).map_err(storage_error)?;
+            truncate_and_sync(&mut file, offset)?;
             break;
         }
         file.seek(SeekFrom::Start(offset)).map_err(storage_error)?;
@@ -550,7 +550,7 @@ fn recover_partition(
             )));
         }
         if remaining - 4 < frame_len as u64 {
-            file.set_len(offset).map_err(storage_error)?;
+            truncate_and_sync(&mut file, offset)?;
             break;
         }
         let mut bytes = vec![0_u8; frame_len];
@@ -596,6 +596,18 @@ fn recover_partition(
                 let epoch = value["fencing_epoch"]
                     .as_u64()
                     .ok_or_else(|| LogError::Integrity("fencing epoch missing".into()))?;
+                let expected_event_id = format!("fence:{}:{epoch}", partition.0);
+                let partition_text = partition.0.to_string();
+                let expected_record_id = deterministic_id(
+                    "fence.advanced",
+                    &["_system", &partition_text, &expected_event_id, ""],
+                );
+                if record.tenant_id != "_system"
+                    || record.event_id != expected_event_id
+                    || record.record_id != expected_record_id
+                {
+                    return Err(LogError::Integrity("fencing record identity is not canonical".into()));
+                }
                 if epoch <= highest_fencing_epoch {
                     return Err(LogError::Integrity("fencing epochs must increase monotonically".into()));
                 }
@@ -606,6 +618,27 @@ fn recover_partition(
                     .map_err(|error| LogError::Integrity(error.to_string()))?;
                 if value["fencing_epoch"].as_u64() != Some(highest_fencing_epoch) {
                     return Err(LogError::Integrity("execution commit has stale fencing epoch".into()));
+                }
+                let tenant_id = value["event"]["tenant_id"].as_str()
+                    .ok_or_else(|| LogError::Integrity("execution tenant ID missing".into()))?;
+                let event_id = value["event"]["event_id"].as_str()
+                    .ok_or_else(|| LogError::Integrity("execution event ID missing".into()))?;
+                let partition_key = value["event"]["partition_key"].as_str()
+                    .ok_or_else(|| LogError::Integrity("execution partition key missing".into()))?;
+                let execution_id = value["execution_id"].as_str()
+                    .ok_or_else(|| LogError::Integrity("execution ID missing".into()))?;
+                let expected_execution_id = deterministic_id("execution", &[tenant_id, partition_key, event_id]);
+                let expected_record_id = deterministic_id(
+                    "execution.committed",
+                    &[tenant_id, partition_key, event_id, execution_id],
+                );
+                if tenant_id != record.tenant_id
+                    || event_id != record.event_id
+                    || execution_id != expected_execution_id
+                    || record.record_id != expected_record_id
+                    || partition_for_key(tenant_id, partition_key) != partition
+                {
+                    return Err(LogError::Integrity("execution record identity is not canonical".into()));
                 }
             }
             _ => {}
@@ -633,6 +666,13 @@ fn recover_partition(
 #[cfg(unix)]
 unsafe extern "C" {
     fn flock(fd: std::os::raw::c_int, operation: std::os::raw::c_int) -> std::os::raw::c_int;
+}
+
+fn truncate_and_sync(file: &mut File, offset: u64) -> Result<(), LogError> {
+    file.set_len(offset).map_err(storage_error)?;
+    // Persist recovery before accepting new appends, so a later crash cannot
+    // resurrect bytes from the discarded incomplete tail.
+    file.sync_all().map_err(storage_error)
 }
 
 fn acquire_process_lock(root: &Path) -> Result<File, LogError> {
