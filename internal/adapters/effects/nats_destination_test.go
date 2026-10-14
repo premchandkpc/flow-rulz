@@ -13,7 +13,7 @@ import (
 type commandPublisherStub struct {
 	subject string
 	payload []byte
-	err error
+	err     error
 }
 func (p *commandPublisherStub) Publish(_ context.Context, subject string, payload []byte) error {
 	p.subject = subject
