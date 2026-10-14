@@ -423,9 +423,13 @@ fn partition_path(root: &Path, partition: PartitionId) -> PathBuf {
 }
 
 fn partition_for_key(key: &str) -> PartitionId {
-    let digest = Sha256::digest(key.as_bytes());
-    let value = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
-    PartitionId(value % 4096)
+    // Keep this identical to the Go worker's virtual-shard mapping.
+    let mut hash = 2_166_136_261_u32;
+    for byte in key.as_bytes() {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    PartitionId(hash % 4096)
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
