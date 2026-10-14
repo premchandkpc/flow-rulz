@@ -101,7 +101,7 @@ func (r EventLogRecord) Validate() error {
 		if err := json.Unmarshal(r.Payload, &committed); err != nil {
 			return fmt.Errorf("execution.committed payload is invalid: %w", err)
 		}
-		expectedExecutionID := DeterministicLogRecordID(LogRecordExecutionCommitted, r.TenantID, r.PartitionKey, r.EventID, "execution")
+		expectedExecutionID := DeterministicID("execution", r.TenantID, r.PartitionKey, r.EventID)
 		if committed.ExecutionID != r.ExecutionID || committed.ExecutionID != expectedExecutionID {
 			return errors.New("execution.committed execution_id must match its deterministic event identity")
 		}
