@@ -81,7 +81,6 @@ fn decode_claimed_effect(row: &sqlx::postgres::PgRow) -> Result<ClaimedEffect> {
 async fn process_claimed_effect(
     pool: &PgPool,
     js: &jetstream::Context,
-    http: &reqwest::Client,
     config: &Config,
     claim: &str,
     row: sqlx::postgres::PgRow,
