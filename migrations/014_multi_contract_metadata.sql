@@ -4,6 +4,7 @@ ALTER TABLE contract_schemas
     ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'event',
     ADD COLUMN IF NOT EXISTS parent_contract_name TEXT,
     ADD COLUMN IF NOT EXISTS parent_contract_version TEXT,
+    ADD COLUMN IF NOT EXISTS parent_contract_schema_hash TEXT,
     ADD COLUMN IF NOT EXISTS allowed_children JSONB NOT NULL DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS schema_hash TEXT;
 
