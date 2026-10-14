@@ -113,17 +113,14 @@ func run() (runErr error) {
 	clock := domain.SystemClock{}
 	evaluator := rules.NewEvaluator(clock)
 
-	externalSender, err := newExternalSender(cfg)
+	externalSender, err := newExternalSender(publisher)
 	if err != nil {
 		return err
 	}
 
 	// Route emitted child events back into the same subject family consumed by
 	// this worker. Only command effects leave the broker for an external sender.
-	serviceSender := effects.NewDomainServiceSender(
-		repositories.DomainServices,
-		cfg.App.Env == "development" || cfg.App.Env == "dev" || cfg.App.Env == "test",
-	)
+	serviceSender := effects.NewDomainServiceSender(repositories.DomainServices, publisher)
 	effectSender := svceffects.NewRouterWithConfig(
 		publisher, externalSender, eventSubject, cfg.Worker.NumShards, serviceSender,
 	)
