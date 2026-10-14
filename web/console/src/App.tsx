@@ -89,7 +89,6 @@ const ROUTES = [
   { method: "POST", path: "/v1/services", description: "Create a service and domain subscriptions" },
   { method: "GET", path: "/v1/batches", description: "List batches" },
   { method: "GET", path: "/v1/quarantine", description: "List quarantined work" },
-  { method: "GET", path: "/v1/scheduled-events", description: "List scheduled events" },
 ] as const;
 
 function readSettings(): Settings {
@@ -97,45 +96,6 @@ function readSettings(): Settings {
   catch { return DEFAULT_SETTINGS; }
 }
 function normalizeBase(value: string) { return value.trim().replace(/\/+$/, ""); }
-function createScenarioPayload(scenario: Exclude<SimulationScenario, "all">, sequence: number) {
-  const suffix = `${Date.now().toString(36)}-${sequence}`;
-  const clientId = `client-${String((sequence - 1) % 50 + 1).padStart(4, "0")}`;
-  const postalCode = ["94102", "94103", "94107", "94110"][(sequence - 1) % 4];
-  const partitionKey = scenario === "banking" ? `account-${String((sequence - 1) % 50 + 1).padStart(4, "0")}` : scenario === "food-delivery" ? postalCode : clientId;
-  const now = new Date().toISOString();
-  if (scenario === "ecommerce") {
-    return {
-      type: "order.created", partitionKey, scenario, summary: `Order ${suffix} · $${(125 + sequence % 300).toFixed(2)}`,
-      payload: {
-        order_id: `order-${suffix}`, customer_id: clientId, total_amount: 12500 + sequence % 30000, currency: "USD",
-        items: [{ product_id: `product-${String(sequence % 40 + 1).padStart(3, "0")}`, quantity: 1 + sequence % 3, unit_price: 12500 }],
-        shipping_address: { street: `${100 + sequence} Market Street`, city: "San Francisco", state: "CA", postal_code: "94102", country: "US" },
-        created_at: now,
-      },
-    };
-  }
-  if (scenario === "banking") {
-    return {
-      type: "transaction.initiated", partitionKey, scenario, summary: `Transfer ${suffix} · $${(10000 + sequence * 10).toFixed(2)}`,
-      payload: {
-        transaction_id: `txn-${suffix}`, account_id: partitionKey, amount: 1000000 + sequence * 1000,
-        currency: "USD", transaction_type: "transfer", counterparty_account: `account-${sequence + 200}`,
-        description: `simulated-transfer-${sequence}`, initiated_at: now,
-      },
-    };
-  }
-  return {
-    type: "order.placed", partitionKey, scenario, summary: `Delivery ${suffix} · ${postalCode}`,
-    payload: {
-      order_id: `delivery-${suffix}`, customer_id: clientId, restaurant_id: `restaurant-${String(sequence % 30 + 1).padStart(3, "0")}`,
-      total_amount: 2800 + sequence * 10, currency: "USD",
-      items: [{ menu_item_id: `menu-item-${String(sequence % 40 + 1).padStart(3, "0")}`, name: "Market street bowl", quantity: 1, unit_price: 2800 }],
-      delivery_address: { street: `${200 + sequence} Oak Avenue`, city: "San Francisco", state: "CA", postal_code: postalCode },
-      created_at: now,
-    },
-  };
-}
-type FlowObservation = { ran: Map<string, Set<string>>; types: Set<string> };
 function observeTrace(node: TraceNode | undefined, seen: FlowObservation) {
   if (!node) return;
   if (node.execution) {
@@ -1555,7 +1515,7 @@ export default function App() {
           <div className="simulation-hero-copy"><div className="eyebrow">LIVE EVENT FLOW</div><h2>Send a service event through the real worker.</h2><p>The simulator publishes the existing example-domain events to this tenant. Follow the actual shard, active rule set, execution, and outbox destinations below.</p></div>
           <div className="simulation-controls">
             <label>Domain<select value={simulationScenario} disabled={simulationRunning} onChange={event => setSimulationScenario(event.target.value as SimulationScenario)}><option value="all">Rotate all example domains</option><option value="ecommerce">E-commerce</option><option value="banking">Banking</option><option value="food-delivery">Food delivery</option></select></label>
-            <label>Publish pace<select value={simulationPace} disabled={simulationRunning} onChange={event => setSimulationPace(Number(event.target.value))}><option value={4000}>Slow · every 4 seconds</option><option value={7000}>Very slow · every 7 seconds</option><option value={10000}>Extra slow · every 10 seconds</option></select></label>
+            <label>Refresh pace<select value={simulationPace} disabled={simulationRunning} onChange={event => setSimulationPace(Number(event.target.value))}><option value={4000}>Slow · every 4 seconds</option><option value={7000}>Very slow · every 7 seconds</option><option value={10000}>Extra slow · every 10 seconds</option></select></label>
             {simulationRunning
               ? <button className="button stop-button" onClick={stopSimulation} disabled={simulationStopping}>{simulationStopping ? "Stopping…" : "■ Stop simulation"}</button>
               : <button className="button primary" onClick={startSimulation}>NATS producer required</button>}
