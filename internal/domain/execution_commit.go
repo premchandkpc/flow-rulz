@@ -122,8 +122,8 @@ func (p ExecutionCommittedPayload) Validate(tenantID, eventID string) error {
 	if p.FencingEpoch == 0 {
 		return errors.New("execution.committed requires a positive fencing_epoch")
 	}
-	if p.Outcome == "quarantined" && len(p.Effects) != 0 {
-		return errors.New("quarantined execution cannot emit effects")
+	if (p.Outcome == "quarantined" || p.Outcome == "no_match") && len(p.Effects) != 0 {
+		return fmt.Errorf("%s execution cannot emit effects", p.Outcome)
 	}
 	for i, revision := range p.RuleRevisions {
 		if strings.TrimSpace(revision.TenantID) == "" || revision.TenantID != tenantID {
@@ -136,7 +136,12 @@ func (p ExecutionCommittedPayload) Validate(tenantID, eventID string) error {
 			return fmt.Errorf("rule_revisions[%d] requires content_hash and compiler_version", i)
 		}
 	}
+	seenEffectIDs := make(map[string]struct{}, len(p.Effects))
 	for i, effect := range p.Effects {
+		if _, exists := seenEffectIDs[effect.EffectID]; exists {
+			return fmt.Errorf("effects[%d] duplicates effect_id %q", i, effect.EffectID)
+		}
+		seenEffectIDs[effect.EffectID] = struct{}{}
 		if strings.TrimSpace(effect.EffectID) == "" || strings.TrimSpace(effect.ExecutionID) == "" {
 			return fmt.Errorf("effects[%d] requires effect_id and execution_id", i)
 		}
