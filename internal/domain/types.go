@@ -134,10 +134,10 @@ type DomainService struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// DomainServiceSubject returns a stable, tenant-isolated NATS subject for a service.
+// ServiceSubject returns a stable, tenant-isolated NATS subject for a service.
 // Hashing identifiers keeps subjects valid and prevents tenant/service names from
 // leaking into broker monitoring while ensuring each subscriber gets its own copy.
-func DomainServiceSubject(tenantID, serviceID string) string {
+func ServiceSubject(tenantID, serviceID string) string {
 	tenantHash := sha256.Sum256([]byte(tenantID))
 	serviceHash := sha256.Sum256([]byte(serviceID))
 	return "services." + hex.EncodeToString(tenantHash[:12]) + "." + hex.EncodeToString(serviceHash[:12])
