@@ -341,6 +341,8 @@ func (c *Compiler) validateAction(action domain.Action) error {
 		return c.validateEmitAction(action.Emit)
 	case action.EmitEvent != nil:
 		return c.validateEmitEventAction(action.EmitEvent)
+	case action.ScheduleEvent != nil:
+		return c.validateScheduleEventAction(action.ScheduleEvent)
 	case action.Command != nil:
 		return c.validateCommandAction(action.Command)
 	default:
@@ -354,6 +356,9 @@ func validateActionShape(action domain.Action) error {
 		count++
 	}
 	if action.EmitEvent != nil {
+		count++
+	}
+	if action.ScheduleEvent != nil {
 		count++
 	}
 	if action.Command != nil {
@@ -413,6 +418,29 @@ func validatePartitionKeyPolicy(action *domain.EmitEventAction, policy domain.Pa
 		if action.PartitionKeyPath == "" || !strings.HasPrefix(action.PartitionKeyPath, "$.") {
 			return domain.ErrInvalidAction
 		}
+	}
+	return nil
+}
+
+func (c *Compiler) validateScheduleEventAction(action *domain.ScheduleEventAction) error {
+	policy := action.PartitionKeyPolicy
+	if policy == "" {
+		policy = domain.PartitionKeyPolicyExplicit
+	}
+	if !validPartitionKeyPolicy(policy) || action.DelaySeconds < 1 || action.DelaySeconds > domain.MaxScheduledDelaySeconds {
+		return domain.ErrInvalidAction
+	}
+	partitionKeyAction := &domain.EmitEventAction{
+		PartitionKey: action.PartitionKey, PartitionKeyPolicy: policy, PartitionKeyPath: action.PartitionKeyPath,
+	}
+	if err := validatePartitionKeyPolicy(partitionKeyAction, policy); err != nil {
+		return err
+	}
+	if action.Type == "" || strings.ContainsAny(action.Type, "*>") || !json.Valid(action.Data) {
+		return domain.ErrInvalidAction
+	}
+	if len(action.Data) > c.limits.MaxPayloadBytes {
+		return domain.ErrRuleExceedsLimits
 	}
 	return nil
 }
