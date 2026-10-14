@@ -24,15 +24,15 @@ const (
 	// LogRecordEventQuarantined records a terminal processing failure.
 	LogRecordEventQuarantined    LogRecordKind = "event.quarantined"
 	// LogRecordScheduleRequested records a requested scheduled event.
-	LogRecordScheduleRequested  LogRecordKind = "schedule.requested"
+	LogRecordScheduleRequested   LogRecordKind = "schedule.requested"
 	// LogRecordScheduleCancelled records cancellation of a scheduled event.
-	LogRecordScheduleCancelled LogRecordKind = "schedule.cancelled"
+	LogRecordScheduleCancelled   LogRecordKind = "schedule.cancelled"
 	// LogRecordScheduleFired records that a scheduled event became due.
-	LogRecordScheduleFired      LogRecordKind = "schedule.fired"
+	LogRecordScheduleFired       LogRecordKind = "schedule.fired"
 	// LogRecordConsumerProgressed records durable consumer progress.
-	LogRecordConsumerProgressed LogRecordKind = "consumer.progressed"
+	LogRecordConsumerProgressed  LogRecordKind = "consumer.progressed"
 	// LogRecordFenceAdvanced records a monotonic partition fencing epoch.
-	LogRecordFenceAdvanced      LogRecordKind = "fence.advanced"
+	LogRecordFenceAdvanced       LogRecordKind = "fence.advanced"
 )
 
 // EventLogRecord is an immutable fact in the processing log. Sequence is assigned
