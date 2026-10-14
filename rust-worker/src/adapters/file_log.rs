@@ -14,7 +14,7 @@ use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -101,7 +101,6 @@ impl FileEventLog {
             }
 
             let mut records = Vec::new();
-            let mut by_id = HashMap::new();
             let mut next_position = 0_u64;
             let mut highest_fencing_epoch = 0_u64;
             let mut current_file = None;
@@ -114,7 +113,7 @@ impl FileEventLog {
                         partition.0, expected_segment
                     )));
                 }
-                let (file, segment_records, segment_position, segment_by_id, segment_epoch) =
+                let (file, segment_records, segment_position, segment_epoch) =
                     recover_partition(
                         path.clone(),
                         partition,
@@ -122,15 +121,14 @@ impl FileEventLog {
                         highest_fencing_epoch,
                     )?;
 
-                for (record_id, (record, position)) in segment_by_id {
-                    if by_id.insert(record_id.clone(), (record.clone(), position)).is_some() {
+                for record in &segment_records {
+                    if record_index
+                        .insert(record.record_id.clone(), (partition, record.position))
+                        .is_some()
+                    {
                         return Err(LogError::Integrity(format!(
-                            "record ID {record_id} appears in multiple segments"
-                        )));
-                    }
-                    if record_index.insert(record_id.clone(), (partition, position)).is_some() {
-                        return Err(LogError::Integrity(format!(
-                            "record ID {record_id} appears in more than one partition"
+                            "record ID {} appears in more than one partition or segment",
+                            record.record_id
                         )));
                     }
                 }
@@ -623,7 +621,6 @@ fn recover_partition(
         File,
         Vec<LogRecord>,
         u64,
-        HashMap<String, (LogRecord, LogPosition)>,
         u64,
     ),
     LogError,
@@ -637,7 +634,7 @@ fn recover_partition(
     let file_len = file.metadata().map_err(storage_error)?.len();
     let mut offset = 0_u64;
     let mut records = Vec::new();
-    let mut by_id = HashMap::new();
+    let mut seen_ids = HashSet::new();
     let mut expected_position = first_position;
     let mut highest_fencing_epoch = initial_fencing_epoch;
 
@@ -777,23 +774,19 @@ fn recover_partition(
             }
             _ => {}
         }
-        if by_id.contains_key(&record.record_id) {
+        if !seen_ids.insert(record.record_id.clone()) {
             return Err(LogError::Integrity(format!(
-                "duplicate record ID {} exists in WAL",
+                "duplicate record ID {} exists in WAL segment",
                 record.record_id
             )));
         }
-        by_id.insert(
-            record.record_id.clone(),
-            (record.clone(), record.position),
-        );
         records.push(record);
         expected_position += 1;
         offset += 4 + frame_len as u64;
     }
 
     file.seek(SeekFrom::End(0)).map_err(storage_error)?;
-    Ok((file, records, expected_position - 1, by_id, highest_fencing_epoch))
+    Ok((file, records, expected_position - 1, highest_fencing_epoch))
 }
 
 
