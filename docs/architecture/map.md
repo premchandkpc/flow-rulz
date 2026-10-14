@@ -22,6 +22,7 @@ flowchart LR
   Outbox --> Effects[services/effects]
   Effects --> Router[Effect router]
   Router -->|emit event| NATS
+  Router -->|emit topic: effects.>| NATS
   Router -->|command| Commands[commands.destination.name]
   Router -->|service event| Services[services.tenant-hash.service-hash]
   Commands --> Receiver[Durable JetStream receiver]
@@ -61,7 +62,7 @@ Security contract:
 4. Construct batch service, shard lease manager, scheduler and application.Worker.
 5. Start scheduler/worker loops; on shutdown stop loops and close consumer, storage, and observability.
 
-The effect router is part of the runtime wiring, not an optional helper: emitted child events must be published to events.shard.N using the same NUM_SHARDS as the consumer. The event type belongs in EventEnvelope.Type. Command effects publish through NATS JetStream to commands.<destination>.<name>. Service-event effects resolve a tenant-scoped active subscriber and publish a stable effect envelope to that service's unique services.<tenant-hash>.<service-hash> subject. HTTP callback delivery is not supported. LeaseManager targets ceil(NUM_SHARDS/WORKER_REPLICAS) leases per worker. WORKER_REPLICAS defaults to 1 for single-worker local deployments and must be set to the actual fixed replica count on every multi-worker deployment. This makes the assumption explicit and configurable, but does not provide dynamic membership or coordinated rebalancing.
+The effect router is part of the runtime wiring, not an optional helper: emitted child events must be published to events.shard.N using the same NUM_SHARDS as the consumer. The event type belongs in EventEnvelope.Type. Generic emitted effects publish through NATS JetStream to effects.<topic>; command effects publish to commands.<destination>.<name>. Service-event effects resolve a tenant-scoped active subscriber and publish a stable effect envelope to that service's unique services.<tenant-hash>.<service-hash> subject. HTTP callback delivery is not supported. LeaseManager targets ceil(NUM_SHARDS/WORKER_REPLICAS) leases per worker. WORKER_REPLICAS defaults to 1 for single-worker local deployments and must be set to the actual fixed replica count on every multi-worker deployment. This makes the assumption explicit and configurable, but does not provide dynamic membership or coordinated rebalancing.
 
 ### CLI processes
 
