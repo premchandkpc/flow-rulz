@@ -108,8 +108,8 @@ services:
     restart: unless-stopped
     networks: [flow-rulz]
 
-  # Legacy alternative, not compatible with NATS-only effect routing; do not enable until separately migrated/removed.
-  # It also shares shard leases with Go, so both workers must never run together.
+  # Experimental alternative; do not enable until Go/Rust conformance and infrastructure-backed recovery tests pass.
+  # It shares shard leases with Go, so both workers must never run together.
   worker-rust:
     profiles: ["rust"]
     build:
@@ -125,7 +125,6 @@ services:
       NATS_RULESETS: ${NATS_RULESETS:-}
       WORKER_REPLICAS: ${RUST_WORKER_REPLICAS:-3}
       NUM_SHARDS: ${NUM_SHARDS:-4096}
-      EFFECT_DESTINATION_URL: ${EFFECT_DESTINATION_URL:-}
       LEASE_TTL_MS: ${LEASE_TTL_MS:-30000}
       LEASE_RENEWAL_INTERVAL_MS: ${LEASE_RENEWAL_INTERVAL_MS:-10000}
       NATS_ACK_WAIT_MS: ${NATS_ACK_WAIT_MS:-30000}
