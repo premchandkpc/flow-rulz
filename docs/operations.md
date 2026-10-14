@@ -48,7 +48,7 @@ docker compose down
 
 To retain local database volumes, use `docker compose down` without `-v`. Only remove volumes when you intentionally want to destroy development data.
 
-API/worker startup initializes the configured storage backend and applies migrations. The Go worker publishes command and tenant-service effects through NATS JetStream. There is no `EFFECT_DESTINATION_URL` setting and HTTP callback delivery is unsupported. Receivers must use durable consumers for their exact `commands.*` or assigned `services.*` subjects and deduplicate stable effect IDs.
+API/worker startup initializes the configured storage backend and applies migrations. The Go worker publishes command and tenant-service effects through NATS JetStream. There is no `EFFECT_DESTINATION_URL` setting and HTTP callback delivery is unsupported. Receivers must use durable consumers for their exact `effects.*`, `commands.*`, or assigned `services.*` subjects and deduplicate stable effect IDs.
 
 ## Configuration
 
@@ -96,7 +96,7 @@ The event flow is:
 2. The worker consumes a shard for which it currently holds a lease and queues work with per-key serialization.
 3. The event service validates the fencing token, deduplicates through the inbox, loads the active immutable rule revision, evaluates it, then commits execution and outbox effects atomically.
 4. The worker acknowledges only after a successful durable transaction.
-5. The outbox publisher routes emitted child events back to `events.shard.N`; command effects go to the configured HTTP destination.
+5. The outbox publisher routes emitted child events back to `events.shard.N`; generic effects, commands, and tenant-service deliveries publish through NATS JetStream.
 6. The scheduler claims due scheduled events and publishes them to the same subject family.
 
 Delivery is at-least-once. Inbox/outbox semantics support deduplication and crash recovery, but external side effects are effectively-once only if the receiver honors the supplied idempotency key. Do not claim exactly-once delivery.
