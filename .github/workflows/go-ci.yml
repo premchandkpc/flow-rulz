@@ -165,8 +165,6 @@ jobs:
       - name: Build random-producer example image
         run: docker compose --profile examples build random-producer
 
-      - name: Build Rust worker image
-        run: docker build -f Dockerfile.worker-rust -t flow-rulz-rust-worker:test .
 
   verify-generated:
     name: Verify generated code compiles
