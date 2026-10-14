@@ -197,6 +197,20 @@ impl EventLog for FileEventLog {
                 let attempted = value["fencing_epoch"].as_u64().ok_or_else(|| {
                     LogError::Invalid("fencing payload requires fencing_epoch".into())
                 })?;
+                if value["partition"].as_u64() != Some(u64::from(record.partition.0))
+                    || record.tenant_id != "_system"
+                    || record.event_id != format!("fence:{}:{attempted}", record.partition.0)
+                {
+                    return Err(LogError::Invalid("fencing fact identity does not match payload".into()));
+                }
+                let partition_text = record.partition.0.to_string();
+                let expected_id = deterministic_id(
+                    "fence.advanced",
+                    &["_system", &partition_text, &record.event_id, ""],
+                );
+                if record.record_id != expected_id {
+                    return Err(LogError::Invalid("fencing fact has a non-canonical record ID".into()));
+                }
                 if attempted <= state.highest_fencing_epoch {
                     return Err(LogError::Fenced {
                         attempted,
@@ -212,6 +226,28 @@ impl EventLog for FileEventLog {
                 let attempted = value["fencing_epoch"].as_u64().ok_or_else(|| {
                     LogError::Invalid("execution commit requires fencing_epoch".into())
                 })?;
+                let partition_key = value["event"]["partition_key"].as_str().ok_or_else(|| {
+                    LogError::Invalid("execution commit requires event.partition_key".into())
+                })?;
+                let execution_id = value["execution_id"].as_str().ok_or_else(|| {
+                    LogError::Invalid("execution commit requires execution_id".into())
+                })?;
+                if value["event"]["tenant_id"].as_str() != Some(record.tenant_id.as_str())
+                    || value["event"]["event_id"].as_str() != Some(record.event_id.as_str())
+                {
+                    return Err(LogError::Invalid("execution commit identity does not match record".into()));
+                }
+                let expected_execution_id = deterministic_id(
+                    "execution.committed",
+                    &[&record.tenant_id, partition_key, &record.event_id, "execution"],
+                );
+                let expected_record_id = deterministic_id(
+                    "execution.committed",
+                    &[&record.tenant_id, partition_key, &record.event_id, execution_id],
+                );
+                if execution_id != expected_execution_id || record.record_id != expected_record_id {
+                    return Err(LogError::Invalid("execution commit has non-canonical identity".into()));
+                }
                 if attempted != state.highest_fencing_epoch {
                     return Err(LogError::Fenced {
                         attempted,
