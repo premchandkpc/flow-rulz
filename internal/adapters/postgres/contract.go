@@ -148,14 +148,14 @@ func (r *ContractRegistry) List(ctx context.Context, name string) ([]*domain.Con
 
 	if name != "" {
 		rows, err = r.db.Query(ctx, `
-			SELECT name, version, namespace, description, fields, kind, parent_contract_name, parent_contract_version, allowed_children, schema_hash, compatibility, owner, deprecated, created_at, updated_at
+			SELECT name, version, namespace, description, fields, kind, parent_contract_name, parent_contract_version, parent_contract_schema_hash, allowed_children, schema_hash, compatibility, owner, deprecated, created_at, updated_at
 			FROM contract_schemas
 			WHERE name = $1
 			ORDER BY version DESC
 		`, name)
 	} else {
 		rows, err = r.db.Query(ctx, `
-			SELECT name, version, namespace, description, fields, kind, parent_contract_name, parent_contract_version, allowed_children, schema_hash, compatibility, owner, deprecated, created_at, updated_at
+			SELECT name, version, namespace, description, fields, kind, parent_contract_name, parent_contract_version, parent_contract_schema_hash, allowed_children, schema_hash, compatibility, owner, deprecated, created_at, updated_at
 			FROM contract_schemas
 			ORDER BY name, version DESC
 		`)
@@ -168,7 +168,7 @@ func (r *ContractRegistry) List(ctx context.Context, name string) ([]*domain.Con
 	var schemas []*domain.ContractSchema
 	for rows.Next() {
 		var cr contractSchemaRow
-		if err := rows.Scan(&cr.Name, &cr.Version, &cr.Namespace, &cr.Description, &cr.Fields, &cr.Kind, &cr.ParentName, &cr.ParentVersion, &cr.AllowedChildren, &cr.SchemaHash, &cr.Compatibility, &cr.Owner, &cr.Deprecated, &cr.CreatedAt, &cr.UpdatedAt); err != nil {
+		if err := rows.Scan(&cr.Name, &cr.Version, &cr.Namespace, &cr.Description, &cr.Fields, &cr.Kind, &cr.ParentName, &cr.ParentVersion, &cr.ParentSchemaHash, &cr.AllowedChildren, &cr.SchemaHash, &cr.Compatibility, &cr.Owner, &cr.Deprecated, &cr.CreatedAt, &cr.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan contract: %w", err)
 		}
 
