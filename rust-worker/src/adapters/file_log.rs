@@ -940,6 +940,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn segment_rotation_preserves_global_positions_after_restart() {
+        let dir = temp_dir();
+        let log = FileEventLog::open_with_segment_bytes(&dir, 1).await.unwrap();
+        for index in 1..=3 {
+            let record = new_record(
+                &format!("progress-{index}"),
+                format!(r#"{{"cursor":{index}}}"#).as_bytes(),
+            );
+            assert_eq!(
+                log.append(record).await.unwrap(),
+                LogPosition(u64::from(index))
+            );
+        }
+        drop(log);
+
+        let segment_count = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".wal"))
+            .count();
+        assert_eq!(segment_count, 3);
+
+        let reopened = FileEventLog::open(&dir).await.unwrap();
+        assert_eq!(
+            reopened.current_position(PartitionId(7)).await.unwrap(),
+            LogPosition(3)
+        );
+        let records = reopened.read(PartitionId(7), LogPosition(0), 10).await.unwrap();
+        assert_eq!(records.len(), 3);
+        assert_eq!(
+            records.iter().map(|record| record.position.0).collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
     async fn accepted_event_validates_partition_identity_and_recovers() {
         let dir = temp_dir();
         let tenant_id = "tenant-a";
