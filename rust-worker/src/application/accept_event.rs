@@ -73,8 +73,7 @@ impl AcceptEvent for AcceptEventUseCase {
                 &event.identity.tenant_id,
                 &event.identity.partition_key,
                 &event.identity.event_id,
-                &event.input_contract.content_hash,
-                &payload_hash,
+                "",
             ],
         );
         let mode = match event.mode {
