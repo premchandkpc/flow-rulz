@@ -54,7 +54,7 @@ impl ExecutionCommit {
             if revision.tenant_id != self.event.tenant_id
                 || revision.rule_set.trim().is_empty()
                 || revision.revision <= 0
-                || revision.content_hash.trim().is_empty()
+                || !is_sha256_hex(&revision.content_hash)
                 || revision.compiler_version.trim().is_empty()
             {
                 return Err("rule revision is incomplete or belongs to another tenant".into());
