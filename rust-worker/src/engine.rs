@@ -240,4 +240,31 @@ mod tests {
         assert!(!eval_predicate(&Predicate { all: None, any: None, not: None, path: Some("$.missing".into()), op: Some("neq".into()), value: Some(json!(1)) }, &json!({})).unwrap());
     }
 
+    #[test]
+    fn event_envelope_round_trip_preserves_go_metadata() {
+        let input = json!({
+            "id": "event-1",
+            "type": "orders.created",
+            "tenant_id": "tenant-a",
+            "partition_key": "order-1",
+            "occurred_at": "2026-10-14T00:00:00Z",
+            "data": {"amount": 12},
+            "contract": {"name": "orders.created", "version": "1", "schema_hash": "schema-hash"},
+            "message_kind": "event",
+            "correlation_id": "correlation-1",
+            "causation_id": "causation-1",
+            "headers": {"source": "test"}
+        });
+        let event: EventEnvelope = serde_json::from_value(input).unwrap();
+        let encoded = serde_json::to_value(event).unwrap();
+
+        assert_eq!(encoded["contract"]["name"], "orders.created");
+        assert_eq!(encoded["contract"]["version"], "1");
+        assert_eq!(encoded["contract"]["schema_hash"], "schema-hash");
+        assert_eq!(encoded["message_kind"], "event");
+        assert_eq!(encoded["correlation_id"], "correlation-1");
+        assert_eq!(encoded["causation_id"], "causation-1");
+        assert_eq!(encoded["headers"]["source"], "test");
+    }
+
 }
