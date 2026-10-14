@@ -44,7 +44,7 @@ func (h *WorkflowHandler) RegisterControlPlaneRoutes(mux *http.ServeMux) {
 }
 
 // RegisterRoutes preserves the complete handler route set for focused handler tests.
-// The production API router must use RegisterControlPlaneRoutes.
+// Production code must use RegisterRoutes; RegisterAllRoutes exists only for handler-level tests.
 func (h *WorkflowHandler) RegisterAllRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/workflows", h.CreateWorkflow)
 	mux.HandleFunc("GET /v1/workflows/{workflowID}", h.GetWorkflow)
