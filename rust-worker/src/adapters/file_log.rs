@@ -50,6 +50,7 @@ struct PartitionState {
 pub struct FileEventLog {
     root: PathBuf,
     partitions: Mutex<HashMap<PartitionId, PartitionState>>,
+    record_index: Mutex<HashMap<String, (PartitionId, LogRecord, LogPosition)>>,
 }
 
 impl FileEventLog {
@@ -60,6 +61,7 @@ impl FileEventLog {
         let root = root.as_ref().to_path_buf();
         fs::create_dir_all(&root).map_err(storage_error)?;
         let mut partitions = HashMap::new();
+        let mut record_index = HashMap::new();
         let entries = fs::read_dir(&root).map_err(storage_error)?;
 
         for entry in entries {
@@ -77,6 +79,16 @@ impl FileEventLog {
             let partition = PartitionId(partition_number);
             let (file, records, next_position, by_id) =
                 recover_partition(entry.path(), partition)?;
+            for (record_id, (record, position)) in &by_id {
+                if record_index
+                    .insert(record_id.clone(), (partition, record.clone(), *position))
+                    .is_some()
+                {
+                    return Err(LogError::Integrity(format!(
+                        "record ID {record_id} appears in more than one partition"
+                    )));
+                }
+            }
             partitions.insert(
                 partition,
                 PartitionState {
@@ -91,6 +103,7 @@ impl FileEventLog {
         Ok(Self {
             root,
             partitions: Mutex::new(partitions),
+            record_index: Mutex::new(record_index),
         })
     }
 
@@ -151,11 +164,13 @@ impl EventLog for FileEventLog {
             ));
         }
 
-        let mut partitions = self.partitions.lock().await;
-        let state = self.ensure_partition(&mut partitions, record.partition).await?;
-
-        if let Some((existing, position)) = state.by_id.get(&record.record_id) {
-            let identical = existing.kind == record.kind
+        // Lock ordering is always record index, then partition map.
+        let mut record_index = self.record_index.lock().await;
+        if let Some((existing_partition, existing, position)) =
+            record_index.get(&record.record_id)
+        {
+            let identical = *existing_partition == record.partition
+                && existing.kind == record.kind
                 && existing.tenant_id == record.tenant_id
                 && existing.event_id == record.event_id
                 && existing.payload == record.payload
@@ -166,6 +181,9 @@ impl EventLog for FileEventLog {
                 Err(LogError::IdentityConflict(record.record_id))
             };
         }
+
+        let mut partitions = self.partitions.lock().await;
+        let state = self.ensure_partition(&mut partitions, record.partition).await?;
 
         let position = LogPosition(state.next_position + 1);
         let stored = LogRecord {
@@ -221,7 +239,11 @@ impl EventLog for FileEventLog {
         state.records.push(stored.clone());
         state
             .by_id
-            .insert(stored.record_id.clone(), (stored, position));
+            .insert(stored.record_id.clone(), (stored.clone(), position));
+        record_index.insert(
+            stored.record_id.clone(),
+            (stored.partition, stored, position),
+        );
         Ok(position)
     }
 
