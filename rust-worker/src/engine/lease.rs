@@ -27,8 +27,8 @@ pub(crate) async fn renew_lease(pool: &PgPool, shard: u32, owner: &str, token: i
     Ok(affected == 1)
 }
 
-pub(crate) async fn release_lease(pool: &PgPool, shard: u32, owner: &str) -> Result<()> {
-    sqlx::query("UPDATE shard_leases SET expires_at=NOW()-INTERVAL '1 millisecond' WHERE virtual_shard=$1 AND owner=$2")
-        .bind(i32::try_from(shard)?).bind(owner).execute(pool).await?;
+pub(crate) async fn release_lease(pool: &PgPool, shard: u32, owner: &str, token: i64) -> Result<()> {
+    sqlx::query("UPDATE shard_leases SET expires_at=NOW()-INTERVAL '1 millisecond' WHERE virtual_shard=$1 AND owner=$2 AND fencing_token=$3")
+        .bind(i32::try_from(shard)?).bind(owner).bind(token).execute(pool).await?;
     Ok(())
 }
