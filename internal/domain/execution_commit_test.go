@@ -25,7 +25,7 @@ func validExecutionCommittedRecord(t *testing.T) EventLogRecord {
 		MatchedRuleIDs: []string{"approve-order"},
 		ResultPayload:  json.RawMessage(`{"approved":true}`),
 		Effects: []LogEffectIntent{{
-			EffectID: "effect-1", TenantID: tenantID, SourceEventID: eventID,
+			EffectID: effectID, EffectKey: effectKey, TenantID: tenantID, SourceEventID: eventID,
 			ExecutionID: executionID,
 			OutputContract: LogContractRef{
 				Name: "orders.approved", Version: "1",
