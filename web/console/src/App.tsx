@@ -528,7 +528,7 @@ export default function App() {
   const [catalogMessage, setCatalogMessage] = useState("");
   const [catalogView, setCatalogView] = useState<{ title: string; body: string } | null>(null);
   const [simulationScenario, setSimulationScenario] = useState<SimulationScenario>("all");
-  const [simulationPace, setSimulationPace] = useState(4000);
+  const [simulationPace, setSimulationPace] = useState(3000);
   const [simulationEvents, setSimulationEvents] = useState<SimulationEvent[]>([]);
   const simulationRunning = false;
   const [simulationError, setSimulationError] = useState("");
