@@ -1,14 +1,10 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://flow-rulz.io/schemas/rule-set-v1.json",
+  "$comment": "Canonical FlowRulZ rule-set schema; keep this file versioned with the API contract.",
   "title": "FlowRulz Rule Set",
   "type": "object",
-  "required": [
-    "rule_set",
-    "revision",
-    "mode",
-    "rules"
-  ],
+  "required": ["rule_set", "revision", "mode", "rules"],
   "additionalProperties": false,
   "properties": {
     "rule_set": {
@@ -17,188 +13,67 @@
       "maxLength": 128,
       "pattern": "^[a-z][a-z0-9.-]*[a-z0-9]$"
     },
-    "revision": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "mode": {
-      "type": "string",
-      "enum": [
-        "first_match",
-        "all_matches"
-      ]
-    },
+    "revision": { "type": "integer", "minimum": 1 },
+    "mode": { "type": "string", "enum": ["first_match", "all_matches"] },
     "rules": {
       "type": "array",
       "minItems": 1,
       "maxItems": 100,
-      "items": {
-        "$ref": "#/$defs/rule"
-      }
+      "items": { "$ref": "#/$defs/rule" }
     }
   },
   "$defs": {
     "rule": {
       "type": "object",
-      "required": [
-        "id",
-        "priority",
-        "when",
-        "then"
-      ],
+      "required": ["id", "priority", "when", "then"],
       "additionalProperties": false,
       "properties": {
-        "id": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128,
-          "pattern": "^[a-z][a-z0-9_-]*[a-z0-9]$"
-        },
-        "priority": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 10000
-        },
-        "when": {
-          "$ref": "#/$defs/predicate"
-        },
-        "then": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 10,
-          "items": {
-            "$ref": "#/$defs/action"
-          }
-        },
-        "otherwise": {
-          "type": "array",
-          "maxItems": 10,
-          "items": {
-            "$ref": "#/$defs/action"
-          }
-        }
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z][a-z0-9_-]*[a-z0-9]$" },
+        "priority": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "when": { "$ref": "#/$defs/predicate" },
+        "then": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "$ref": "#/$defs/action" } },
+        "otherwise": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/action" } }
       }
     },
     "predicate": {
       "type": "object",
-      "oneOf": [
-        {
-          "$ref": "#/$defs/compositePredicate"
-        },
-        {
-          "$ref": "#/$defs/leafPredicate"
-        }
-      ]
+      "oneOf": [{ "$ref": "#/$defs/compositePredicate" }, { "$ref": "#/$defs/leafPredicate" }]
     },
     "compositePredicate": {
       "type": "object",
-      "oneOf": [
-        {
-          "required": [
-            "all"
-          ]
-        },
-        {
-          "required": [
-            "any"
-          ]
-        },
-        {
-          "required": [
-            "not"
-          ]
-        }
-      ],
+      "oneOf": [{ "required": ["all"] }, { "required": ["any"] }, { "required": ["not"] }],
       "additionalProperties": false,
       "properties": {
-        "all": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 20,
-          "items": {
-            "$ref": "#/$defs/predicate"
-          }
-        },
-        "any": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 20,
-          "items": {
-            "$ref": "#/$defs/predicate"
-          }
-        },
-        "not": {
-          "$ref": "#/$defs/predicate"
-        }
+        "all": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "$ref": "#/$defs/predicate" } },
+        "any": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "$ref": "#/$defs/predicate" } },
+        "not": { "$ref": "#/$defs/predicate" }
       }
     },
     "leafPredicate": {
       "type": "object",
-      "required": [
-        "path",
-        "op"
-      ],
+      "required": ["path", "op"],
       "additionalProperties": false,
       "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256,
-          "pattern": "^\\$(\\.[a-zA-Z_][a-zA-Z0-9_]*)*(\\[\\d+\\])*$"
-        },
-        "op": {
-          "type": "string",
-          "enum": [
-            "eq",
-            "neq",
-            "gt",
-            "gte",
-            "lt",
-            "lte",
-            "in",
-            "not_in",
-            "exists",
-            "not_exists"
-          ]
-        },
+        "path": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^\\$(\\.[a-zA-Z_][a-zA-Z0-9_]*)*(\\[\\d+\\])*$" },
+        "op": { "type": "string", "enum": ["eq", "neq", "gt", "gte", "lt", "lte", "in", "not_in", "exists", "not_exists"] },
         "value": {}
       }
     },
     "action": {
       "type": "object",
-      "oneOf": [
-        {
-          "$ref": "#/$defs/emitAction"
-        },
-        {
-          "$ref": "#/$defs/emitEventAction"
-        },
-        {
-          "$ref": "#/$defs/commandAction"
-        }
-      ]
+      "oneOf": [{ "$ref": "#/$defs/emitAction" }, { "$ref": "#/$defs/emitEventAction" }, { "$ref": "#/$defs/commandAction" }]
     },
     "emitAction": {
       "type": "object",
-      "required": [
-        "emit"
-      ],
+      "required": ["emit"],
       "additionalProperties": false,
       "properties": {
         "emit": {
           "type": "object",
-          "required": [
-            "topic",
-            "data"
-          ],
+          "required": ["topic", "data"],
           "additionalProperties": false,
           "properties": {
-            "topic": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256,
-              "pattern": "^[a-z][a-z0-9.-]*[a-z0-9]$"
-            },
+            "topic": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[a-z][a-z0-9.-]*[a-z0-9]$" },
             "data": {}
           }
         }
@@ -206,32 +81,16 @@
     },
     "commandAction": {
       "type": "object",
-      "required": [
-        "command"
-      ],
+      "required": ["command"],
       "additionalProperties": false,
       "properties": {
         "command": {
           "type": "object",
-          "required": [
-            "destination",
-            "name",
-            "data"
-          ],
+          "required": ["destination", "name", "data"],
           "additionalProperties": false,
           "properties": {
-            "destination": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128,
-              "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
-            },
-            "name": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128,
-              "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
-            },
+            "destination": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$" },
+            "name": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$" },
             "data": {}
           }
         }
@@ -239,84 +98,29 @@
     },
     "emitEventAction": {
       "type": "object",
-      "required": [
-        "emit_event"
-      ],
+      "required": ["emit_event"],
       "additionalProperties": false,
       "properties": {
         "emit_event": {
           "type": "object",
-          "required": [
-            "type",
-            "data"
-          ],
+          "required": ["type", "data"],
           "additionalProperties": false,
           "properties": {
-            "type": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256,
-              "pattern": "^[^*>]+$"
-            },
-            "partition_key_policy": {
-              "type": "string",
-              "enum": [
-                "explicit",
-                "inherit",
-                "from_data"
-              ]
-            },
-            "partition_key": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 256
-            },
-            "partition_key_path": {
-              "type": "string",
-              "minLength": 3,
-              "maxLength": 256,
-              "pattern": "^\\$\\..+"
-            },
+            "type": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^*>]+$" },
+            "partition_key_policy": { "type": "string", "enum": ["explicit", "inherit", "from_data"] },
+            "partition_key": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "partition_key_path": { "type": "string", "minLength": 3, "maxLength": 256, "pattern": "^\\$\\..+" },
             "data": {}
           },
           "allOf": [
             {
-              "if": {
-                "properties": {
-                  "partition_key_policy": {
-                    "enum": [
-                      "inherit",
-                      "from_data"
-                    ]
-                  }
-                },
-                "required": [
-                  "partition_key_policy"
-                ]
-              },
+              "if": { "properties": { "partition_key_policy": { "enum": ["inherit", "from_data"] } }, "required": ["partition_key_policy"] },
               "then": {},
-              "else": {
-                "required": [
-                  "partition_key"
-                ]
-              }
+              "else": { "required": ["partition_key"] }
             },
             {
-              "if": {
-                "properties": {
-                  "partition_key_policy": {
-                    "const": "from_data"
-                  }
-                },
-                "required": [
-                  "partition_key_policy"
-                ]
-              },
-              "then": {
-                "required": [
-                  "partition_key_path"
-                ]
-              }
+              "if": { "properties": { "partition_key_policy": { "const": "from_data" } }, "required": ["partition_key_policy"] },
+              "then": { "required": ["partition_key_path"] }
             }
           ]
         }
