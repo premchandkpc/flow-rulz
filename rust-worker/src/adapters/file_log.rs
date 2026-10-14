@@ -282,7 +282,7 @@ impl EventLog for FileEventLog {
         let record_id = deterministic_id("execution.committed", &[&commit.execution_id]);
         self.append(NewLogRecord {
             record_id,
-            partition: partition_for_key(&commit.event.partition_key),
+            partition: partition_for_key(&commit.event.tenant_id, &commit.event.partition_key),
             kind: LogRecordKind::ExecutionCommitted,
             tenant_id: commit.event.tenant_id,
             event_id: commit.event.event_id,
@@ -422,10 +422,11 @@ fn partition_path(root: &Path, partition: PartitionId) -> PathBuf {
     root.join(format!("partition-{:010}.wal", partition.0))
 }
 
-fn partition_for_key(key: &str) -> PartitionId {
-    // Keep this identical to the Go worker's virtual-shard mapping.
+fn partition_for_key(tenant_id: &str, key: &str) -> PartitionId {
+    // Keep this identical to the Go worker's hash(tenant:key) virtual-shard mapping.
+    let combined = format!("{tenant_id}:{key}");
     let mut hash = 2_166_136_261_u32;
-    for byte in key.as_bytes() {
+    for byte in combined.as_bytes() {
         hash ^= u32::from(*byte);
         hash = hash.wrapping_mul(16_777_619);
     }
@@ -624,7 +625,7 @@ mod tests {
 
         let position = log.commit_execution(commit).await.unwrap();
         assert_eq!(position, LogPosition(1));
-        let partition = partition_for_key(partition_key);
+        let partition = partition_for_key(tenant_id, partition_key);
         let records = log.read(partition, LogPosition(0), 10).await.unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].kind, LogRecordKind::ExecutionCommitted);
@@ -636,13 +637,14 @@ mod tests {
 
     #[test]
     fn partition_mapping_matches_fnv1a_virtual_shards() {
-        let key = "tenant-a:order-1";
+        let key = "order-1";
+        let combined = format!("tenant-a:{key}");
         let mut expected = 2_166_136_261_u32;
-        for byte in key.as_bytes() {
+        for byte in combined.as_bytes() {
             expected ^= u32::from(*byte);
             expected = expected.wrapping_mul(16_777_619);
         }
-        assert_eq!(partition_for_key(key), PartitionId(expected % 4096));
+        assert_eq!(partition_for_key("tenant-a", key), PartitionId(expected % 4096));
     }
 
 }
