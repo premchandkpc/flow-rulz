@@ -48,3 +48,16 @@ func TestRequireContractAdminAllowsLocalDevelopment(t *testing.T) {
 		t.Fatalf("requireContractAdmin() = false in development, status=%d", rec.Code)
 	}
 }
+
+func TestRequireContractAdminFailsClosedWhenAppEnvIsUnset(t *testing.T) {
+	t.Setenv("APP_ENV", "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/contracts", nil)
+	rec := httptest.NewRecorder()
+
+	if requireContractAdmin(rec, req) {
+		t.Fatal("requireContractAdmin() = true when APP_ENV is unset")
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
