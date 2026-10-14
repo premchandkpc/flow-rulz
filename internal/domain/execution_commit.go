@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -186,18 +187,11 @@ func isSHA256Hex(value string) bool {
 // payloadSHA256 hashes compact JSON bytes, making insignificant whitespace
 // irrelevant while keeping the exact encoded field ordering part of identity.
 func payloadSHA256(payload json.RawMessage) string {
-	var compact strings.Builder
-	if err := json.Compact((*builderBuffer)(&compact), payload); err != nil {
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, payload); err != nil {
 		sum := sha256.Sum256(payload)
 		return hex.EncodeToString(sum[:])
 	}
-	sum := sha256.Sum256([]byte(compact.String()))
+	sum := sha256.Sum256(compact.Bytes())
 	return hex.EncodeToString(sum[:])
-}
-
-// builderBuffer adapts strings.Builder to json.Compact's byte-buffer contract.
-type builderBuffer strings.Builder
-
-func (b *builderBuffer) Write(p []byte) (int, error) {
-	return (*strings.Builder)(b).Write(p)
 }
