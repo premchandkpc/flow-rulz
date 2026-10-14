@@ -19,6 +19,7 @@ type Service struct {
 	clock       ports.Clock
 	txManager   ports.TransactionManager
 	newTxRepos  ports.RuleTxRepositoryFactory
+	contracts   ports.ContractRegistry
 }
 
 // NewService performs its documented repository operation.
@@ -42,6 +43,12 @@ func NewService(
 	}
 }
 
+// WithContractRegistry enables contract pinning during rule activation.
+func (s *Service) WithContractRegistry(registry ports.ContractRegistry) *Service {
+	s.contracts = registry
+	return s
+}
+
 // Activate compiles and activates a rule revision atomically with CAS.
 // The tenantScope should be derived from authenticated user context.
 func (s *Service) Activate(ctx context.Context, tenantScope string, ruleSet string, source json.RawMessage, actor string) (*domain.RuleActivation, error) {
@@ -51,6 +58,17 @@ func (s *Service) Activate(ctx context.Context, tenantScope string, ruleSet stri
 	}
 	revision.RuleID = ruleSet
 	revision.TenantScope = tenantScope
+	if revision.InputContract != nil && s.contracts != nil {
+		contract, err := s.contracts.Get(ctx, revision.InputContract.Name, revision.InputContract.Version)
+		if err != nil { return nil, fmt.Errorf("resolve input contract: %w", err) }
+		if contract == nil { return nil, fmt.Errorf("input contract %s@%s not found", revision.InputContract.Name, revision.InputContract.Version) }
+		if contract.Deprecated { return nil, fmt.Errorf("input contract %s@%s is deprecated", contract.Name, contract.Version) }
+		if err := contract.NormalizeAndValidate(); err != nil { return nil, fmt.Errorf("invalid input contract: %w", err) }
+		if revision.InputContract.SchemaHash != "" && revision.InputContract.SchemaHash != contract.SchemaHash {
+			return nil, fmt.Errorf("input contract schema hash mismatch for %s@%s", contract.Name, contract.Version)
+		}
+		revision.InputContract.SchemaHash = contract.SchemaHash
+	}
 
 	return s.activateWithCAS(ctx, tenantScope, ruleSet, revision, actor)
 }
