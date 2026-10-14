@@ -1009,7 +1009,7 @@ mod tests {
         file.sync_all().unwrap();
         drop(file);
 
-        let error = FileEventLog::open(&dir).await.unwrap_err();
+        let error = FileEventLog::open(&dir).await.err().unwrap();
         assert!(matches!(error, LogError::Integrity(_)));
         let _ = fs::remove_dir_all(dir);
     }
