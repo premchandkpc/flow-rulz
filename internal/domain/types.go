@@ -2,6 +2,7 @@ package domain
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -17,14 +18,18 @@ func (SystemClock) Now() time.Time { return time.Now().UTC() }
 
 // EventEnvelope represents the event envelope.
 type EventEnvelope struct {
-	ID           string            `json:"id"`
-	Type         string            `json:"type"`
-	TenantID     string            `json:"tenant_id"`
-	PartitionKey string            `json:"partition_key"`
-	WorkflowID   string            `json:"workflow_id,omitempty"`
-	OccurredAt   time.Time         `json:"occurred_at"`
-	Data         json.RawMessage   `json:"data"`
-	Headers      map[string]string `json:"headers,omitempty"`
+	ID            string            `json:"id"`
+	Type          string            `json:"type"`
+	TenantID      string            `json:"tenant_id"`
+	PartitionKey  string            `json:"partition_key"`
+	WorkflowID    string            `json:"workflow_id,omitempty"`
+	OccurredAt    time.Time         `json:"occurred_at"`
+	Data          json.RawMessage   `json:"data"`
+	Contract      *ContractRef      `json:"contract,omitempty"`
+	MessageKind   string            `json:"message_kind,omitempty"`
+	CorrelationID string            `json:"correlation_id,omitempty"`
+	CausationID   string            `json:"causation_id,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
 }
 
 // VirtualShard provides the virtual shard.
@@ -96,16 +101,20 @@ type ContractRef struct {
 
 // ContractSchema represents the contract schema.
 type ContractSchema struct {
-	Name          string                   `json:"name"`
-	Version       string                   `json:"version"`
-	Namespace     string                   `json:"namespace,omitempty"`
-	Description   string                   `json:"description,omitempty"`
-	Fields        map[string]ContractField `json:"fields"`
-	Compatibility string                   `json:"compatibility,omitempty"`
-	Owner         string                   `json:"owner,omitempty"`
-	Deprecated    bool                     `json:"deprecated,omitempty"`
-	CreatedAt     time.Time                `json:"created_at,omitempty"`
-	UpdatedAt     time.Time                `json:"updated_at,omitempty"`
+	Name            string                   `json:"name"`
+	Version         string                   `json:"version"`
+	Namespace       string                   `json:"namespace,omitempty"`
+	Description     string                   `json:"description,omitempty"`
+	Fields          map[string]ContractField `json:"fields"`
+	Kind            ContractKind             `json:"kind,omitempty"`
+	Parent          *ContractRef             `json:"parent,omitempty"`
+	AllowedChildren []ContractRef            `json:"allowed_children,omitempty"`
+	SchemaHash      string                   `json:"schema_hash,omitempty"`
+	Compatibility   string                   `json:"compatibility,omitempty"`
+	Owner           string                   `json:"owner,omitempty"`
+	Deprecated      bool                     `json:"deprecated,omitempty"`
+	CreatedAt       time.Time                `json:"created_at,omitempty"`
+	UpdatedAt       time.Time                `json:"updated_at,omitempty"`
 }
 
 // TenantDomain groups event types that tenant services can subscribe to.
@@ -118,18 +127,28 @@ type TenantDomain struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-// DomainService is a tenant-owned HTTP consumer and its domain subscriptions.
+// DomainService is a tenant-owned NATS consumer and its domain subscriptions.
 // nolint:revive // type name stutters with package name but is a domain concept
 // DomainService represents the domain service.
 type DomainService struct {
 	ID          string    `json:"id"`
 	TenantID    string    `json:"tenant_id"`
 	Name        string    `json:"name"`
-	EndpointURL string    `json:"endpoint_url"`
+	NATSSubject string    `json:"nats_subject"`
+	EndpointURL string    `json:"endpoint_url,omitempty"` // Deprecated legacy field; never used for delivery.
 	DomainIDs   []string  `json:"domain_ids"`
 	Active      bool      `json:"active"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// ServiceSubject returns a stable, tenant-isolated NATS subject for a service.
+// Hashing identifiers keeps subjects valid and prevents tenant/service names from
+// leaking into broker monitoring while ensuring each subscriber gets its own copy.
+func ServiceSubject(tenantID, serviceID string) string {
+	tenantHash := sha256.Sum256([]byte(tenantID))
+	serviceHash := sha256.Sum256([]byte(serviceID))
+	return "services." + hex.EncodeToString(tenantHash[:12]) + "." + hex.EncodeToString(serviceHash[:12])
 }
 
 // ContractField represents the contract field.
@@ -247,14 +266,15 @@ type CommandAction struct {
 
 // Effect represents the effect.
 type Effect struct {
-	ID          string          `json:"id"`
-	ExecutionID string          `json:"execution_id"`
-	TenantID    string          `json:"tenant_id,omitempty"`
-	Destination string          `json:"destination"`
-	Name        string          `json:"name"`
-	Payload     json.RawMessage `json:"payload"`
-	EffectType  EffectType      `json:"effect_type"`
-	CreatedAt   time.Time       `json:"created_at"`
+	ID             string          `json:"id"`
+	ExecutionID    string          `json:"execution_id"`
+	TenantID       string          `json:"tenant_id,omitempty"`
+	Destination    string          `json:"destination"`
+	Name           string          `json:"name"`
+	Payload        json.RawMessage `json:"payload"`
+	EffectType     EffectType      `json:"effect_type"`
+	IdempotencyKey string          `json:"idempotency_key,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
 }
 
 // EffectType represents the effect type.

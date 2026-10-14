@@ -113,19 +113,16 @@ func run() (runErr error) {
 	clock := domain.SystemClock{}
 	evaluator := rules.NewEvaluator(clock)
 
-	externalSender, err := newExternalSender(cfg)
+	commandSender, err := newCommandSender(publisher)
 	if err != nil {
 		return err
 	}
 
-	// Route emitted child events back into the same subject family consumed by
-	// this worker. Only command effects leave the broker for an external sender.
-	serviceSender := effects.NewDomainServiceSender(
-		repositories.DomainServices,
-		cfg.App.Env == "development" || cfg.App.Env == "dev" || cfg.App.Env == "test",
-	)
+	// Route child events, commands, and tenant-service deliveries through NATS JetStream.
+	// Each registered service has a unique subject for durable fan-out.
+	serviceSender := effects.NewDomainServiceSender(repositories.DomainServices, publisher)
 	effectSender := svceffects.NewRouterWithConfig(
-		publisher, externalSender, eventSubject, cfg.Worker.NumShards, serviceSender,
+		publisher, commandSender, eventSubject, cfg.Worker.NumShards, serviceSender,
 	)
 	workerID := cfg.WorkerID()
 	eventsSvc := svcevents.NewService(
@@ -135,7 +132,7 @@ func run() (runErr error) {
 		clock,
 		repositories.Transactions,
 		repositories.NewEventTxRepositories,
-	)
+	).WithContractRegistry(repositories.Contracts)
 	effectsSvc := svceffects.NewService(
 		repositories.Outbox,
 		effectSender,

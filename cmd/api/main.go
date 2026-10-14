@@ -85,7 +85,7 @@ func run() (runErr error) {
 		domain.SystemClock{},
 		repositories.Transactions,
 		repositories.NewRuleTxRepositories,
-	)
+	).WithContractRegistry(repositories.Contracts)
 
 	workflowSvc := svcworkflow.NewService(
 		repositories.Workflows,
@@ -103,7 +103,6 @@ func run() (runErr error) {
 	domainServicesSvc := svcdomains.NewService(
 		repositories.DomainServices,
 		domain.SystemClock{},
-		cfg.App.Env == "development" || cfg.App.Env == "dev" || cfg.App.Env == "test",
 	)
 
 	workflowDefRepo := repositories.WorkflowDefinitions

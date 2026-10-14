@@ -48,7 +48,7 @@ docker compose down
 
 To retain local database volumes, use `docker compose down` without `-v`. Only remove volumes when you intentionally want to destroy development data.
 
-API/worker startup initializes the configured storage backend and applies migrations. The worker may use a fake effect destination only when `APP_ENV=development` or `test` and `EFFECT_DESTINATION_URL` is empty. In other environments, the worker fails startup if the external destination is missing.
+API/worker startup initializes the configured storage backend and applies migrations. The Go worker publishes command and tenant-service effects through NATS JetStream. There is no `EFFECT_DESTINATION_URL` setting and HTTP callback delivery is unsupported. Receivers must use durable consumers for their exact `effects.*`, `commands.*`, or assigned `services.*` subjects and deduplicate stable effect IDs.
 
 ## Configuration
 
@@ -60,8 +60,8 @@ The authoritative Compose variable template is `.env.example`; copy it to `.env`
 | `DATABASE_URL` | Local PostgreSQL DSN; `STORAGE_BACKEND=postgres` is the default |
 | `STORAGE_BACKEND` | `postgres` or `mongodb` |
 | `MONGODB_URI`, `MONGODB_DATABASE` | Required when `STORAGE_BACKEND=mongodb`; transactions require replica-set/sharded MongoDB |
-| `NATS_URL` | Local client URL `nats://localhost:4222`; containers use the Compose service name |
-| `NATS_STREAM`, `NATS_CONSUMER` | Stream and optional durable consumer identifiers |
+| `NATS_URL` | NATS JetStream connection URL; use Docker DNS service name `nats` inside Compose |
+| `NATS_STREAM`, `NATS_CONSUMER` | Durable stream for events/effects/commands/service deliveries and optional consumer identifier |
 | `NUM_SHARDS` | 4096 virtual shards by default; must match producer/SDK/scheduler settings |
 | `WORKER_REPLICAS` | `3` in Compose; must match the configured worker replica count on every worker. This is fixed membership, not automatic rebalance after replica loss. |
 | `BATCH_MODE` | Must remain `none` until batch execution uses a valid shard fencing token and the per-key queue; other values fail startup validation |
@@ -70,7 +70,6 @@ The authoritative Compose variable template is `.env.example`; copy it to `.env`
 | `EFFECT_PUBLISH_INTERVAL_MS`, `EFFECT_PUBLISH_BATCH_SIZE`, `EVENT_RETRY_DELAY_MS` | Outbox publishing cadence/batch and event retry delay |
 | `SCHEDULER_POLL_MS`, `SCHEDULER_BATCH_SIZE` | Scheduled-event polling cadence and batch size |
 | `LEASE_TTL_MS`, `LEASE_RENEWAL_INTERVAL_MS` | Shard lease duration and renewal cadence; renewal must remain within configured validation limits |
-| `EFFECT_DESTINATION_URL` | External HTTP destination for command effects; required outside development/test |
 | `SHUTDOWN_TIMEOUT` | Bounded graceful-shutdown interval |
 
 Some optional observability and generation settings are also accepted by config. Verify the concrete entry point uses a setting before assuming it starts a listener or service; unused configuration should not be treated as an implemented feature.
@@ -97,7 +96,7 @@ The event flow is:
 2. The worker consumes a shard for which it currently holds a lease and queues work with per-key serialization.
 3. The event service validates the fencing token, deduplicates through the inbox, loads the active immutable rule revision, evaluates it, then commits execution and outbox effects atomically.
 4. The worker acknowledges only after a successful durable transaction.
-5. The outbox publisher routes emitted child events back to `events.shard.N`; command effects go to the configured HTTP destination.
+5. The outbox publisher routes emitted child events back to `events.shard.N`; generic effects, commands, and tenant-service deliveries publish through NATS JetStream.
 6. The scheduler claims due scheduled events and publishes them to the same subject family.
 
 Delivery is at-least-once. Inbox/outbox semantics support deduplication and crash recovery, but external side effects are effectively-once only if the receiver honors the supplied idempotency key. Do not claim exactly-once delivery.

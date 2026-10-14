@@ -18,12 +18,15 @@ flowchart LR
   Tx --> Rules[(Rule revisions and activations)]
   Tx --> Executions[(Executions)]
   Tx --> Outbox[(Outbox effects)]
-  Domains[(Tenant domains and subscriptions)] --> Events
+  Domains[(Tenant domains and NATS subscriptions)] --> Events
   Outbox --> Effects[services/effects]
   Effects --> Router[Effect router]
   Router -->|emit event| NATS
-  Router -->|command| Destination[Configured HTTP destination]
-  Router -->|service event| Callback[Tenant service callback]
+  Router -->|emit topic| NATS
+  Router -->|command| Commands[commands.destination.name]
+  Router -->|service event| Services[services.tenant-hash.service-hash]
+  Commands --> Receiver[Durable JetStream receiver]
+  Services --> Receiver
   Scheduler[runtime/scheduler] --> Scheduled[(Scheduled events)]
   Scheduler -->|events.shard.N| NATS
   API[cmd/api] --> HTTP[HTTP router and handlers]
@@ -59,7 +62,7 @@ Security contract:
 4. Construct batch service, shard lease manager, scheduler and application.Worker.
 5. Start scheduler/worker loops; on shutdown stop loops and close consumer, storage, and observability.
 
-The effect router is part of the runtime wiring, not an optional helper: emitted child events must be published to events.shard.N using the same NUM_SHARDS as the consumer. The event type belongs in EventEnvelope.Type. Non-event command effects use the configured external destination. Service-event effects resolve a tenant-scoped active subscriber and POST the original envelope from the outbox. The callback sender disables proxies and redirects, bounds requests, and in production permits only HTTPS URLs resolving to public IPs. In development/test only, an absent effect URL may select a fake destination and HTTP/private service endpoints may be used. Other environments must fail startup if the command effect URL is absent. LeaseManager targets ceil(NUM_SHARDS/WORKER_REPLICAS) leases per worker. WORKER_REPLICAS defaults to 1 for single-worker local deployments and must be set to the actual fixed replica count on every multi-worker deployment. This makes the assumption explicit and configurable, but does not provide dynamic membership or coordinated rebalancing.
+The effect router is part of the runtime wiring, not an optional helper: emitted child events must be published to events.shard.N using the same NUM_SHARDS as the consumer. The event type belongs in EventEnvelope.Type. Generic emitted effects publish through NATS JetStream to effects.<topic>; command effects publish to commands.<destination>.<name>. Service-event effects resolve a tenant-scoped active subscriber and publish a stable effect envelope to that service's unique services.<tenant-hash>.<service-hash> subject. HTTP callback delivery is not supported. LeaseManager targets ceil(NUM_SHARDS/WORKER_REPLICAS) leases per worker. WORKER_REPLICAS defaults to 1 for single-worker local deployments and must be set to the actual fixed replica count on every multi-worker deployment. This makes the assumption explicit and configurable, but does not provide dynamic membership or coordinated rebalancing.
 
 ### CLI processes
 
@@ -111,8 +114,8 @@ The event service keeps fencing validation, deduplication, evaluation persistenc
 - N is EventEnvelope.VirtualShard(NUM_SHARDS).
 - EventEnvelope.Type carries business event type such as payment.requested; it is not part of the configured broker subject.
 - The effect router and scheduler must use the same base subject and shard count as the stream/consumer. A publish to a different topic does not reach consumers if it is outside the stream subject filter.
-- External command effects go to the configured HTTP destination. Forward the stable idempotency key and keep outbound timeouts/destination validation in scope.
-- Delivery is at-least-once. External idempotency depends on the receiving endpoint, and the overall system must not be described as exactly-once.
+- Generic emitted effects, commands, and tenant-service deliveries publish through NATS JetStream to `effects.<topic>`, `commands.<destination>.<name>`, and each service's unique `services.<tenant-hash>.<service-hash>` subject. Receivers deduplicate by the stable effect ID.
+- Delivery is at-least-once. Receiver idempotency depends on durable consumer configuration and deduplication by stable effect ID; the overall system must not be described as exactly-once.
 
 ## Package and file responsibilities
 

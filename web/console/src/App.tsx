@@ -7,7 +7,7 @@ type WorkerSnapshot = { url: string; name: string; online: boolean; checkedAt: n
 type NavKey = "overview" | "simulations" | "catalog" | "api" | "codegen" | "workers" | "rules" | "logs";
 type SimulationScenario = "all" | "ecommerce" | "banking" | "food-delivery";
 type TenantDomain = { id: string; name: string; event_types: string[] };
-type DomainService = { id: string; name: string; endpoint_url: string; domain_ids: string[]; active: boolean };
+type DomainService = { id: string; name: string; nats_subject: string; domain_ids: string[]; active: boolean };
 const SOURCE_RULE_BY_SCENARIO: Record<Exclude<SimulationScenario, "all">, string> = {
   ecommerce: "order.created",
   banking: "transaction.initiated",

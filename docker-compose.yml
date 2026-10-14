@@ -108,8 +108,8 @@ services:
     restart: unless-stopped
     networks: [flow-rulz]
 
-  # Alternative implementation. Start explicitly with: docker compose --profile rust up worker-rust
-  # Stop/scale down the Go worker before using this service; both contend for the same shard leases.
+  # Legacy alternative, not compatible with NATS-only effect routing; do not enable until separately migrated/removed.
+  # It also shares shard leases with Go, so both workers must never run together.
   worker-rust:
     profiles: ["rust"]
     build:

@@ -147,10 +147,14 @@ func normalizeRuleSets(values []string) ([]string, error) {
 }
 
 func streamSubjects(cfg Config) []string {
-	subjects := make([]string, 0, len(cfg.Subjects)*2)
+	subjects := make([]string, 0, len(cfg.Subjects)*2+3)
 	for _, base := range cfg.Subjects {
 		subjects = append(subjects, base+".shard.*", base+".ruleset.*.shard.*")
 	}
+	// Emitted effects, commands, and per-service deliveries share the same durable
+	// messaging protocol. WorkQueue retention is safe because each command route
+	// and each tenant service receives a unique subject.
+	subjects = append(subjects, "commands.>", "effects.>", "services.>")
 	return subjects
 }
 
@@ -529,6 +533,7 @@ var _ ports.ShardedConsumer = (*Consumer)(nil)
 var _ ports.EventPublisher = (*Consumer)(nil)
 var _ ports.OrderEventBroker = (*Consumer)(nil)
 var _ ports.EventPublisher = (*Publisher)(nil)
+var _ ports.SubjectPublisher = (*Publisher)(nil)
 
 // Publish is the generic adapter-level primitive that implements ports.BrokerPublisher.
 func (c *Consumer) Publish(ctx context.Context, subject string, data []byte) error {

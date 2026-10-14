@@ -2,7 +2,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/flowrulz/flow-rulz/internal/adapters/effects"
 	"github.com/flowrulz/flow-rulz/internal/adapters/nats"
@@ -24,15 +24,11 @@ func newNATSConfig(cfg *config.Config) nats.Config {
 	}
 }
 
-func newExternalSender(cfg *config.Config) (ports.EffectSender, error) {
-	switch {
-	case cfg.Worker.EffectDestinationURL != "":
-		return effects.NewHTTPDestination(cfg.Worker.EffectDestinationURL), nil
-	case cfg.App.Env == "development" || cfg.App.Env == "test":
-		return effects.NewFakeDestination(), nil
-	default:
-		return nil, fmt.Errorf("EFFECT_DESTINATION_URL is required when APP_ENV=%q", cfg.App.Env)
+func newCommandSender(publisher ports.SubjectPublisher) (ports.EffectSender, error) {
+	if publisher == nil {
+		return nil, errors.New("NATS publisher is required for command effects")
 	}
+	return effects.NewNATSDestination(publisher), nil
 }
 
 func newWorkerConfig(cfg *config.Config) application.WorkerConfig {

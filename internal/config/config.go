@@ -60,7 +60,6 @@ type WorkerConfig struct {
 	SchedulerBatchSize      int
 	LeaseTTLMS              int
 	LeaseRenewalIntervalMS  int
-	EffectDestinationURL    string // HTTP endpoint for effect delivery (required in production)
 	NATSAckWaitMS           int
 	NATSMaxDeliver          int
 	HotKeyThreshold         int
@@ -170,7 +169,6 @@ func loadWorkerConfig() WorkerConfig {
 		SchedulerBatchSize:      toInt(getIntEnv("SCHEDULER_BATCH_SIZE", 100)),
 		LeaseTTLMS:              toInt(getIntEnv("LEASE_TTL_MS", 30000)),
 		LeaseRenewalIntervalMS:  toInt(getIntEnv("LEASE_RENEWAL_INTERVAL_MS", 10000)),
-		EffectDestinationURL:    getEnv("EFFECT_DESTINATION_URL", ""),
 		NATSAckWaitMS:           toInt(getIntEnv("NATS_ACK_WAIT_MS", 30000)),
 		NATSMaxDeliver:          getIntEnv("NATS_MAX_DELIVER", -1),
 		HotKeyThreshold:         toInt(getIntEnv("HOT_KEY_THRESHOLD", 1000)),
