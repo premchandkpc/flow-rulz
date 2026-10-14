@@ -68,6 +68,10 @@ fn decode_scheduled_event(row: &PgRow) -> Result<(EventEnvelope, i32)> {
         occurred_at: Utc::now(),
         data: payload,
         headers,
+        contract: None,
+        message_kind: None,
+        correlation_id: None,
+        causation_id: None,
     };
     Ok((event, retry_count))
 }
