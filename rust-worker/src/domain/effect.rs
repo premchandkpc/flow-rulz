@@ -1,0 +1,5 @@
+use super::{ContractRef, OutputRoute};
+use bytes::Bytes;
+#[derive(Debug, Clone)] pub enum EffectKind { PublishEvent, InvokeCommand, Reply, Schedule }
+#[derive(Debug, Clone)] pub struct EffectIntent { pub effect_id:String, pub tenant_id:String, pub source_event_id:String, pub execution_id:String, pub output_contract:ContractRef, pub route:OutputRoute, pub kind:EffectKind, pub payload:Bytes, pub payload_sha256:String, pub partition_key:String }
+impl EffectIntent { pub fn validate(&self)->Result<(),String>{if self.effect_id.is_empty()||self.execution_id.is_empty(){return Err("effect_id and execution_id are required".into())}if self.tenant_id.is_empty()||self.source_event_id.is_empty(){return Err("effect tenant and source event are required".into())}self.route.validate()?;if self.output_contract.name.is_empty()||self.output_contract.version.is_empty()||self.output_contract.content_hash.is_empty(){return Err("output contract must be immutable and versioned".into())}if self.partition_key.is_empty(){return Err("effect partition key is required".into())}Ok(())} }
