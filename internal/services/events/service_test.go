@@ -63,6 +63,10 @@ func (r activationStub) Get(context.Context, string, string) (*domain.RuleActiva
 
 type ruleRepositoryStub struct{ ports.RuleRepository }
 
+func (ruleRepositoryStub) Get(_ context.Context, tenantScope, ruleSet string, revision int64) (*domain.RuleRevision, error) {
+	return &domain.RuleRevision{TenantScope: tenantScope, RuleID: ruleSet, Revision: revision}, nil
+}
+
 func (ruleRepositoryStub) GetActive(context.Context, string, string) (*domain.RuleRevision, error) {
 	return &domain.RuleRevision{Revision: 1}, nil
 }
