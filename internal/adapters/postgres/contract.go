@@ -27,7 +27,12 @@ type contractSchemaRow struct {
 	Version       string          `db:"version"`
 	Namespace     string          `db:"namespace"`
 	Description   string          `db:"description"`
-	Fields        json.RawMessage `db:"fields"`
+	Fields          json.RawMessage `db:"fields"`
+	Kind            string          `db:"kind"`
+	ParentName      *string         `db:"parent_contract_name"`
+	ParentVersion   *string         `db:"parent_contract_version"`
+	AllowedChildren json.RawMessage `db:"allowed_children"`
+	SchemaHash      *string         `db:"schema_hash"`
 	Compatibility string          `db:"compatibility"`
 	Owner         string          `db:"owner"`
 	Deprecated    bool            `db:"deprecated"`
@@ -37,16 +42,26 @@ type contractSchemaRow struct {
 
 func (cr contractSchemaRow) toDomain() (*domain.ContractSchema, error) {
 	var fields map[string]domain.ContractField
-	if err := json.Unmarshal(cr.Fields, &fields); err != nil {
-		return nil, fmt.Errorf("unmarshal fields: %w", err)
-	}
+	if err := json.Unmarshal(cr.Fields, &fields); err != nil { return nil, fmt.Errorf("unmarshal fields: %w", err) }
+	var children []domain.ContractRef
+	if len(cr.AllowedChildren) > 0 { if err := json.Unmarshal(cr.AllowedChildren, &children); err != nil { return nil, fmt.Errorf("unmarshal allowed children: %w", err) } }
+	var parent *domain.ContractRef
+	if cr.ParentName != nil && cr.ParentVersion != nil { parent = &domain.ContractRef{Name:*cr.ParentName, Version:*cr.ParentVersion} }
+	kind := domain.ContractKind(cr.Kind)
+	if kind == "" { kind = domain.ContractKindEvent }
+	hash := ""
+	if cr.SchemaHash != nil { hash = *cr.SchemaHash }
 
 	return &domain.ContractSchema{
 		Name:          cr.Name,
 		Version:       cr.Version,
 		Namespace:     cr.Namespace,
 		Description:   cr.Description,
-		Fields:        fields,
+		Fields:          fields,
+		Kind:            kind,
+		Parent:          parent,
+		AllowedChildren: children,
+		SchemaHash:      hash,
 		Compatibility: cr.Compatibility,
 		Owner:         cr.Owner,
 		Deprecated:    cr.Deprecated,
@@ -55,41 +70,47 @@ func (cr contractSchemaRow) toDomain() (*domain.ContractSchema, error) {
 	}, nil
 }
 
-// Register inserts or updates a contract schema.
+// Register publishes an immutable contract version. A semantic change requires a new version.
 func (r *ContractRegistry) Register(ctx context.Context, schema *domain.ContractSchema) error {
+	if err := schema.NormalizeAndValidate(); err != nil { return fmt.Errorf("validate contract: %w", err) }
+	existing, err := r.Get(ctx, schema.Name, schema.Version)
+	if err != nil { return err }
+	if existing != nil {
+		if existing.SchemaHash == "" { if err := existing.NormalizeAndValidate(); err != nil { return fmt.Errorf("validate stored contract: %w", err) } }
+		if existing.SchemaHash != schema.SchemaHash { return fmt.Errorf("contract %s@%s is immutable; publish a new version", schema.Name, schema.Version) }
+		return nil
+	}
 	fieldsJSON, err := json.Marshal(schema.Fields)
-	if err != nil {
-		return fmt.Errorf("marshal fields: %w", err)
-	}
-
+	if err != nil { return fmt.Errorf("marshal fields: %w", err) }
+	childrenJSON, err := json.Marshal(schema.AllowedChildren)
+	if err != nil { return fmt.Errorf("marshal allowed children: %w", err) }
+	var parentName, parentVersion interface{}
+	if schema.Parent != nil { parentName, parentVersion = schema.Parent.Name, schema.Parent.Version }
 	_, err = r.db.Exec(ctx, `
-		INSERT INTO contract_schemas (name, version, namespace, description, fields, compatibility, owner, deprecated, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		ON CONFLICT (name, version) DO UPDATE SET
-			namespace = EXCLUDED.namespace,
-			description = EXCLUDED.description,
-			fields = EXCLUDED.fields,
-			compatibility = EXCLUDED.compatibility,
-			owner = EXCLUDED.owner,
-			deprecated = EXCLUDED.deprecated,
-			updated_at = EXCLUDED.updated_at
-	`, schema.Name, schema.Version, schema.Namespace, schema.Description, fieldsJSON, schema.Compatibility, schema.Owner, schema.Deprecated, schema.CreatedAt, schema.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("register contract: %w", err)
-	}
+		INSERT INTO contract_schemas (name, version, namespace, description, fields, kind, parent_contract_name, parent_contract_version, allowed_children, schema_hash, compatibility, owner, deprecated, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (name, version) DO NOTHING
+	`, schema.Name, schema.Version, schema.Namespace, schema.Description, fieldsJSON, string(schema.Kind), parentName, parentVersion, childrenJSON, schema.SchemaHash, schema.Compatibility, schema.Owner, schema.Deprecated, schema.CreatedAt, schema.UpdatedAt)
+	if err != nil { return fmt.Errorf("register contract: %w", err) }
+	// A concurrent registration may have won the insert race. Verify it did not publish a different schema.
+	existing, err = r.Get(ctx, schema.Name, schema.Version)
+	if err != nil { return err }
+	if existing == nil { return fmt.Errorf("contract registration was not persisted") }
+	if existing.SchemaHash == "" { if err := existing.NormalizeAndValidate(); err != nil { return err } }
+	if existing.SchemaHash != schema.SchemaHash { return fmt.Errorf("contract %s@%s is immutable; publish a new version", schema.Name, schema.Version) }
 	return nil
 }
 
 // Get retrieves a contract schema by name and version, or returns nil when it does not exist.
 func (r *ContractRegistry) Get(ctx context.Context, name, version string) (*domain.ContractSchema, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT name, version, namespace, description, fields, compatibility, owner, deprecated, created_at, updated_at
+		SELECT name, version, namespace, description, fields, kind, parent_contract_name, parent_contract_version, allowed_children, schema_hash, compatibility, owner, deprecated, created_at, updated_at
 		FROM contract_schemas
 		WHERE name = $1 AND version = $2
 	`, name, version)
 
 	var cr contractSchemaRow
-	err := row.Scan(&cr.Name, &cr.Version, &cr.Namespace, &cr.Description, &cr.Fields, &cr.Compatibility, &cr.Owner, &cr.Deprecated, &cr.CreatedAt, &cr.UpdatedAt)
+	err := row.Scan(&cr.Name, &cr.Version, &cr.Namespace, &cr.Description, &cr.Fields, &cr.Kind, &cr.ParentName, &cr.ParentVersion, &cr.AllowedChildren, &cr.SchemaHash, &cr.Compatibility, &cr.Owner, &cr.Deprecated, &cr.CreatedAt, &cr.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -131,7 +152,7 @@ func (r *ContractRegistry) List(ctx context.Context, name string) ([]*domain.Con
 	var schemas []*domain.ContractSchema
 	for rows.Next() {
 		var cr contractSchemaRow
-		if err := rows.Scan(&cr.Name, &cr.Version, &cr.Namespace, &cr.Description, &cr.Fields, &cr.Compatibility, &cr.Owner, &cr.Deprecated, &cr.CreatedAt, &cr.UpdatedAt); err != nil {
+		if err := rows.Scan(&cr.Name, &cr.Version, &cr.Namespace, &cr.Description, &cr.Fields, &cr.Kind, &cr.ParentName, &cr.ParentVersion, &cr.AllowedChildren, &cr.SchemaHash, &cr.Compatibility, &cr.Owner, &cr.Deprecated, &cr.CreatedAt, &cr.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan contract: %w", err)
 		}
 
