@@ -54,6 +54,12 @@ type EventConsumer interface {
 	Close() error
 }
 
+// SubjectPublisher publishes a message to a literal broker subject.
+// Effect destinations depend only on this capability, not consumer lifecycle APIs.
+type SubjectPublisher interface {
+	Publish(ctx context.Context, subject string, data []byte) error
+}
+
 // EventPublisher is the fixed publishing contract used by application services.
 // Callers provide a base subject and shard; adapters encode transport-specific routing.
 type EventPublisher interface {
