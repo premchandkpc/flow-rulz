@@ -1,0 +1,59 @@
+rule_set: order.delivered
+revision: 1
+mode: all_matches
+rules:
+  - id: notify_delivered
+    name: "Notify Order Delivered"
+    description: "Notify customer of successful delivery"
+    priority: 100
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            type: "order_delivered"
+            message: "Your order has been delivered! Tracking: {{$.tracking_number}}"
+            shipment_id: "{{$.shipment_id}}"
+            tracking_number: "{{$.tracking_number}}"
+            carrier: "{{$.carrier}}"
+            delivered_at: "{{$.delivered_at}}"
+            proof_of_delivery: "{{$.proof_of_delivery}}"
+            created_at: "{{now}}"
+  - id: trigger_review_request
+    name: "Trigger Review Request"
+    description: "Request customer review after successful delivery"
+    priority: 80
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "review.requested"
+          partition_key_policy: "inherit"
+          data:
+            review_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            requested_at: "{{now}}"
+  - id: update_order_status_completed
+    name: "Update Order Status to Completed"
+    description: "Mark order workflow as completed"
+    priority: 60
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "order.completed"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            shipment_id: "{{$.shipment_id}}"
+            completed_at: "{{$.delivered_at}}"

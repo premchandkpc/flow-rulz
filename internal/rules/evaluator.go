@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -170,8 +171,19 @@ func (e *Evaluator) evalLeaf(p domain.Predicate, data json.RawMessage, facts map
 	if p.Op == domain.OpNotExists {
 		return value == nil, nil
 	}
+	// Missing field semantics:
+	// - eq: false (missing != anything)
+	// - neq: true (missing != expected)
+	// - in: false (missing not in list)
+	// - not_in: true (missing not in list)
+	// - gt/gte/lt/lte: false (cannot compare missing)
 	if value == nil {
-		return false, nil
+		switch p.Op {
+		case domain.OpNeq, domain.OpNotIn:
+			return true, nil
+		default:
+			return false, nil
+		}
 	}
 	return evaluateLeafValue(p.Op, value, p.Value)
 }
@@ -233,7 +245,9 @@ func resolveFactPath(parts []string, facts map[string]json.RawMessage) (interfac
 		return nil, nil
 	}
 	var value interface{}
-	if err := json.Unmarshal(factData, &value); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(factData))
+	dec.UseNumber()
+	if err := dec.Decode(&value); err != nil {
 		return nil, fmt.Errorf("unmarshal fact %s: %w", factKey, err)
 	}
 	return walkObjectPath(value, parts[1:]), nil
@@ -241,7 +255,9 @@ func resolveFactPath(parts []string, facts map[string]json.RawMessage) (interfac
 
 func resolveEventDataPath(data json.RawMessage, parts []string) (interface{}, error) {
 	var value interface{}
-	if err := json.Unmarshal(data, &value); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	if err := dec.Decode(&value); err != nil {
 		return nil, fmt.Errorf("unmarshal data: %w", err)
 	}
 	return walkObjectPath(value, parts), nil
@@ -267,12 +283,150 @@ func walkObjectPath(value interface{}, parts []string) interface{} {
 }
 
 func compareEq(actual interface{}, expected interface{}) bool {
-	a := normalizeNumber(actual)
-	b := normalizeNumber(expected)
-	if a != nil && b != nil {
-		return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+	// Strict type equality: types must match exactly
+	// For numbers, compare numerically but only if both are numeric types
+	// Reject string<->number, bool<->string coercion
+
+	// json.Number vs json.Number: compare as decimal strings
+	if a, aok := actual.(json.Number); aok {
+		if b, bok := expected.(json.Number); bok {
+			return a.String() == b.String()
+		}
+		// json.Number vs other numeric type
+		if isNumeric(expected) {
+			return compareNumericEqual(actual, expected)
+		}
+		return false
 	}
-	return fmt.Sprintf("%v", actual) == fmt.Sprintf("%v", expected)
+
+	// int64 vs int64
+	if a, aok := actual.(int64); aok {
+		if b, bok := expected.(int64); bok {
+			return a == b
+		}
+		// int64 vs other numeric type
+		if isNumeric(expected) {
+			return compareNumericEqual(actual, expected)
+		}
+		return false
+	}
+
+	// float64 vs float64 (should not happen with UseNumber, but handle)
+	if a, aok := actual.(float64); aok {
+		if b, bok := expected.(float64); bok {
+			return a == b
+		}
+		// float64 vs other numeric type
+		if isNumeric(expected) {
+			return compareNumericEqual(actual, expected)
+		}
+		return false
+	}
+
+	// Cross-type numeric comparison: both numeric but different types
+	if isNumeric(actual) && isNumeric(expected) {
+		return compareNumericEqual(actual, expected)
+	}
+
+	// For all other types, use standard equality (no coercion)
+	return actual == expected
+}
+
+func isNumeric(v interface{}) bool {
+	switch v.(type) {
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64,
+		json.Number:
+		return true
+	}
+	return false
+}
+
+func compareNumericEqual(a, b interface{}) bool {
+	// Convert both to int64 if possible, otherwise float64
+	var ai, bi int64
+	var af, bf float64
+	var aIsInt, bIsInt bool
+
+	switch av := a.(type) {
+	case int:
+		ai, aIsInt = int64(av), true
+	case int8:
+		ai, aIsInt = int64(av), true
+	case int16:
+		ai, aIsInt = int64(av), true
+	case int32:
+		ai, aIsInt = int64(av), true
+	case int64:
+		ai, aIsInt = av, true
+	case uint:
+		ai, aIsInt = int64(av), true
+	case uint8:
+		ai, aIsInt = int64(av), true
+	case uint16:
+		ai, aIsInt = int64(av), true
+	case uint32:
+		ai, aIsInt = int64(av), true
+	case uint64:
+		ai, aIsInt = int64(av), true
+	case float32:
+		af = float64(av)
+	case float64:
+		if av == float64(int64(av)) {
+			ai, aIsInt = int64(av), true
+		} else {
+			af = av
+		}
+	case json.Number:
+		if iv, err := av.Int64(); err == nil {
+			ai, aIsInt = iv, true
+		} else if fv, err := av.Float64(); err == nil {
+			af = fv
+		}
+	}
+
+	switch bv := b.(type) {
+	case int:
+		bi, bIsInt = int64(bv), true
+	case int8:
+		bi, bIsInt = int64(bv), true
+	case int16:
+		bi, bIsInt = int64(bv), true
+	case int32:
+		bi, bIsInt = int64(bv), true
+	case int64:
+		bi, bIsInt = bv, true
+	case uint:
+		bi, bIsInt = int64(bv), true
+	case uint8:
+		bi, bIsInt = int64(bv), true
+	case uint16:
+		bi, bIsInt = int64(bv), true
+	case uint32:
+		bi, bIsInt = int64(bv), true
+	case uint64:
+		bi, bIsInt = int64(bv), true
+	case float32:
+		bf = float64(bv)
+	case float64:
+		if bv == float64(int64(bv)) {
+			bi, bIsInt = int64(bv), true
+		} else {
+			bf = bv
+		}
+	case json.Number:
+		if iv, err := bv.Int64(); err == nil {
+			bi, bIsInt = iv, true
+		} else if fv, err := bv.Float64(); err == nil {
+			bf = fv
+		}
+	}
+
+	if aIsInt && bIsInt {
+		return ai == bi
+	}
+	return af == bf
 }
 
 func normalizeNumber(v interface{}) interface{} {
@@ -346,13 +500,18 @@ func compareIn(val interface{}, list interface{}) bool {
 // Supported: {{new_id}}, {{now}}, {{$.path}} (event data, nested paths allowed).
 // A string that is exactly one {{$.path}} keeps the JSON type of the resolved
 // value; placeholders embedded in longer strings are rendered as text.
+// Returns error if any template variable cannot be resolved.
 func interpolateTemplates(data json.RawMessage, event *domain.EventEnvelope, childID string, clock ports.Clock) (json.RawMessage, error) {
 	var tree interface{}
 	if err := json.Unmarshal(data, &tree); err != nil {
 		return nil, err
 	}
 	ctx := templateContext{event: event, childID: childID, now: clock.Now().UTC().Format(time.RFC3339)}
-	return json.Marshal(ctx.walk(tree))
+	result, err := ctx.walk(tree)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(result)
 }
 
 var templatePlaceholder = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)
@@ -363,24 +522,32 @@ type templateContext struct {
 	now     string
 }
 
-func (c templateContext) walk(v interface{}) interface{} {
+func (c templateContext) walk(v interface{}) (interface{}, error) {
 	switch val := v.(type) {
 	case string:
 		return c.expand(val)
 	case map[string]interface{}:
 		out := make(map[string]interface{}, len(val))
 		for k, item := range val {
-			out[k] = c.walk(item)
+			w, err := c.walk(item)
+			if err != nil {
+				return nil, err
+			}
+			out[k] = w
 		}
-		return out
+		return out, nil
 	case []interface{}:
 		out := make([]interface{}, len(val))
 		for i, item := range val {
-			out[i] = c.walk(item)
+			w, err := c.walk(item)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = w
 		}
-		return out
+		return out, nil
 	default:
-		return val
+		return val, nil
 	}
 }
 
@@ -405,19 +572,24 @@ func (c templateContext) lookup(expr string) (interface{}, bool) {
 	return val, true
 }
 
-func (c templateContext) expand(s string) interface{} {
+func (c templateContext) expand(s string) (interface{}, error) {
 	if !strings.Contains(s, "{{") {
-		return s
+		return s, nil
 	}
 	if m := templatePlaceholder.FindStringSubmatch(s); m != nil && m[0] == s {
-		if val, ok := c.lookup(m[1]); ok {
-			return val
+		// Exact single placeholder - preserve type
+		val, ok := c.lookup(m[1])
+		if !ok {
+			return nil, fmt.Errorf("unresolved template variable: %s", m[1])
 		}
-		return ""
+		return val, nil
 	}
-	return templatePlaceholder.ReplaceAllStringFunc(s, func(match string) string {
+	// Embedded placeholders - must all resolve to strings
+	var unresolved bool
+	result := templatePlaceholder.ReplaceAllStringFunc(s, func(match string) string {
 		val, ok := c.lookup(templatePlaceholder.FindStringSubmatch(match)[1])
 		if !ok {
+			unresolved = true
 			return ""
 		}
 		if str, isStr := val.(string); isStr {
@@ -425,10 +597,15 @@ func (c templateContext) expand(s string) interface{} {
 		}
 		encoded, err := json.Marshal(val)
 		if err != nil {
+			unresolved = true
 			return ""
 		}
 		return string(encoded)
 	})
+	if unresolved {
+		return nil, fmt.Errorf("unresolved template variable in: %s", s)
+	}
+	return result, nil
 }
 
 func (e *Evaluator) buildEffect(revision *domain.RuleRevision, event *domain.EventEnvelope, ruleID string, actionIndex int, action domain.Action) (domain.Effect, error) {
@@ -513,13 +690,44 @@ func resolveEmitEventPartitionKey(action *domain.EmitEventAction, event *domain.
 			if err != nil || value == nil {
 				return "", fmt.Errorf("resolve partition key from path %s: %w", action.PartitionKeyPath, err)
 			}
-			partitionKey = fmt.Sprintf("%v", value)
+			pk, err := formatPartitionKeyValue(value)
+			if err != nil {
+				return "", err
+			}
+			partitionKey = pk
 		}
 	}
 	if partitionKey == "" {
 		return "", fmt.Errorf("partition key resolution resulted in empty value for policy %s", policy)
 	}
 	return partitionKey, nil
+}
+
+// formatPartitionKeyValue formats a value as a partition key string.
+// Numbers are formatted as plain decimal (no scientific notation).
+// Only string and integer numbers are accepted; floats, bools, objects are rejected.
+func formatPartitionKeyValue(v interface{}) (string, error) {
+	switch t := v.(type) {
+	case string:
+		return t, nil
+	case json.Number:
+		// json.Number preserves the original decimal representation
+		// Reject floats (numbers with decimal point or exponent)
+		if strings.ContainsAny(t.String(), ".eE") {
+			return "", fmt.Errorf("partition key must be an integer, got float %s", t.String())
+		}
+		return t.String(), nil
+	case int64:
+		return strconv.FormatInt(t, 10), nil
+	case float64:
+		// Should not happen with UseNumber, but handle defensively
+		if t == float64(int64(t)) {
+			return strconv.FormatInt(int64(t), 10), nil
+		}
+		return "", fmt.Errorf("partition key must be an integer, got float %v", t)
+	default:
+		return "", fmt.Errorf("partition key must be string or integer, got %T", v)
+	}
 }
 
 func buildChildEventEnvelope(

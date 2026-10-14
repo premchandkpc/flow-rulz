@@ -1,0 +1,74 @@
+rule_set: order.delivery_failed
+revision: 1
+mode: all_matches
+rules:
+  - id: notify_delivery_failed
+    name: "Notify Delivery Failed"
+    description: "Notify customer of delivery failure with next steps"
+    priority: 100
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            type: "delivery_failed"
+            message: "Delivery failed: {{$.failure_reason}}. Retry attempt: {{$.retry_count}}"
+            shipment_id: "{{$.shipment_id}}"
+            tracking_number: "{{$.tracking_number}}"
+            carrier: "{{$.carrier}}"
+            failure_reason: "{{$.failure_reason}}"
+            retry_count: "{{$.retry_count}}"
+            created_at: "{{now}}"
+  - id: schedule_delivery_retry
+    name: "Schedule Delivery Retry"
+    description: "Schedule automatic delivery retry (up to 3 times)"
+    priority: 80
+    when:
+      all:
+        - path: "$.retry_count"
+          op: "lt"
+          value: 3
+        - path: "$.order_id"
+          op: "exists"
+    then:
+      - emit_event:
+          type: "delivery.retry_scheduled"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            shipment_id: "{{$.shipment_id}}"
+            tracking_number: "{{$.tracking_number}}"
+            carrier: "{{$.carrier}}"
+            retry_count: "{{$.retry_count}}"
+            scheduled_at: "{{now}}"
+            retry_after_hours: 4
+  - id: initiate_refund_for_failed_delivery
+    name: "Initiate Refund for Failed Delivery"
+    description: "Start refund when delivery retries are exhausted"
+    priority: 60
+    when:
+      all:
+        - path: "$.retry_count"
+          op: "gte"
+          value: 3
+        - path: "$.order_id"
+          op: "exists"
+    then:
+      - emit_event:
+          type: "order.refund_initiated"
+          partition_key_policy: "inherit"
+          data:
+            refund_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            amount: "{{$.amount}}"
+            currency: "USD"
+            reason: "Delivery failed after maximum retries"
+            payment_id: "{{$.payment_id}}"
+            initiated_at: "{{now}}"

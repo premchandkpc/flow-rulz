@@ -1,0 +1,42 @@
+name: payment.refund_requested
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event to request refund payment processing
+fields:
+  refund_id:
+    type: string
+    description: Refund identifier
+    required: true
+  order_id:
+    type: string
+    description: Related order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer identifier
+    required: true
+  amount:
+    type: number
+    description: Refund amount in cents
+    required: true
+  currency:
+    type: string
+    description: Currency code
+    required: true
+    default: "USD"
+  original_payment_id:
+    type: string
+    description: Original payment identifier
+    required: true
+  reason:
+    type: string
+    description: Refund reason
+    required: true
+  requested_at:
+    type: string
+    format: date-time
+    description: Refund request timestamp
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

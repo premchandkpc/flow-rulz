@@ -1,0 +1,34 @@
+name: inventory.check
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event to request inventory check
+fields:
+  check_id:
+    type: string
+    description: Unique check identifier
+    required: true
+  order_id:
+    type: string
+    description: Related order identifier
+    required: true
+  items:
+    type: array
+    description: Order items to check
+    required: true
+    items:
+      type: object
+      properties:
+        product_id:
+          type: string
+          required: true
+        quantity:
+          type: integer
+          required: true
+  requested_at:
+    type: string
+    format: date-time
+    description: Check request timestamp
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

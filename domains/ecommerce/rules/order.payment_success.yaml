@@ -1,0 +1,66 @@
+rule_set: order.payment_success
+revision: 1
+mode: all_matches
+rules:
+  - id: notify_payment_success
+    name: "Notify Payment Success"
+    description: "Notify customer of successful payment"
+    priority: 100
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            type: "payment_success"
+            message: "Your payment of {{$.amount}} {{$.currency}} was successful"
+            payment_id: "{{$.payment_id}}"
+            payment_method: "{{$.payment_method}}"
+            created_at: "{{now}}"
+  - id: trigger_fraud_check_for_high_value
+    name: "Trigger Fraud Check for High Value Orders"
+    description: "Run fraud check on high-value payments"
+    priority: 80
+    when:
+      all:
+        - path: "$.amount"
+          op: "gte"
+          value: 50000
+        - path: "$.order_id"
+          op: "exists"
+    then:
+      - emit_event:
+          type: "fraud.check"
+          partition_key_policy: "inherit"
+          data:
+            check_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            payment_method: "{{$.payment_method}}"
+            created_at: "{{now}}"
+  - id: auto_confirm_low_value
+    name: "Auto Confirm Low Value Orders"
+    description: "Auto-confirm orders under $500 without fraud check"
+    priority: 60
+    when:
+      all:
+        - path: "$.amount"
+          op: "lt"
+          value: 50000
+        - path: "$.order_id"
+          op: "exists"
+    then:
+      - emit_event:
+          type: "order.confirmed"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            confirmed_at: "{{now}}"

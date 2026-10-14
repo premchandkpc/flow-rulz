@@ -1,0 +1,82 @@
+name: notification.requested
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event to request a customer notification
+fields:
+  notification_id:
+    type: string
+    description: Unique notification identifier
+    required: true
+  order_id:
+    type: string
+    description: Related order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer to notify
+    required: true
+  type:
+    type: string
+    description: Notification type (processing_started, payment_pending, payment_failed, payment_success, order_processed, delivery_started, delivery_failed, refund_initiated, order_delivered)
+    required: true
+  message:
+    type: string
+    description: Notification message
+    required: true
+  payment_id:
+    type: string
+    description: Related payment identifier
+    required: false
+  shipment_id:
+    type: string
+    description: Related shipment identifier
+    required: false
+  tracking_number:
+    type: string
+    description: Tracking number for delivery notifications
+    required: false
+  carrier:
+    type: string
+    description: Carrier for delivery notifications
+    required: false
+  estimated_delivery:
+    type: string
+    format: date-time
+    description: Estimated delivery timestamp
+    required: false
+  failure_reason:
+    type: string
+    description: Failure reason for failed notifications
+    required: false
+  retry_count:
+    type: integer
+    description: Retry count for retry notifications
+    required: false
+  proof_of_delivery:
+    type: string
+    description: Proof of delivery for delivered notifications
+    required: false
+  refund_id:
+    type: string
+    description: Related refund identifier
+    required: false
+  amount:
+    type: number
+    description: Amount for payment/refund notifications
+    required: false
+  currency:
+    type: string
+    description: Currency code
+    required: false
+  payment_method:
+    type: string
+    description: Payment method
+    required: false
+  created_at:
+    type: string
+    format: date-time
+    description: Notification creation timestamp
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

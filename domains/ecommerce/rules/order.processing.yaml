@@ -1,0 +1,38 @@
+rule_set: order.processing
+revision: 1
+mode: all_matches
+rules:
+  - id: notify_processing_started
+    name: "Notify Processing Started"
+    description: "Send notification that order processing has started"
+    priority: 100
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            type: "processing_started"
+            message: "Your order is now being processed"
+            created_at: "{{now}}"
+  - id: check_inventory
+    name: "Check Inventory Availability"
+    description: "Verify all items are in stock before proceeding"
+    priority: 50
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "inventory.check"
+          partition_key_policy: "inherit"
+          data:
+            check_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            items: "{{$.items}}"
+            requested_at: "{{now}}"

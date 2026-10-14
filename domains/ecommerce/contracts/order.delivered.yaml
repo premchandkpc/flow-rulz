@@ -1,0 +1,37 @@
+name: order.delivered
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when order is successfully delivered
+fields:
+  order_id:
+    type: string
+    description: Unique order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer who placed the order
+    required: true
+  shipment_id:
+    type: string
+    description: Shipment identifier
+    required: true
+  tracking_number:
+    type: string
+    description: Carrier tracking number
+    required: true
+  carrier:
+    type: string
+    description: Delivery carrier
+    required: true
+  delivered_at:
+    type: string
+    format: date-time
+    description: Delivery completion timestamp
+    required: true
+  proof_of_delivery:
+    type: string
+    description: Proof of delivery (photo, signature, etc.)
+    required: false
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

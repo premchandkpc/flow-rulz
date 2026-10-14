@@ -1,0 +1,33 @@
+name: delivery.confirmation_scheduled
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event to schedule delivery confirmation check
+fields:
+  order_id:
+    type: string
+    description: Related order identifier
+    required: true
+  shipment_id:
+    type: string
+    description: Shipment identifier
+    required: true
+  tracking_number:
+    type: string
+    description: Tracking number
+    required: true
+  carrier:
+    type: string
+    description: Carrier name
+    required: true
+  check_after_hours:
+    type: integer
+    description: Hours after dispatch to check
+    required: true
+  scheduled_at:
+    type: string
+    format: date-time
+    description: Schedule timestamp
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

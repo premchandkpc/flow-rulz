@@ -1,0 +1,29 @@
+name: payment.retry_scheduled
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event to schedule payment retry
+fields:
+  order_id:
+    type: string
+    description: Related order identifier
+    required: true
+  payment_id:
+    type: string
+    description: Payment identifier
+    required: true
+  retry_count:
+    type: integer
+    description: Current retry attempt number
+    required: true
+  scheduled_at:
+    type: string
+    format: date-time
+    description: Retry schedule timestamp
+    required: true
+  retry_after_minutes:
+    type: integer
+    description: Minutes until retry
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

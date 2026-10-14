@@ -1,0 +1,43 @@
+name: order.payment_failed
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when payment fails
+fields:
+  order_id:
+    type: string
+    description: Unique order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer who placed the order
+    required: true
+  payment_id:
+    type: string
+    description: Payment identifier
+    required: true
+  amount:
+    type: number
+    description: Payment amount in cents
+    required: true
+  currency:
+    type: string
+    description: Currency code
+    required: true
+    default: "USD"
+  failure_reason:
+    type: string
+    description: Reason for payment failure
+    required: true
+  failed_at:
+    type: string
+    format: date-time
+    description: Payment failure timestamp
+    required: true
+  retry_count:
+    type: integer
+    description: Number of retry attempts
+    required: true
+    default: 0
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

@@ -1,0 +1,43 @@
+rule_set: order.processed
+revision: 1
+mode: all_matches
+rules:
+  - id: notify_order_processed
+    name: "Notify Order Processed"
+    description: "Notify customer that order is processed and ready for shipment"
+    priority: 100
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            type: "order_processed"
+            message: "Your order has been processed and is ready for shipment"
+            processed_at: "{{$.processed_at}}"
+            created_at: "{{now}}"
+  - id: request_shipment
+    name: "Request Shipment"
+    description: "Create shipment request for processed order"
+    priority: 80
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "shipment.requested"
+          partition_key_policy: "inherit"
+          data:
+            shipment_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            warehouse_id: "warehouse-primary"
+            items: "{{$.items}}"
+            shipping_address: "{{$.shipping_address}}"
+            shipping_method: "standard"
+            requested_at: "{{now}}"

@@ -190,8 +190,12 @@ func (c *Compiler) compileRules(rawRules []rawRule) ([]domain.CompiledRule, erro
 		}
 		compiled = append(compiled, compiledRule)
 	}
-	sort.Slice(compiled, func(i, j int) bool {
-		return compiled[i].Priority > compiled[j].Priority
+	// Use stable sort with rule ID as tie-break for deterministic ordering.
+	sort.SliceStable(compiled, func(i, j int) bool {
+		if compiled[i].Priority != compiled[j].Priority {
+			return compiled[i].Priority > compiled[j].Priority
+		}
+		return compiled[i].ID < compiled[j].ID
 	})
 	return compiled, nil
 }
@@ -274,6 +278,11 @@ func (c *Compiler) validatePredicate(p domain.Predicate, depth int) error {
 	if hasLeaf {
 		if !domain.ValidOp(p.Op) {
 			return domain.ErrInvalidOperator
+		}
+		// Reject $.facts.* paths at compile time since no facts provider is wired.
+		// If a facts provider is added in the future, this check can be relaxed.
+		if strings.HasPrefix(p.Path, "$.facts.") {
+			return fmt.Errorf("path %q references $.facts.* which is not supported: no facts provider is configured", p.Path)
 		}
 		return nil
 	}

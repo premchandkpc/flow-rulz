@@ -1,0 +1,21 @@
+name: order.processed
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when order is processed and ready for shipment
+fields:
+  order_id:
+    type: string
+    description: Unique order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer who placed the order
+    required: true
+  processed_at:
+    type: string
+    format: date-time
+    description: Order processing completion timestamp
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

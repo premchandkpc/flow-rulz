@@ -3,6 +3,7 @@ package rules
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
@@ -439,4 +440,215 @@ func TestCompilerRejectsEarlyOtherwiseInFirstMatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected first_match rule set with an early otherwise to be rejected")
 	}
+}
+
+func TestResolvePathUsesNumber(t *testing.T) {
+	// Test that large integers preserve precision when resolved from event data
+	data := json.RawMessage(`{"account_id": 123456789, "large_id": 9007199254740993}`)
+
+	val, err := resolvePath("$.account_id", data, nil)
+	if err != nil {
+		t.Fatalf("resolvePath error: %v", err)
+	}
+
+	// Should be json.Number, not float64
+	num, ok := val.(json.Number)
+	if !ok {
+		t.Fatalf("expected json.Number, got %T: %v", val, val)
+	}
+
+	if num.String() != "123456789" {
+		t.Errorf("expected '123456789', got %q", num.String())
+	}
+
+	val2, err := resolvePath("$.large_id", data, nil)
+	if err != nil {
+		t.Fatalf("resolvePath error: %v", err)
+	}
+
+	num2, ok := val2.(json.Number)
+	if !ok {
+		t.Fatalf("expected json.Number for large_id, got %T: %v", val2, val2)
+	}
+
+	if num2.String() != "9007199254740993" {
+		t.Errorf("expected '9007199254740993', got %q", num2.String())
+	}
+}
+
+func TestResolveEmitEventPartitionKeyFormatsNumbersCorrectly(t *testing.T) {
+	// Test that partition keys from numeric data are formatted as plain decimal
+	action := &domain.EmitEventAction{
+		Type:               "child.event",
+		PartitionKeyPolicy: domain.PartitionKeyPolicyFromData,
+		PartitionKeyPath:   "$.account_id",
+		Data:               json.RawMessage(`{}`),
+	}
+
+	event := &domain.EventEnvelope{
+		ID:           "parent-1",
+		Type:         "parent.event",
+		TenantID:     "tenant-a",
+		PartitionKey: "parent-key",
+		Data:         json.RawMessage(`{"account_id": 123456789}`),
+	}
+
+	partitionKey, err := resolveEmitEventPartitionKey(action, event)
+	if err != nil {
+		t.Fatalf("resolveEmitEventPartitionKey error: %v", err)
+	}
+
+	// Should be plain decimal, not scientific notation
+	if partitionKey != "123456789" {
+		t.Errorf("expected '123456789', got %q", partitionKey)
+	}
+
+	// Test with large integer (above 2^53)
+	event2 := &domain.EventEnvelope{
+		ID:           "parent-2",
+		Type:         "parent.event",
+		TenantID:     "tenant-a",
+		PartitionKey: "parent-key",
+		Data:         json.RawMessage(`{"account_id": 9007199254740993}`),
+	}
+
+	partitionKey2, err := resolveEmitEventPartitionKey(action, event2)
+	if err != nil {
+		t.Fatalf("resolveEmitEventPartitionKey error: %v", err)
+	}
+
+	if partitionKey2 != "9007199254740993" {
+		t.Errorf("expected '9007199254740993', got %q", partitionKey2)
+	}
+}
+
+func TestCompareEqStrictTypes(t *testing.T) {
+	// Test strict equality: same JSON type required
+	tests := []struct {
+		name     string
+		actual   interface{}
+		expected interface{}
+		want     bool
+	}{
+		{"string vs number: '1' vs 1", "1", 1, false},
+		{"string vs number: '1' vs json.Number", "1", json.Number("1"), false},
+		{"number vs number: 1 vs 1", 1, 1, true},
+		{"json.Number vs json.Number: '1' vs '1'", json.Number("1"), json.Number("1"), true},
+		{"bool vs string: true vs 'true'", true, "true", false},
+		{"float64 vs int: 1.0 vs 1", 1.0, 1, true}, // numeric equality
+		{"large int vs same", json.Number("9007199254740993"), json.Number("9007199254740993"), true},
+		{"large int vs different", json.Number("9007199254740993"), json.Number("9007199254740992"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := compareEq(tt.actual, tt.expected)
+			if got != tt.want {
+				t.Errorf("compareEq(%v, %v) = %v, want %v", tt.actual, tt.expected, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEvalLeafMissingFieldSemantics(t *testing.T) {
+	// Test missing field semantics for different operators
+	// data has no "missing_field"
+	data := json.RawMessage(`{"existing": "value"}`)
+
+	tests := []struct {
+		name     string
+		op       domain.Operator
+		expected bool // what the operator should return for missing field
+	}{
+		{"eq missing", domain.OpEq, false},
+		{"neq missing", domain.OpNeq, true}, // not equal to anything (including missing)
+		{"in missing", domain.OpIn, false},
+		{"not_in missing", domain.OpNotIn, true}, // not in list
+		{"gt missing", domain.OpGt, false},
+		{"gte missing", domain.OpGte, false},
+		{"lt missing", domain.OpLt, false},
+		{"lte missing", domain.OpLte, false},
+		{"exists missing", domain.OpExists, false},
+		{"not_exists missing", domain.OpNotExists, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := domain.Predicate{
+				Path:  "$.missing_field",
+				Op:    tt.op,
+				Value: "anything",
+			}
+
+			got, err := evalLeafForTest(p, data, nil)
+			if err != nil {
+				t.Fatalf("evalLeaf error: %v", err)
+			}
+			if got != tt.expected {
+				t.Errorf("operator %s on missing field = %v, want %v", tt.op, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestEvalLeafWrongTypeIsError(t *testing.T) {
+	// Type mismatch (e.g., "abc" > 5) should return an error, not false
+	data := json.RawMessage(`{"field": "abc"}`)
+	p := domain.Predicate{
+		Path:  "$.field",
+		Op:    domain.OpGt,
+		Value: 5,
+	}
+
+	_, err := evalLeafForTest(p, data, nil)
+	if err == nil {
+		t.Fatal("expected error for type mismatch, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot compare") {
+		t.Errorf("expected 'cannot compare' error, got: %v", err)
+	}
+}
+
+func TestTemplateUnresolvedPathIsError(t *testing.T) {
+	compiler := NewCompiler(DefaultLimits())
+	revision, err := compiler.Compile(json.RawMessage(`{
+		"rule_set": "order.created", "revision": 1, "mode": "first_match",
+		"rules": [{
+			"id": "r1", "priority": 1,
+			"when": {"path": "$.total", "op": "gte", "value": 1},
+			"then": [{
+				"emit_event": {
+					"type": "child.event",
+					"partition_key": "key",
+					"data": {"ref": "{{$.nonexistent_field}}"}
+				}
+			}]
+		}]
+	}`))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+
+	evaluator := NewEvaluator(domain.SystemClock{})
+	event := &domain.EventEnvelope{
+		ID:           "evt-1",
+		Type:         "order.created",
+		TenantID:     "tenant-a",
+		PartitionKey: "key",
+		Data:         json.RawMessage(`{"total": 100}`),
+	}
+
+	_, err = evaluator.Evaluate(revision, event, nil)
+	if err == nil {
+		t.Fatal("expected error for unresolved template path, got nil")
+	}
+	if !strings.Contains(err.Error(), "unresolved template") {
+		t.Errorf("expected 'unresolved template' error, got: %v", err)
+	}
+}
+
+// Helper to call unexported evalLeaf for testing
+func evalLeafForTest(p domain.Predicate, data json.RawMessage, facts map[string]json.RawMessage) (bool, error) {
+	e := &Evaluator{clock: domain.SystemClock{}}
+	return e.evalLeaf(p, data, facts)
 }

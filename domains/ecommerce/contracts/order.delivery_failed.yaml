@@ -1,0 +1,42 @@
+name: order.delivery_failed
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when delivery fails
+fields:
+  order_id:
+    type: string
+    description: Unique order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer who placed the order
+    required: true
+  shipment_id:
+    type: string
+    description: Shipment identifier
+    required: true
+  tracking_number:
+    type: string
+    description: Carrier tracking number
+    required: true
+  carrier:
+    type: string
+    description: Delivery carrier
+    required: true
+  failure_reason:
+    type: string
+    description: Reason for delivery failure
+    required: true
+  failed_at:
+    type: string
+    format: date-time
+    description: Delivery failure timestamp
+    required: true
+  retry_count:
+    type: integer
+    description: Number of delivery retry attempts
+    required: true
+    default: 0
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

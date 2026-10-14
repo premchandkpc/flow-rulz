@@ -1,0 +1,44 @@
+rule_set: order.delivering
+revision: 1
+mode: all_matches
+rules:
+  - id: notify_delivery_started
+    name: "Notify Delivery Started"
+    description: "Notify customer that order is out for delivery with tracking"
+    priority: 100
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            type: "delivery_started"
+            message: "Your order is out for delivery with tracking {{$.tracking_number}} via {{$.carrier}}"
+            shipment_id: "{{$.shipment_id}}"
+            tracking_number: "{{$.tracking_number}}"
+            carrier: "{{$.carrier}}"
+            estimated_delivery: "{{$.estimated_delivery}}"
+            created_at: "{{now}}"
+  - id: schedule_delivery_confirmation
+    name: "Schedule Delivery Confirmation"
+    description: "Schedule automatic delivery confirmation check"
+    priority: 50
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "delivery.confirmation_scheduled"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            shipment_id: "{{$.shipment_id}}"
+            tracking_number: "{{$.tracking_number}}"
+            carrier: "{{$.carrier}}"
+            check_after_hours: 24
+            scheduled_at: "{{now}}"

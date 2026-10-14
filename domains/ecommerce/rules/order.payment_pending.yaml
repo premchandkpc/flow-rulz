@@ -1,0 +1,41 @@
+rule_set: order.payment_pending
+revision: 1
+mode: all_matches
+rules:
+  - id: send_payment_pending_notification
+    name: "Send Payment Pending Notification"
+    description: "Notify customer that payment is being processed"
+    priority: 100
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            type: "payment_pending"
+            message: "Your payment is being processed"
+            payment_id: "{{$.payment_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            created_at: "{{now}}"
+  - id: trigger_payment_timeout
+    name: "Trigger Payment Timeout"
+    description: "Schedule a timeout check for pending payments"
+    priority: 50
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "payment.timeout_scheduled"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            payment_id: "{{$.payment_id}}"
+            timeout_at: "{{now}}"
+            timeout_minutes: 30

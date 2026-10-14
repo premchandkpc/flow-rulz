@@ -1,0 +1,25 @@
+name: payment.timeout_scheduled
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event to schedule payment timeout check
+fields:
+  order_id:
+    type: string
+    description: Related order identifier
+    required: true
+  payment_id:
+    type: string
+    description: Payment identifier
+    required: true
+  timeout_at:
+    type: string
+    format: date-time
+    description: Timeout check timestamp
+    required: true
+  timeout_minutes:
+    type: integer
+    description: Timeout duration in minutes
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

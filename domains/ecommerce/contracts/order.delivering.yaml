@@ -1,0 +1,58 @@
+name: order.delivering
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event emitted when order is out for delivery
+fields:
+  order_id:
+    type: string
+    description: Unique order identifier
+    required: true
+  customer_id:
+    type: string
+    description: Customer who placed the order
+    required: true
+  shipment_id:
+    type: string
+    description: Shipment identifier
+    required: true
+  tracking_number:
+    type: string
+    description: Carrier tracking number
+    required: true
+  carrier:
+    type: string
+    description: Delivery carrier
+    required: true
+  shipping_address:
+    type: object
+    description: Delivery address
+    required: true
+    properties:
+      street:
+        type: string
+        required: true
+      city:
+        type: string
+        required: true
+      state:
+        type: string
+        required: true
+      postal_code:
+        type: string
+        required: true
+      country:
+        type: string
+        required: true
+  dispatched_at:
+    type: string
+    format: date-time
+    description: Dispatch timestamp
+    required: true
+  estimated_delivery:
+    type: string
+    format: date-time
+    description: Estimated delivery timestamp
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false

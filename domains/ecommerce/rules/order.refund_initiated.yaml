@@ -1,0 +1,64 @@
+rule_set: order.refund_initiated
+revision: 1
+mode: all_matches
+rules:
+  - id: notify_refund_initiated
+    name: "Notify Refund Initiated"
+    description: "Notify customer that refund has been initiated"
+    priority: 100
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "notification.requested"
+          partition_key_policy: "inherit"
+          data:
+            notification_id: "{{new_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            type: "refund_initiated"
+            message: "Your refund of {{$.amount}} {{$.currency}} has been initiated. Reason: {{$.reason}}"
+            refund_id: "{{$.refund_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            reason: "{{$.reason}}"
+            created_at: "{{now}}"
+  - id: process_refund_payment
+    name: "Process Refund Payment"
+    description: "Trigger the actual refund payment processing"
+    priority: 80
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "payment.refund_requested"
+          partition_key_policy: "inherit"
+          data:
+            refund_id: "{{$.refund_id}}"
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            original_payment_id: "{{$.payment_id}}"
+            reason: "{{$.reason}}"
+            requested_at: "{{now}}"
+  - id: update_order_status_refunded
+    name: "Update Order Status to Refunded"
+    description: "Mark order as refunded in the system"
+    priority: 60
+    when:
+      path: "$.order_id"
+      op: "exists"
+    then:
+      - emit_event:
+          type: "order.refunded"
+          partition_key_policy: "inherit"
+          data:
+            order_id: "{{$.order_id}}"
+            customer_id: "{{$.customer_id}}"
+            refund_id: "{{$.refund_id}}"
+            amount: "{{$.amount}}"
+            currency: "{{$.currency}}"
+            refunded_at: "{{now}}"

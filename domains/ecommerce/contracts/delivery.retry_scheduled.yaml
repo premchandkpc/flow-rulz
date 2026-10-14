@@ -1,0 +1,37 @@
+name: delivery.retry_scheduled
+version: "1.0"
+namespace: com.example.ecommerce
+description: Event to schedule delivery retry
+fields:
+  order_id:
+    type: string
+    description: Related order identifier
+    required: true
+  shipment_id:
+    type: string
+    description: Shipment identifier
+    required: true
+  tracking_number:
+    type: string
+    description: Tracking number
+    required: true
+  carrier:
+    type: string
+    description: Carrier name
+    required: true
+  retry_count:
+    type: integer
+    description: Current retry attempt number
+    required: true
+  scheduled_at:
+    type: string
+    format: date-time
+    description: Retry schedule timestamp
+    required: true
+  retry_after_hours:
+    type: integer
+    description: Hours until retry
+    required: true
+compatibility: BACKWARD
+owner: ecommerce-team
+deprecated: false
