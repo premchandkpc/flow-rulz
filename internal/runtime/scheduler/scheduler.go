@@ -211,6 +211,8 @@ func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent
 		TenantID:     evt.TenantID,
 		PartitionKey: evt.PartitionKey,
 		WorkflowID:   evt.WorkflowID,
+		CorrelationID: evt.Headers["flowrulz_correlation_id"],
+		CausationID: evt.Headers["flowrulz_parent_event_id"],
 		OccurredAt:   s.clock.Now(),
 		Data:         evt.Payload,
 		Headers:      evt.Headers,
