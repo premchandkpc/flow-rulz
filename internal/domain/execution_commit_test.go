@@ -168,3 +168,11 @@ func TestExecutionCommitRejectsDuplicateEffectIDs(t *testing.T) {
 		t.Fatal("execution commit with duplicate effect IDs accepted")
 	}
 }
+
+func TestPayloadSHA256CanonicalizesWhitespaceAndObjectKeyOrder(t *testing.T) {
+	first := json.RawMessage(`{"a":1,"b":{"x":true,"y":false}}`)
+	second := json.RawMessage(` { "b" : { "y":false, "x":true }, "a" : 1 } `)
+	if payloadSHA256(first) != payloadSHA256(second) {
+		t.Fatal("equivalent JSON payloads must have the same canonical hash")
+	}
+}

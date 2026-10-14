@@ -847,7 +847,7 @@ mod tests {
         );
         let effect_payload = Bytes::from_static(br#"{"type":"orders.approved"}"#);
         let effect = crate::domain::EffectIntent {
-            effect_id,
+            effect_id: effect_id.clone(),
             effect_key: effect_key.to_string(),
             tenant_id: tenant_id.to_string(),
             source_event_id: event_id.to_string(),
@@ -891,7 +891,7 @@ mod tests {
         assert_eq!(records[1].kind, LogRecordKind::ExecutionCommitted);
         let payload: serde_json::Value = serde_json::from_slice(&records[1].payload).unwrap();
         assert_eq!(payload["effects"].as_array().unwrap().len(), 1);
-        assert_eq!(payload["effects"][0]["effect_id"], "effect-1");
+        assert_eq!(payload["effects"][0]["effect_id"], effect_id);
         let _ = fs::remove_dir_all(dir);
     }
 
