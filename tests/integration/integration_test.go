@@ -650,5 +650,7 @@ func (mockBinding) ListByRuleSet(context.Context, string, string) ([]*domain.Con
 }
 
 func (mockBinding) Save(context.Context, *domain.ContractBinding) error { return nil }
-func (mockBinding) Get(context.Context, string, string) (*domain.ContractBinding, error) { return nil, nil }
+func (mockBinding) Get(context.Context, string, string) (*domain.ContractBinding, error) {
+	return nil, nil
+}
 func (mockBinding) Delete(context.Context, string, string) error { return nil }

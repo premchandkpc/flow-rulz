@@ -30,16 +30,16 @@ func (r *BindingRepository) collection() *mongo.Collection {
 
 // BindingDoc represents a contract binding in MongoDB.
 type BindingDoc struct {
-	ID               string                    `bson:"_id"`
-	TenantID         string                    `bson:"tenant_id"`
-	ContractName     string                    `bson:"contract_name"`
-	ContractVersion  string                    `bson:"contract_version"`
-	ContractHash     string                    `bson:"contract_hash"`
-	RuleSet          string                    `bson:"rule_set"`
-	Priority         int                       `bson:"priority"`
-	ActivationPolicy string                    `bson:"activation_policy"`
-	CreatedAt        time.Time                 `bson:"created_at"`
-	UpdatedAt        time.Time                 `bson:"updated_at"`
+	ID               string    `bson:"_id"`
+	TenantID         string    `bson:"tenant_id"`
+	ContractName     string    `bson:"contract_name"`
+	ContractVersion  string    `bson:"contract_version"`
+	ContractHash     string    `bson:"contract_hash"`
+	RuleSet          string    `bson:"rule_set"`
+	Priority         int       `bson:"priority"`
+	ActivationPolicy string    `bson:"activation_policy"`
+	CreatedAt        time.Time `bson:"created_at"`
+	UpdatedAt        time.Time `bson:"updated_at"`
 }
 
 // ToDomain converts to domain.ContractBinding.
@@ -111,8 +111,8 @@ func (r *BindingRepository) Get(ctx context.Context, tenantID, bindingID string)
 func (r *BindingRepository) ListByContract(ctx context.Context, tenantID, contractName, contractVersion string) ([]*domain.ContractBinding, error) {
 	coll := r.collection()
 	cursor, err := coll.Find(ctx, bson.M{
-		"tenant_id":       tenantID,
-		"contract_name":   contractName,
+		"tenant_id":        tenantID,
+		"contract_name":    contractName,
 		"contract_version": contractVersion,
 	}, options.Find().SetSort(bson.D{{Key: "priority", Value: -1}, {Key: "created_at", Value: 1}}))
 	if err != nil {

@@ -140,8 +140,8 @@ func (r *ContractRegistry) Delete(ctx context.Context, name, version string) err
 	// Check if referenced by rule_revisions.InputContract
 	ruleColl := r.collection(collectionRuleRevisions)
 	count, err := ruleColl.CountDocuments(ctx, bson.M{
-		"input_contract": bson.M{"$ne": nil},
-		"input_contract.name": name,
+		"input_contract":         bson.M{"$ne": nil},
+		"input_contract.name":    name,
 		"input_contract.version": version,
 	})
 	if err != nil {
@@ -155,7 +155,7 @@ func (r *ContractRegistry) Delete(ctx context.Context, name, version string) err
 	// Check if referenced by contract_bindings
 	bindingColl := r.collection(collectionContractBindings)
 	count, err = bindingColl.CountDocuments(ctx, bson.M{
-		"contract_name": name,
+		"contract_name":    name,
 		"contract_version": version,
 	})
 	if err != nil {

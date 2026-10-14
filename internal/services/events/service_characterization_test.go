@@ -38,7 +38,9 @@ func (bindingStub) ListByRuleSet(context.Context, string, string) ([]*domain.Con
 }
 
 func (bindingStub) Save(context.Context, *domain.ContractBinding) error { return nil }
-func (bindingStub) Get(context.Context, string, string) (*domain.ContractBinding, error) { return nil, nil }
+func (bindingStub) Get(context.Context, string, string) (*domain.ContractBinding, error) {
+	return nil, nil
+}
 func (bindingStub) Delete(context.Context, string, string) error { return nil }
 
 type failingShardLeaseRepository struct {
