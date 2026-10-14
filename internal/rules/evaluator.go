@@ -609,7 +609,7 @@ func (e *Evaluator) buildScheduleEventEffect(
 	if action.DelaySeconds < 1 || action.DelaySeconds > domain.MaxScheduledDelaySeconds {
 		return domain.Effect{}, fmt.Errorf("scheduled event delay must be between 1 and %d seconds", domain.MaxScheduledDelaySeconds)
 	}
-	childID := domain.ComputeChildEventID(event.ID, ruleID, actionIndex)
+	childID := domain.ComputeChildEventID(event.TenantID, event.ID, ruleID, actionIndex)
 	partitionKey, err := resolveEmitEventPartitionKey(&domain.EmitEventAction{
 		PartitionKey: action.PartitionKey, PartitionKeyPolicy: action.PartitionKeyPolicy,
 		PartitionKeyPath: action.PartitionKeyPath,
