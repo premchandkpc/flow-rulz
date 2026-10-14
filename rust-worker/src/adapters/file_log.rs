@@ -101,6 +101,7 @@ impl FileEventLog {
     ) -> Result<&'a mut PartitionState, LogError> {
         if !partitions.contains_key(&partition) {
             let path = partition_path(&self.root, partition);
+            let existed = tokio::fs::try_exists(&path).await.map_err(storage_error)?;
             let file = tokio::fs::OpenOptions::new()
                 .create(true)
                 .read(true)
@@ -108,6 +109,12 @@ impl FileEventLog {
                 .open(path)
                 .await
                 .map_err(storage_error)?;
+            if !existed {
+                // Persist the new directory entry as well as later frame bytes.
+                File::open(&self.root)
+                    .and_then(|directory| directory.sync_all())
+                    .map_err(storage_error)?;
+            }
             partitions.insert(
                 partition,
                 PartitionState {
