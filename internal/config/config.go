@@ -28,13 +28,13 @@ type DatabaseConfig struct {
 
 // NATSConfig contains natsconfig settings.
 type NATSConfig struct {
-	URL       string
-	Stream    string
-	Consumer  string
-	RuleSets  []string
-	MaxAge    time.Duration
-	MaxBytes  int64
-	MaxMsgs   int64
+	URL      string
+	Stream   string
+	Consumer string
+	RuleSets []string
+	MaxAge   time.Duration
+	MaxBytes int64
+	MaxMsgs  int64
 }
 
 // RedisConfig contains redis config settings.
