@@ -1,10 +1,10 @@
 use crate::{config::Config, engine::{EventEnvelope, sha256_hex}, runtime::{scheduler::event_subject, uuid_token, validate_subject}};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use async_nats::jetstream;
 use serde_json::{json, Value};
 use sqlx::{PgPool, Row};
 use tokio::time::{interval, MissedTickBehavior};
-use tracing::{info, warn};
+use tracing::warn;
 
 pub(super) async fn outbox_loop(pool: PgPool, js: jetstream::Context, config: Config) -> Result<()> {
     let mut ticker = interval(config.effect_poll_interval);
@@ -29,7 +29,6 @@ async fn process_outbox_batch(
 async fn process_claimed_rows(
     pool: &PgPool,
     js: &jetstream::Context,
-    http: &reqwest::Client,
     config: &Config,
     claim: &str,
     rows: Vec<sqlx::postgres::PgRow>,
