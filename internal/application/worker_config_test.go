@@ -7,9 +7,9 @@ import (
 
 func TestNormalizeWorkerConfigPreservesPartialOverrides(t *testing.T) {
 	got, err := normalizeWorkerConfig(WorkerConfig{
-		FetchBatchSize: 17,
+		FetchBatchSize:  17,
 		KeyQueueWorkers: 4,
-		RetryDelay: 2 * time.Second,
+		RetryDelay:      2 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("normalizeWorkerConfig() error = %v", err)
@@ -41,7 +41,7 @@ func TestNormalizeWorkerConfigCapsDefaultFetchBatchAtGlobalLimit(t *testing.T) {
 func TestNormalizeWorkerConfigRejectsExplicitFetchBatchAboveGlobalLimit(t *testing.T) {
 	_, err := normalizeWorkerConfig(WorkerConfig{
 		MaxGlobalInFlight: 20,
-		FetchBatchSize: 21,
+		FetchBatchSize:    21,
 	})
 	if err == nil {
 		t.Fatal("normalizeWorkerConfig() error = nil, want invalid batch size error")
