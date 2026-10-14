@@ -46,7 +46,7 @@ func retryDelayForDelivery(base time.Duration, delivery ports.Delivery) time.Dur
 	if jitterRange <= 0 {
 		return ceiling
 	}
-	return lower + time.Duration(rand.Int64N(jitterRange+1)) //nolint:gosec // math/rand/v2 is cryptographically safe for jitter
+	return lower + time.Duration(rand.Int64N(jitterRange+1)) //nolint:gosec // jitter is for retry spreading, not security
 }
 
 func (w *Worker) processDelivery(ctx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, fencingToken int64, vshard uint32, workerID string) error {
