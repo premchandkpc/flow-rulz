@@ -3,8 +3,8 @@ package http
 import (
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"strings"
+	"testing"
 )
 
 func TestRouterFailsClosedWhenRequiredAuthValidatorIsMissing(t *testing.T) {
