@@ -65,7 +65,7 @@ func TestExecutionCommittedRequiresExplicitEffectsArray(t *testing.T) {
 		t.Fatal(err)
 	}
 	commit.Effects = nil
-	record.Payload, _ = json.Marshal(commit)
+	record.Payload = marshalCommittedPayload(t, commit)
 	if err := record.Validate(); err == nil {
 		t.Fatal("execution commit without an explicit effects array accepted")
 	}
@@ -78,7 +78,7 @@ func TestExecutionCommittedRejectsMismatchedEffectPayloadHash(t *testing.T) {
 		t.Fatal(err)
 	}
 	commit.Effects[0].Payload = json.RawMessage(`{"type":"orders.rejected"}`)
-	record.Payload, _ = json.Marshal(commit)
+	record.Payload = marshalCommittedPayload(t, commit)
 	if err := record.Validate(); err == nil {
 		t.Fatal("effect payload changed without changing payload_sha256")
 	}
@@ -91,7 +91,7 @@ func TestExecutionCommittedRejectsCrossTenantEffect(t *testing.T) {
 		t.Fatal(err)
 	}
 	commit.Effects[0].TenantID = "tenant-b"
-	record.Payload, _ = json.Marshal(commit)
+	record.Payload = marshalCommittedPayload(t, commit)
 	if err := record.Validate(); err == nil {
 		t.Fatal("cross-tenant effect accepted")
 	}
@@ -104,7 +104,7 @@ func TestExecutionCommittedRejectsEffectFromAnotherExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 	commit.Effects[0].ExecutionID = "execution-2"
-	record.Payload, _ = json.Marshal(commit)
+	record.Payload = marshalCommittedPayload(t, commit)
 	if err := record.Validate(); err == nil {
 		t.Fatal("effect for another execution accepted")
 	}
@@ -115,4 +115,13 @@ func TestLogOutputRouteRejectsAmbiguousTargets(t *testing.T) {
 	if err := route.Validate(); err == nil {
 		t.Fatal("route with multiple targets accepted")
 	}
+}
+
+func marshalCommittedPayload(t *testing.T, commit ExecutionCommittedPayload) json.RawMessage {
+	t.Helper()
+	payload, err := json.Marshal(commit)
+	if err != nil {
+		t.Fatalf("marshal execution commit payload: %v", err)
+	}
+	return payload
 }
