@@ -631,6 +631,7 @@ fn acquire_process_lock(root: &Path) -> Result<File, LogError> {
     let path = root.join(".flow-rulz-wal.lock");
     let file = OpenOptions::new()
         .create(true)
+        .truncate(false)
         .read(true)
         .write(true)
         .open(path)
