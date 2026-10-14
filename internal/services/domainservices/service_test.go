@@ -146,7 +146,7 @@ func TestSaveServiceAssignsStableNATSSubjectAndRejectsDuplicateName(t *testing.T
 	if !item.Active || item.ID == "" {
 		t.Fatalf("new service must be active and identified: %#v", item)
 	}
-	if want := domain.DomainServiceSubject("tenant-a", item.ID); item.NATSSubject != want {
+	if want := domain.ServiceSubject("tenant-a", item.ID); item.NATSSubject != want {
 		t.Fatalf("NATS subject = %q, want %q", item.NATSSubject, want)
 	}
 	if _, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
