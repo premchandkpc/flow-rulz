@@ -458,6 +458,19 @@ impl EventLog for FileEventLog {
         if fencing_epoch == 0 {
             return Err(LogError::Invalid("fencing epoch must be positive".into()));
         }
+        let current = self
+            .partitions
+            .lock()
+            .await
+            .get(&partition)
+            .map(|state| state.highest_fencing_epoch)
+            .unwrap_or(0);
+        if fencing_epoch < current {
+            return Err(LogError::Fenced {
+                attempted: fencing_epoch,
+                current,
+            });
+        }
         let partition_text = partition.0.to_string();
         let epoch_text = fencing_epoch.to_string();
         let payload = serde_json::to_vec(&json!({
