@@ -17,6 +17,7 @@ import (
 type EventIngestionHandler struct {
 	publisher ports.BrokerPublisher
 	numShards uint32
+	contracts ports.ContractRegistry
 }
 
 // NewEventIngestionHandler creates a new EventIngestionHandler.
@@ -28,6 +29,11 @@ func NewEventIngestionHandler(publisher ports.BrokerPublisher, numShards uint32)
 }
 
 // RegisterRoutes registers the HTTP routes for the EventIngestionHandler.
+func (h *EventIngestionHandler) WithContractRegistry(registry ports.ContractRegistry) *EventIngestionHandler {
+	h.contracts = registry
+	return h
+}
+
 func (h *EventIngestionHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/events/{eventType}", h.PublishEvent)
 }
@@ -44,6 +50,8 @@ type eventIngestionRequest struct {
 	CorrelationID string            `json:"correlation_id,omitempty"`
 	CausationID   string            `json:"causation_id,omitempty"`
 	SchemaVersion string            `json:"schema_version,omitempty"`
+	Contract      *domain.ContractRef `json:"contract,omitempty"`
+	MessageKind   string            `json:"message_kind,omitempty"`
 }
 
 // PublishEvent handles POST /v1/events/{eventType} requests.
@@ -63,6 +71,44 @@ func (h *EventIngestionHandler) PublishEvent(w http.ResponseWriter, r *http.Requ
 	}
 
 	event := buildEventEnvelope(request, eventType, tenantID)
+	if request.Contract != nil {
+		if h.contracts == nil {
+			responses.WriteError(w, http.StatusServiceUnavailable, "contract registry is not configured", responses.CodeInternalError)
+			return
+		}
+		if request.Contract.Name != eventType {
+			responses.WriteError(w, http.StatusBadRequest, "contract name must match event type", responses.CodeValidationFailed)
+			return
+		}
+		schema, err := h.contracts.Get(r.Context(), request.Contract.Name, request.Contract.Version)
+		if err != nil {
+			responses.WriteError(w, http.StatusServiceUnavailable, "contract lookup failed", responses.CodeInternalError)
+			return
+		}
+		if schema == nil {
+			responses.WriteError(w, http.StatusBadRequest, "event contract not found", responses.CodeValidationFailed)
+			return
+		}
+		if schema.Deprecated {
+			responses.WriteError(w, http.StatusBadRequest, "event contract is deprecated", responses.CodeValidationFailed)
+			return
+		}
+		if err := schema.NormalizeAndValidate(); err != nil {
+			responses.WriteError(w, http.StatusInternalServerError, "registered event contract is invalid", responses.CodeInternalError)
+			return
+		}
+		if request.Contract.SchemaHash != "" && request.Contract.SchemaHash != schema.SchemaHash {
+			responses.WriteError(w, http.StatusBadRequest, "event contract schema hash mismatch", responses.CodeValidationFailed)
+			return
+		}
+		if err := schema.ValidatePayload(event.Data); err != nil {
+			responses.WriteError(w, http.StatusBadRequest, "event payload does not match contract: "+err.Error(), responses.CodeValidationFailed)
+			return
+		}
+		event.Contract = &domain.ContractRef{Name:schema.Name, Version:schema.Version, SchemaHash:schema.SchemaHash}
+		event.MessageKind = request.MessageKind
+		if event.MessageKind == "" { event.MessageKind = "event" }
+	}
 	if err := event.Validate(); err != nil {
 		responses.WriteError(w, http.StatusBadRequest, err.Error(), responses.CodeValidationFailed)
 		return
@@ -124,6 +170,7 @@ func buildEventEnvelope(
 		ID: strings.TrimSpace(request.ID), Type: eventType, TenantID: tenantID,
 		PartitionKey: strings.TrimSpace(request.PartitionKey), WorkflowID: request.WorkflowID,
 		OccurredAt: request.OccurredAt, Data: json.RawMessage(request.Data), Headers: headers,
+		Contract: request.Contract, MessageKind: request.MessageKind, CorrelationID: request.CorrelationID, CausationID: request.CausationID,
 	}
 }
 
