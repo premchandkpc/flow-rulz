@@ -947,6 +947,26 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn recovery_fails_closed_when_a_segment_is_missing() {
+        let dir = temp_dir();
+        let log = FileEventLog::open_with_segment_bytes(&dir, 1).await.unwrap();
+        for index in 1_u32..=3 {
+            log.append(new_record(
+                &format!("progress-{index}"),
+                format!(r#"{{"cursor":{index}}}"#).as_bytes(),
+            ))
+            .await
+            .unwrap();
+        }
+        drop(log);
+
+        fs::remove_file(segment_path(&dir, PartitionId(7), 1)).unwrap();
+        let error = FileEventLog::open(&dir).await.err().unwrap();
+        assert!(matches!(error, LogError::Integrity(_)));
+        let _ = fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn storage_exhaustion_is_reported_as_a_durability_failure() {
         let error = storage_io_error(std::io::Error::from(std::io::ErrorKind::StorageFull));
