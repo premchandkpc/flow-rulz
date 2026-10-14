@@ -41,3 +41,19 @@ func TestNewConsumerRejectsFiniteMaxDeliverWithoutRecovery(t *testing.T) {
 		t.Fatalf("NewConsumer() error = %v, want explicit unlimited-delivery requirement", err)
 	}
 }
+
+func TestStreamSubjectsIncludeApplicationCommandAndServiceRoutes(t *testing.T) {
+	got := streamSubjects(Config{Subjects: []string{"events"}})
+	want := map[string]bool{
+		"events.shard.*": true,
+		"events.ruleset.*.shard.*": true,
+		"commands.>": true,
+		"services.>": true,
+	}
+	for _, subject := range got {
+		delete(want, subject)
+	}
+	if len(want) != 0 {
+		t.Fatalf("stream subjects are missing required routes: %v", want)
+	}
+}
