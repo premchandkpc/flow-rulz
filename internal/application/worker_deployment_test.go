@@ -9,7 +9,7 @@ import (
 func TestValidateServiceDeploymentRequiresExactTargetAndRevision(t *testing.T) {
 	worker := &Worker{config: WorkerConfig{ServiceID: "orders-evaluator", DeploymentRevision: 4}}
 	event := &domain.EventEnvelope{Headers: map[string]string{
-		"flow.service_id": "orders-evaluator",
+		"flow.service_id":          "orders-evaluator",
 		"flow.deployment_revision": "4",
 	}}
 	if err := worker.validateServiceDeployment(event); err != nil {
