@@ -42,7 +42,7 @@ type eventEnvelopeWire struct {
 	OccurredAt    time.Time                  `json:"occurred_at"`
 	Data          json.RawMessage            `json:"data"`
 	Contract      *ContractRef               `json:"contract,omitempty"`
-	Meta       map[string]json.RawMessage `json:"meta"`
+	Meta          map[string]json.RawMessage `json:"meta"`
 	// Legacy top-level fields are read-only compatibility for events already in the stream.
 	TenantID      string            `json:"tenant_id,omitempty"`
 	PartitionKey  string            `json:"partition_key,omitempty"`
