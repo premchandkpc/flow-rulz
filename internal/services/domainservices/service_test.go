@@ -86,58 +86,64 @@ type fixedClock struct{ now time.Time }
 
 func (c fixedClock) Now() time.Time { return c.now }
 
-func TestSaveDomainValidatesInputsAndTenantScopedNames(t *testing.T) {
+func TestSaveDomainValidatesInputsAndGlobalNames(t *testing.T) {
 	repo := newRepositoryStub()
 	service := NewService(repo, fixedClock{now: time.Unix(10, 0).UTC()})
-	item, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
-		Name: "orders", EventTypes: []string{" orders.created ", "orders.created"},
+	item, err := service.SaveDomain(context.Background(), "caller-scope-a", &domain.TenantDomain{
+		Name: "orders",
 	})
 	if err != nil {
 		t.Fatalf("SaveDomain() error = %v", err)
 	}
-	if item.TenantID != "tenant-a" || len(item.EventTypes) != 1 || item.EventTypes[0] != "orders.created" {
-		t.Fatalf("normalized domain = %#v", item)
+	if item.TenantID != domain.DomainConfigurationScope || len(item.EventTypes) != 0 {
+		t.Fatalf("Domain must use global config scope and no event filters: %#v", item)
 	}
-	if _, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
-		Name: "orders", EventTypes: []string{"orders.updated"},
+	if _, err := service.SaveDomain(context.Background(), "caller-scope-a", &domain.TenantDomain{
+		Name: "orders",
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate SaveDomain() error = %v, want ErrConflict", err)
 	}
-	if _, err := service.SaveDomain(context.Background(), "tenant-b", &domain.TenantDomain{
-		Name: "orders", EventTypes: []string{"orders.created"},
-	}); err != nil {
-		t.Fatalf("same domain name in separate tenant: %v", err)
+	if _, err := service.SaveDomain(context.Background(), "caller-scope-b", &domain.TenantDomain{
+		Name: "orders",
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("same Domain name from another caller scope = %v, want ErrConflict", err)
 	}
-	if _, err := service.SaveDomain(context.Background(), "bad\ntenant", &domain.TenantDomain{
-		Name: "bad-domain", EventTypes: []string{"orders.created"},
-	}); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("invalid tenant ID error = %v, want ErrInvalidInput", err)
+	created, err := service.SaveDomain(context.Background(), "bad\ntenant", &domain.TenantDomain{
+		Name: "billing",
+	})
+	if err != nil {
+		t.Fatalf("caller scope must not configure Domain ownership: %v", err)
 	}
-	if _, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
-		Name: "invalid", EventTypes: []string{"Invalid.Event"},
+	if created.TenantID != domain.DomainConfigurationScope {
+		t.Fatalf("Domain storage scope = %q, want global configuration scope", created.TenantID)
+	}
+	if _, err := service.SaveDomain(context.Background(), "ignored", &domain.TenantDomain{
+		Name: "Invalid.Domain",
 	}); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("invalid event type error = %v, want ErrInvalidInput", err)
+		t.Fatalf("invalid Domain name error = %v, want ErrInvalidInput", err)
 	}
 }
 
-func TestSaveServiceRequiresTenantOwnedDomainsAndRejectsHTTPCallbacks(t *testing.T) {
+func TestSaveServiceRejectsHTTPCallbacksAndUsesGlobalDomains(t *testing.T) {
 	repo := newRepositoryStub()
 	service := NewService(repo, fixedClock{now: time.Unix(20, 0).UTC()})
-	domainA, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
-		Name: "orders", EventTypes: []string{"orders.created"},
-	})
+	domainA, err := service.SaveDomain(context.Background(), "caller-scope-a", &domain.TenantDomain{Name: "orders"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
+	if _, err := service.SaveService(context.Background(), "caller-scope-a", &domain.DomainService{
 		Name: "receiver", EndpointURL: "https://callback.example/hook", DomainIDs: []string{domainA.ID},
 	}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("HTTP callback error = %v, want ErrInvalidInput", err)
 	}
-	if _, err := service.SaveService(context.Background(), "tenant-b", &domain.DomainService{
+	subscription, err := service.SaveService(context.Background(), "caller-scope-b", &domain.DomainService{
 		Name: "receiver", DomainIDs: []string{domainA.ID},
-	}); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("cross-tenant domain subscription error = %v, want ErrInvalidInput", err)
+	})
+	if err != nil {
+		t.Fatalf("global Domain reference from another caller scope: %v", err)
+	}
+	if subscription.TenantID != domain.DomainConfigurationScope {
+		t.Fatalf("subscription scope = %q, want global configuration scope", subscription.TenantID)
 	}
 }
 
@@ -153,13 +159,18 @@ func TestSaveServiceAssignsStableNATSSubjectAndRejectsDuplicateName(t *testing.T
 	if !item.Active || item.ID == "" {
 		t.Fatalf("new service must be active and identified: %#v", item)
 	}
-	if want := domain.ServiceSubject("tenant-a", item.ID); item.NATSSubject != want {
+	if want := domain.ServiceSubject(domain.DomainConfigurationScope, item.ID); item.NATSSubject != want {
 		t.Fatalf("NATS subject = %q, want %q", item.NATSSubject, want)
 	}
 	if _, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
 		Name: "receiver", EventTypes: []string{"orders.created"},
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate service name error = %v, want ErrConflict", err)
+	}
+	if _, err := service.SaveService(context.Background(), "tenant-b", &domain.DomainService{
+		Name: "receiver", EventTypes: []string{"orders.created"},
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("duplicate global subscription name error = %v, want ErrConflict", err)
 	}
 }
 
