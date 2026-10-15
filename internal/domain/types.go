@@ -21,14 +21,14 @@ func (SystemClock) Now() time.Time { return time.Now().UTC() }
 // TenantID, PartitionKey, and the typed metadata fields remain convenient internal
 // accessors; custom JSON methods always serialize them inside meta.
 type EventEnvelope struct {
-	ID            string                     `json:"id"`
-	Type          string                     `json:"type"`
+	ID         string                     `json:"id"`
+	Type       string                     `json:"type"`
 	TenantID      string                     `json:"-"`
 	PartitionKey  string                     `json:"-"`
 	WorkflowID    string                     `json:"-"`
-	OccurredAt    time.Time                  `json:"occurred_at"`
-	Data          json.RawMessage            `json:"data"`
-	Contract      *ContractRef               `json:"contract,omitempty"`
+	OccurredAt time.Time                  `json:"occurred_at"`
+	Data       json.RawMessage            `json:"data"`
+	Contract   *ContractRef               `json:"contract,omitempty"`
 	MessageKind   string                     `json:"-"`
 	CorrelationID string                     `json:"-"`
 	CausationID   string                     `json:"-"`
@@ -42,7 +42,7 @@ type eventEnvelopeWire struct {
 	OccurredAt    time.Time                  `json:"occurred_at"`
 	Data          json.RawMessage            `json:"data"`
 	Contract      *ContractRef               `json:"contract,omitempty"`
-	Meta          map[string]json.RawMessage `json:"meta"`
+	Meta       map[string]json.RawMessage `json:"meta"`
 	// Legacy top-level fields are read-only compatibility for events already in the stream.
 	TenantID      string            `json:"tenant_id,omitempty"`
 	PartitionKey  string            `json:"partition_key,omitempty"`
