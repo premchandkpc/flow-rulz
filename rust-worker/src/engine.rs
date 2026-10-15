@@ -373,6 +373,13 @@ mod tests {
         assert_eq!(encoded["meta"]["future_field"]["enabled"], true);
         assert!(encoded.get("tenant_id").is_none());
         assert!(encoded.get("partition_key").is_none());
+
+        let legacy = json!({
+            "id":"event-legacy", "type":"orders.created",
+            "tenant_id":"tenant-a", "partition_key":"order-1",
+            "occurred_at":"2026-10-14T00:00:00Z", "data":{}
+        });
+        assert!(serde_json::from_value::<EventEnvelope>(legacy).is_err());
     }
 
 }
