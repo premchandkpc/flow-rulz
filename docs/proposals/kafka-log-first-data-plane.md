@@ -12,6 +12,8 @@ This removes PostgreSQL from the worker hot path, but it does **not** make state
 
 - Workers are stateless with respect to ownership: no shard leases, no replica-count assumptions, and no correctness-critical in-memory state.
 - Rule evaluation is pure and domain-agnostic. Workers understand event envelopes, immutable rule revisions, contracts, and generic effects, not service-specific business behavior.
+- **A Domain contains Services; each Service is a deployment boundary that declares which rulesets/revisions its worker pool runs.** A worker is configured for one service deployment and loads only that deployment's assigned rules. It must not load every tenant ruleset and decide at runtime which service owns it.
+- Keep execution-service deployment separate from subscriber/receiver registration. A service deployment owns ruleset assignments and worker capacity; a subscriber registration expresses interest in delivered events. Do not overload one registry record to mean both.
 - Subscriber fan-out remains a generic routing stage. It emits one deterministic effect per active tenant-scoped subscriber; it is not folded into rule evaluation.
 - Same-key ordering is provided by a stable Kafka key and partition assignment. A hot key is still limited to one partition's throughput.
 - Kafka transactions make input-offset commits and Kafka output records atomic within Kafka. They do not include receiver databases, HTTP calls, or ClickHouse writes.
@@ -40,7 +42,10 @@ Use a topic prefix configurable per environment, shown below as `flow.`. Configu
 | `flow.ruleset-activation` | `tenant_id + ":" + ruleset_id` | Active revision and optional effective-from marker | Compacted |
 | `flow.contracts` | `tenant_id + ":" + contract_id + ":" + version` | Immutable JSON Schema / contract metadata | Compacted |
 | `flow.domains` | `tenant_id + ":" + domain_id` | Event domain configuration | Compacted |
-| `flow.services` | `tenant_id + ":" + service_id` | Service registration and subscription filters | Compacted |
+| `flow.services` | `tenant_id + ":" + domain_id + ":" + service_id` | Service identity within a domain, deployment metadata, worker profile, and status | Compacted |
+| `flow.service-deployments` | `tenant_id + ":" + domain_id + ":" + service_id` | Immutable deployment revision: assigned ruleset IDs/revisions, contract bindings, concurrency/resource profile, activation generation | Compacted |
+| `flow.service-work.<service-token>` | `tenant_id + ":" + partition_key` | Routed event copy addressed to one service deployment; target service ID is part of the envelope | Time/size retention; separate topic/ACL boundary per deployed service or deployment group |
+| `flow.subscriptions` | `tenant_id + ":" + subscriber_id` | Receiver subscription filters, independent of execution-service deployment | Compacted |
 | `flow.schedules` | `tenant_id + ":" + schedule_id` | Schedule upsert; tombstone on cancel/fire | Compacted |
 | `flow.commands` | Destination-specific key | Generic command envelope | Time/size retention |
 | `flow.service-deliveries` | `tenant_id + ":" + service_id + ":" + event_id` | One delivery intent per matching subscriber | Time/size retention |
@@ -117,6 +122,29 @@ Requirements:
 
 Revisions are immutable. Key the cache by tenant, ruleset ID, revision, and compiler/runtime compatibility version. Verify the content hash before caching. Activation points to a revision; it must never mutate an existing revision. Record the exact revision and content hash in every execution audit record.
 
+### DomainServiceDeployment v1
+
+A domain service is the deployment target for a set of rulesets. The deployment revision is immutable; activating a new assignment publishes a new deployment revision rather than mutating a running worker's interpretation in place.
+
+```json
+{
+  "schema_version": 1,
+  "tenant_id": "tenant-123",
+  "domain_id": "orders",
+  "service_id": "risk-engine",
+  "deployment_revision": 4,
+  "worker_profile": {"min_replicas": 2, "max_replicas": 8},
+  "rulesets": [
+    {"ruleset_id": "orders-risk", "revision": 7, "contract_id": "orders.created", "contract_version": 2},
+    {"ruleset_id": "fraud-check", "revision": 3, "contract_id": "fraud.check_requested", "contract_version": 1}
+  ],
+  "status": "active",
+  "updated_at": "2026-10-15T05:01:00Z"
+}
+```
+
+The deployment resolver validates that every referenced immutable ruleset revision exists and that each contract binding is compatible before publishing the deployment. Workers are started/configured with a stable `deployment_id` (`tenant/domain/service`) and consume only that deployment's work stream. On rollout, a new deployment revision warms its cache and reports readiness before traffic shifts; the old revision drains before it is retired. Do not let every worker subscribe to every service's rulesets.
+
 ### RulesetActivation v1
 
 ```json
@@ -168,13 +196,24 @@ Effect IDs must be deterministic for the same input event, ruleset revision, and
 
 A key's latest record represents its current schedule state; a tombstone removes it. Due-event publication and tombstone must be in the same Kafka transaction. If the transaction aborts, neither change is visible to read-committed consumers. Use deterministic occurrence IDs so downstream idempotency is still required.
 
+## Domain → Service → worker deployment routing
+
+1. A tenant owns a Domain; a Domain contains one or more Services.
+2. Each Service declares the rulesets and contract bindings that belong to that service's worker deployment. Assignments reference immutable ruleset revisions or an explicit activation policy; never rely on a global "all active rules" list.
+3. A generic ingress router resolves the domain/service mapping and writes a routed copy to that service deployment's work stream. This router is an application module/role, not necessarily another microservice. If an event is explicitly bound to multiple services, it creates one deterministic routed copy per target service.
+4. Each worker process is configured for exactly one deployment identity and consumes only that deployment's work stream. It validates the target service/deployment ID and resolves rulesets only from that deployment's manifest.
+5. Scaling a service scales only its worker group. It does not change rule ownership for other services. Deployment revisions are rolled out with readiness, traffic switch, and drain; cache contents are rebuildable from the compacted deployment/ruleset topics.
+6. The separate subscriber router handles downstream event subscriptions after successful processing. A subscriber is not automatically an execution service, and subscriber fan-out must not be used as the rule-deployment mechanism.
+
+This introduces a routing boundary but not a mandatory extra deployable. The ingress/router loop can share the Go binary and deployment artifact with workers, while still being independently scalable as a process role if throughput requires it.
+
 ## Worker transaction algorithm
 
 For each consumed batch:
 1. Poll records and validate envelope version, tenant, contract, hop limit, and partition-key invariants.
 2. Resolve activation and immutable ruleset revision from the local projection; fail closed if required state is missing or its hash/version is invalid. Do not silently fall back to an arbitrary older revision.
 3. Begin Kafka transaction.
-4. Evaluate rules as a pure function and build generic child-event, command, subscriber-delivery, and audit output records. Subscriber matching is a separate generic component over the service/subscription projection.
+4. Verify the routed envelope targets this worker's configured service deployment. Resolve only the immutable ruleset revisions assigned to that service deployment and compatible with the event contract. Evaluate rules as a pure function. Subscriber matching is a separate generic component over the subscriber projection, not the execution-service registry.
 5. Produce all output records and the consumed offsets as part of the same transaction.
 6. Commit. On any processing/produce/commit error, abort and allow redelivery. Never ACK/commit offsets outside the transaction for successfully processed records.
 
@@ -215,7 +254,7 @@ Set bounded retry attempts and a DLQ policy. Alert on sustained consumer lag, sc
 - Prove consume-produce-offset atomicity with a test that kills a worker before commit and after broker commit.
 
 ### Phase 2: control-plane projections
-- Publish immutable rule revisions, activation records, contracts, domains, services, and schedule records.
+- Publish immutable rule revisions, activation records, contracts, domains, service deployment manifests, subscriber registrations, and schedule records.
 - Rebuild projections from topic replay and verify hashes/counts against the current store.
 - Define activation cut-over semantics and service-subscription matching before routing any real traffic.
 
@@ -237,7 +276,7 @@ Set bounded retry attempts and a DLQ policy. Alert on sustained consumer lag, sc
 ### Exit criteria
 
 - Real-broker integration tests prove transaction/offset atomicity, rebalance safety, scheduler recovery, and DLQ handling.
-- Contract compatibility and rule-revision activation behavior are documented and tested.
+- Contract compatibility, per-service ruleset assignment, deployment rollout, and rule-revision activation behavior are documented and tested.
 - Same-key ordering and partition-count migration behavior are tested.
 - Subscriber routing retains tenant isolation and deterministic idempotency.
 - No claim of end-to-end exactly-once; receivers and sinks are idempotent.
