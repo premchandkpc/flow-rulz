@@ -35,10 +35,16 @@ jobs:
           set -euo pipefail
 
           # Validate each input separately so CI reports exactly which check failed.
-          for schema in contracts/schemas/event-envelope.schema.json contracts/schemas/rule-set.schema.json contracts/schemas/service-deployment.schema.json; do
+          for schema in contracts/schemas/*.schema.json; do
             echo "Validating JSON schema: $schema"
             test -f "$schema" || { echo "::error::Missing schema: $schema"; exit 1; }
             python -m json.tool "$schema" > /dev/null
+          done
+
+          echo "Validating example JSON data"
+          for sample in data/examples/*.json; do
+            echo "Validating JSON sample: $sample"
+            python -m json.tool "$sample" > /dev/null
           done
 
           shopt -s nullglob
