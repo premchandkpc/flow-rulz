@@ -96,51 +96,26 @@ func (r mappedRuleRevisionStub) GetRevision(_ context.Context, tenantID, ruleset
 	return r.revisions[key], nil
 }
 
-func TestDeploymentRuleRevisionValidation(t *testing.T) {
-	lookupError := errors.New("revision storage unavailable")
-	key := "tenant-a/orders-created/" + strconv.FormatInt(7, 10)
-	tests := []struct {
-		name            string
-		revision        *domain.RuleRevision
-		lookupErr       error
-		wantErr         bool
-		wantLookupError bool
-	}{
-		{name: "matching immutable revision", revision: &domain.RuleRevision{TenantScope: "tenant-a", RuleID: "orders-created", Revision: 7}},
-		{name: "revision missing", wantErr: true},
-		{name: "wrong tenant", revision: &domain.RuleRevision{TenantScope: "tenant-b", RuleID: "orders-created", Revision: 7}, wantErr: true},
-		{name: "wrong ruleset", revision: &domain.RuleRevision{TenantScope: "tenant-a", RuleID: "another-ruleset", Revision: 7}, wantErr: true},
-		{name: "wrong revision", revision: &domain.RuleRevision{TenantScope: "tenant-a", RuleID: "orders-created", Revision: 8}, wantErr: true},
-		{name: "storage lookup error", lookupErr: lookupError, wantErr: true, wantLookupError: true},
+func TestDomainConfigurationDefersRulesetLookupUntilEventRuntime(t *testing.T) {
+	lookupError := errors.New("ruleset lookup must happen at event runtime")
+	rules := mappedRuleRevisionStub{
+		errs: map[string]error{
+			"tenant-a/orders-created/" + strconv.FormatInt(7, 10): lookupError,
+		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			revisions := map[string]*domain.RuleRevision{}
-			errs := map[string]error{}
-			if tt.revision != nil {
-				revisions[key] = tt.revision
-			}
-			if tt.lookupErr != nil {
-				errs[key] = tt.lookupErr
-			}
-			service := NewService(newRepositoryStub(), fixedClock{now: time.Unix(72, 0).UTC()}).WithRuleService(mappedRuleRevisionStub{revisions: revisions, errs: errs})
-			_, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
-				Name: "orders", EventTypes: []string{"orders.created"},
-				Deployments: []domain.ServiceDeployment{{
-					ServiceID: "orders-worker", Name: "orders-worker", Revision: 1,
-					Rulesets: []domain.RulesetAssignment{{RulesetID: "orders-created", Revision: 7}},
-				}},
-			})
-			if tt.wantErr && !errors.Is(err, ErrInvalidInput) {
-				t.Fatalf("SaveDomain() error = %v, want ErrInvalidInput", err)
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("SaveDomain() error = %v, want nil", err)
-			}
-			if tt.wantLookupError && !errors.Is(err, lookupError) {
-				t.Fatalf("SaveDomain() error = %v, want wrapped lookup error", err)
-			}
-		})
+	service := NewService(newRepositoryStub(), fixedClock{now: time.Unix(72, 0).UTC()}).WithRuleService(rules)
+	item, err := service.SaveDomain(context.Background(), "internal-domain-config", &domain.TenantDomain{
+		Name: "orders",
+		Deployments: []domain.ServiceDeployment{{
+			ServiceID: "orders-worker", Name: "orders-worker", Revision: 1,
+			Rulesets: []domain.RulesetAssignment{{RulesetID: "orders-created", Revision: 7}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SaveDomain() must not require tenant-specific rule lookup: %v", err)
+	}
+	if len(item.Deployments) != 1 || item.Deployments[0].Rulesets[0].RulesetID != "orders-created" {
+		t.Fatalf("service ruleset assignment was not preserved: %#v", item.Deployments)
 	}
 }
 
