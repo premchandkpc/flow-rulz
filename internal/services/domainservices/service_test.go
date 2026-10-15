@@ -23,27 +23,40 @@ func newRepositoryStub() *repositoryStub {
 	}
 }
 
-func (r *repositoryStub) SaveDomain(_ context.Context, item *domain.TenantDomain) error {
+func cloneTenantDomain(item *domain.TenantDomain) *domain.TenantDomain {
+	if item == nil {
+		return nil
+	}
 	cloned := *item
-	r.domains[item.TenantID+"/"+item.ID] = &cloned
+	cloned.EventTypes = append([]string(nil), item.EventTypes...)
+	cloned.Deployments = append([]domain.ServiceDeployment(nil), item.Deployments...)
+	for i := range cloned.Deployments {
+		cloned.Deployments[i].Rulesets = append([]domain.RulesetAssignment(nil), item.Deployments[i].Rulesets...)
+		for j := range cloned.Deployments[i].Rulesets {
+			if contract := item.Deployments[i].Rulesets[j].Contract; contract != nil {
+				contractCopy := *contract
+				cloned.Deployments[i].Rulesets[j].Contract = &contractCopy
+			}
+		}
+	}
+	return &cloned
+}
+
+func (r *repositoryStub) SaveDomain(_ context.Context, item *domain.TenantDomain) error {
+	r.domains[item.TenantID+"/"+item.ID] = cloneTenantDomain(item)
 	return nil
 }
 
 func (r *repositoryStub) GetDomain(_ context.Context, tenantID, domainID string) (*domain.TenantDomain, error) {
 	item := r.domains[tenantID+"/"+domainID]
-	if item == nil {
-		return nil, nil
-	}
-	cloned := *item
-	return &cloned, nil
+	return cloneTenantDomain(item), nil
 }
 
 func (r *repositoryStub) ListDomains(_ context.Context, tenantID string) ([]*domain.TenantDomain, error) {
 	items := make([]*domain.TenantDomain, 0)
 	for _, item := range r.domains {
 		if item.TenantID == tenantID {
-			cloned := *item
-			items = append(items, &cloned)
+			items = append(items, cloneTenantDomain(item))
 		}
 	}
 	return items, nil
