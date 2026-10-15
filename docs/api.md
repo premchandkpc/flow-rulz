@@ -33,7 +33,7 @@ Example request:
 }
 ```
 
-There is no `tenant_id`, `partition_key`, or `event_types` property in this request. The decoder rejects unknown fields.
+There is no `tenant_id`, `partition_key`, or `event_types` property in this request. The decoder rejects unknown fields and rejects client-supplied `id`, `created_at`, and `updated_at`. See the [request schema](../contracts/schemas/domain.schema.json) and [response schema](../contracts/schemas/domain-response.schema.json).
 
 ## Ruleset and contract APIs
 
