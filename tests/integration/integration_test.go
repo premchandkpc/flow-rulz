@@ -376,14 +376,14 @@ func setupTestUseCase(t *testing.T) (*svcevents.Service, *mockInbox, *mockExecut
 		t.Fatalf("compile: %v", err)
 	}
 
-	// The immutable revision cache validates the full tenant/ruleset/revision key.
+	// Ruleset configuration is global; event tenant identity remains on each event.
 	// The compiler creates rule content; the repository fixture supplies persistence metadata.
-	revision.TenantScope = "test-tenant"
+	revision.TenantScope = domain.DomainConfigurationScope
 	revision.RuleID = "order.created"
 	revision.Revision = 1
 
 	if err := activations.Set(context.Background(), &domain.RuleActivation{
-		TenantScope: "test-tenant",
+		TenantScope: domain.DomainConfigurationScope,
 		RuleSet:     "order.created",
 		Revision:    1,
 		Version:     1,
@@ -391,7 +391,7 @@ func setupTestUseCase(t *testing.T) (*svcevents.Service, *mockInbox, *mockExecut
 	}); err != nil {
 		t.Fatalf("set activation: %v", err)
 	}
-	ruleRepo.revisions["test-tenant:order.created"] = revision
+	ruleRepo.revisions[domain.DomainConfigurationScope+":order.created"] = revision
 
 	return uc, inbox, executions, outbox
 }
@@ -579,7 +579,7 @@ func TestEffectIDGenerationIsDeterministic(t *testing.T) {
 }
 
 // TestActivateRuleUsesExplicitTenantScope provides the corresponding repository operation.
-func TestActivateRuleUsesExplicitTenantScope(t *testing.T) {
+func TestActivateRuleUsesGlobalConfigurationScope(t *testing.T) {
 	compiler := rules.NewCompiler(rules.DefaultLimits())
 	ruleRepo := newMockRuleRepo()
 	activations := newMockActivation()
@@ -597,7 +597,7 @@ func TestActivateRuleUsesExplicitTenantScope(t *testing.T) {
 	}
 	svc := svcrules.NewService(compiler, ruleRepo, activations, executions, domain.SystemClock{}, txManager, newTxRepos)
 
-	_, err := svc.Activate(context.Background(), "tenant-a", "order.created", json.RawMessage(`{
+	_, err := svc.Activate(context.Background(), domain.DomainConfigurationScope, "order.created", json.RawMessage(`{
 		"rule_set":"order.created", "revision":1, "mode":"first_match",
 		"rules":[{"id":"match", "priority":1,
 		"when":{"path":"$.total", "op":"gte", "value":1},
@@ -606,11 +606,11 @@ func TestActivateRuleUsesExplicitTenantScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("activate rule: %v", err)
 	}
-	if ruleRepo.revisions["tenant-a:order.created"] == nil {
-		t.Fatal("expected rule revision to be saved under the supplied tenant scope")
+	if ruleRepo.revisions[domain.DomainConfigurationScope+":order.created"] == nil {
+		t.Fatal("expected rule revision to be saved under the global configuration scope")
 	}
 	if ruleRepo.revisions["order.created:order.created"] != nil {
-		t.Fatal("rule revision must not derive tenant scope from the rule ID")
+		t.Fatal("rule revision must not derive configuration scope from the ruleset ID")
 	}
 }
 
