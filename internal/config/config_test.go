@@ -212,9 +212,9 @@ func TestValidateAllowsUnlimitedNATSMaxDeliver(t *testing.T) {
 
 func TestValidateRequiresPairedServiceDeploymentIdentity(t *testing.T) {
 	tests := []struct {
-		name string
+		name      string
 		serviceID string
-		revision int64
+		revision  int64
 		wantError bool
 	}{
 		{name: "legacy mode", wantError: false},
