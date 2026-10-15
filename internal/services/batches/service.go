@@ -347,7 +347,7 @@ func (s *Service) recoverCompletedBatch(
 func (s *Service) buildBatchEnvelope(input batchInput, now time.Time) (*domain.EventEnvelope, time.Time, error) {
 	windowFrom := input.members[0].FirstSeenAt
 	payload := domain.BatchData{
-		BatchID: input.batchID, TenantID: input.tenantID, PartitionKey: input.partitionKey,
+		BatchID: input.batchID,
 		RuleSet: input.ruleSet, WindowFrom: windowFrom, WindowTo: now, Events: input.batchEvents,
 	}
 	data, err := json.Marshal(payload)
