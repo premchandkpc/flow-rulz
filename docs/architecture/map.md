@@ -18,7 +18,7 @@ flowchart LR
   Tx --> Rules[(Rule revisions and activations)]
   Tx --> Executions[(Executions)]
   Tx --> Outbox[(Outbox effects)]
-  Domains[(Tenant domains and NATS subscriptions)] --> Events
+  Domains[(Tenant domain and subscriber registry)] -. "management config only; no automatic fan-out" .-> Router
   Outbox --> Effects[services/effects]
   Effects --> Router[Effect router]
   Router -->|emit event| NATS
@@ -58,11 +58,11 @@ Security contract:
 
 1. Load config, start observability, and open/initialize storage.
 2. Construct a NATS JetStream consumer and a separate publisher adapter. The stream accepts legacy events.shard.N subjects plus events.ruleset.<sha256(event-type)>.shard.N subjects. When NATS_RULESETS is configured consistently across API, worker, and SDK producers, the adapter maintains one durable consumer per configured ruleset and owned shard; unlisted types keep legacy routing.
-3. Construct the compiler/evaluator, transactional event service, domain subscription repository, external sender and effect router.
+3. Construct the compiler/evaluator, transactional event service, external sender and effect router. Subscriber/domain repositories remain available to management use cases, not to the event transaction.
 4. Construct batch service, shard lease manager, scheduler and application.Worker.
 5. Start scheduler/worker loops; on shutdown stop loops and close consumer, storage, and observability.
 
-The effect router is part of the runtime wiring, not an optional helper: emitted child events must be published to events.shard.N using the same NUM_SHARDS as the consumer. The event type belongs in EventEnvelope.Type. Generic emitted effects publish through NATS JetStream to effects.<topic>; command effects publish to commands.<destination>.<name>. Service-event effects resolve a tenant-scoped active subscriber and publish a stable effect envelope to that service's unique services.<tenant-hash>.<service-hash> subject. HTTP callback delivery is not supported. LeaseManager targets ceil(NUM_SHARDS/WORKER_REPLICAS) leases per worker. WORKER_REPLICAS defaults to 1 for single-worker local deployments and must be set to the actual fixed replica count on every multi-worker deployment. This makes the assumption explicit and configurable, but does not provide dynamic membership or coordinated rebalancing.
+The effect router is part of the runtime wiring, not an optional helper: emitted child events must be published to events.shard.N using the same NUM_SHARDS as the consumer. The event type belongs in EventEnvelope.Type. Generic emitted effects publish through NATS JetStream to effects.<topic>; command effects publish to commands.<destination>.<name>; explicit ruleset-declared service_event effects publish to a tenant-scoped services.<tenant-hash>.<service-hash> subject. The effect router does not look up subscriber registrations. Automatic subscription-based fan-out is not implemented in this branch; a registered subscriber alone does not cause delivery. HTTP callback delivery is not supported. LeaseManager targets ceil(NUM_SHARDS/WORKER_REPLICAS) leases per worker. WORKER_REPLICAS defaults to 1 for single-worker local deployments and must be set to the actual fixed replica count on every multi-worker deployment. This makes the assumption explicit and configurable, but does not provide dynamic membership or coordinated rebalancing.
 
 ### CLI processes
 
@@ -78,30 +78,26 @@ sequenceDiagram
   participant W as Worker and key queue
   participant S as Event service
   participant D as Transactional storage
-  participant O as Outbox publisher
-  participant C as Tenant service callback
+  participant O as Outbox dispatcher
   P->>N: publish EventEnvelope to events.shard.N
   N->>W: deliver event for owned shard
   W->>W: validate envelope and obtain fencing token
   W->>S: Process(envelope, token, shard, worker)
   S->>D: begin transaction and assert lease/fencing
   S->>D: inbox lookup/insert
-  S->>D: load activation and immutable revision
-  S->>S: deterministic evaluation
-  S->>D: find active tenant services subscribed to event type
-  S->>D: write execution and outbox effects
+  S->>D: resolve active rulesets and contract bindings
+  S->>S: validate contracts and evaluate rules
+  S->>D: write execution and ruleset-declared outbox effects
   S->>D: mark inbox committed
   S->>D: commit
   S-->>W: committed execution
   W->>N: ACK after successful commit
   O->>D: claim pending effects
-  O->>N: republish emitted child events
-  O->>D: resolve active tenant service endpoint
-  O->>C: POST envelope with idempotency key
+  O->>N: publish declared child-event, command, generic or service_event effect
   O->>D: settle or retry effect state
 ~~~
 
-The event service keeps fencing validation, deduplication, evaluation persistence, execution state, service-subscriber lookup, outbox writes and inbox commit state within one transaction. A service callback is created only after a successful execution of an active rule; events without an active rule do not fan out to domain subscribers. A conflicting inbox insert with no corresponding execution must fail closed; never create a second execution to hide inconsistent state.
+The event transaction contains fencing validation, inbox deduplication, ruleset resolution/evaluation, execution persistence, ruleset-declared outbox writes, and inbox commit state. It does not query the subscriber registry or add implicit service-delivery effects. Automatic subscription-based fan-out is a known gap: implement it in a separate generic router with an explicit routing contract and durable delivery intent before claiming that subscriber registrations trigger delivery. A conflicting inbox insert with no corresponding execution must fail closed; never create a second execution to hide inconsistent state.
 
 ## Child-event routing contract
 
@@ -131,7 +127,7 @@ The event service keeps fencing validation, deduplication, evaluation persistenc
 | internal/rules | Rule compilation, validation and deterministic predicate/action evaluation |
 | internal/services/events | Fencing, inbox dedup, rule lookup/evaluation, execution/outbox transaction |
 | internal/services/domainservices | Tenant domain/service validation, tenant ownership, and subscription use cases |
-| internal/services/effects | Outbox claim, child-event/command/service callback dispatch, retry/backoff, quarantine coordination |
+| internal/services/effects | Outbox claim, child-event/command/generic/explicit service_event dispatch, retry/backoff, quarantine coordination |
 | internal/services/effects/router.go | Child-event broker publishing versus external command dispatch |
 | internal/services/rules | Rule revision writes, activation CAS and rule queries |
 | internal/services/batches | Batch formation, processing and query APIs |
@@ -148,7 +144,7 @@ The event service keeps fencing validation, deduplication, evaluation persistenc
 | internal/adapters/nats/jetstream.go | Stream configuration, sharded consumers, delivery ACK/NAK/retry and publishing |
 | internal/adapters/redis | Redis client and cache implementation; not wired into the primary event path |
 | internal/adapters/effects/fake.go | Fake/HTTP destinations plus helper clock/ID types; responsibilities are mixed |
-| internal/adapters/effects/domain_service_sender.go | Tenant-scoped callback lookup, SSRF-safe HTTP delivery, and idempotency headers |
+| internal/adapters/effects/domain_service_sender.go | Legacy HTTP callback sender code; not the current NATS service_event delivery path |
 | internal/adapters/memory | In-memory contract registry |
 | internal/observability | Logging, metrics, tracing and HTTP handler |
 | internal/codegen/generator.go | Go/Java/Protobuf/JSON Schema and runtime template generation |
