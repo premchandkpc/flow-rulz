@@ -210,7 +210,7 @@ type tenantDomainDoc struct {
 	TenantID   string    `bson:"tenant_id"`
 	Name       string    `bson:"name"`
 	EventTypes  []string                    `bson:"event_types"`
-	Deployments []domain.DomainServiceDeployment `bson:"deployments,omitempty"`
+	Deployments []domain.ServiceDeployment `bson:"deployments,omitempty"`
 	CreatedAt   time.Time                   `bson:"created_at"`
 	UpdatedAt  time.Time `bson:"updated_at"`
 }
