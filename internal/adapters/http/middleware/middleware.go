@@ -87,10 +87,10 @@ func globalConfigurationAuthStatus(r *http.Request) int {
 func isGlobalConfigurationRoute(path string) bool {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 2 && parts[0] == "v1" {
-		return parts[1] == "domains" || parts[1] == "subscriptions"
+		return parts[1] == "domains" || parts[1] == "subscriptions" || parts[1] == "rules"
 	}
 	return len(parts) == 3 && parts[0] == "v1" &&
-		(parts[1] == "domains" || parts[1] == "subscriptions")
+		(parts[1] == "domains" || parts[1] == "subscriptions" || parts[1] == "rules")
 }
 
 func tenantForRequest(r *http.Request) (string, int) {
