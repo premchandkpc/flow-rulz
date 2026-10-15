@@ -397,17 +397,28 @@ mod tests {
     }
 
     #[test]
-    fn event_envelope_reads_legacy_identity_but_serializes_canonical_meta() {
-        let input = json!({
-            "id":"e","type":"orders.created","tenant_id":"t","partition_key":"p",
-            "occurred_at":"2026-10-14T00:00:00Z","data":{}
-        });
-        let event: EventEnvelope = serde_json::from_value(input).unwrap();
-        let encoded = serde_json::to_value(event).unwrap();
-        assert_eq!(encoded["meta"]["tenant_id"], "t");
-        assert_eq!(encoded["meta"]["partition_key"], "p");
-        assert!(encoded.get("tenant_id").is_none());
-        assert!(encoded.get("partition_key").is_none());
+    fn event_envelope_rejects_top_level_runtime_identity() {
+        for input in [
+            json!({"id":"e","type":"orders.created","tenant_id":"t","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":"t","partition_key":"p"}}),
+            json!({"id":"e","type":"orders.created","partition_key":"p","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":"t","partition_key":"p"}}),
+            json!({"id":"e","type":"orders.created","tenant_id":"t","partition_key":"p","occurred_at":"2026-10-14T00:00:00Z","data":{}}),
+        ] {
+            assert!(serde_json::from_value::<EventEnvelope>(input).is_err());
+        }
+    }
+
+    #[test]
+    fn event_envelope_rejects_conflicting_typed_and_meta_identity_on_serialize() {
+        let event = EventEnvelope {
+            id: "e".into(), event_type: "orders.created".into(), tenant_id: "tenant-a".into(),
+            partition_key: "order-1".into(), workflow_id: None, occurred_at: Utc::now(),
+            data: json!({}), headers: Default::default(), contract: None, message_kind: None,
+            correlation_id: None, causation_id: None, meta: HashMap::from([
+                ("tenant_id".into(), json!("tenant-b")),
+                ("partition_key".into(), json!("order-1")),
+            ]),
+        };
+        assert!(serde_json::to_value(event).is_err());
     }
 
     #[test]
