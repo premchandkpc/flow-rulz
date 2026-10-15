@@ -11,6 +11,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9-]{0,62}$",
       "description": "Local service identifier within its parent domain. Worker routing identity is domain_id/service_id."
     },
     "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$" },
@@ -38,7 +39,6 @@
           "revision": { "type": "integer", "minimum": 1 }
         }
       }
-    },
-    "updated_at": { "type": "string", "format": "date-time" }
+    }
   }
 }
