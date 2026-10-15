@@ -18,7 +18,7 @@
     "schema_version": { "const": 1 },
     "tenant_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "domain_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "service_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "service_id": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Local service identifier within domain_id. Worker routing identity is domain_id/service_id." },
     "revision": { "type": "integer", "minimum": 1 },
     "active": { "type": "boolean" },
     "worker_profile": {
