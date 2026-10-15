@@ -121,3 +121,28 @@ func TestEventIngestionRejectsTenantMismatch(t *testing.T) {
 		t.Fatalf("publish calls = %d, want 0", publisher.calls)
 	}
 }
+
+func TestEventIngestionRejectsInvalidKnownMetaTypes(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	publisher := &capturePublisher{}
+	handler := NewEventIngestionHandler(publisher, 32)
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	server := middleware.TenantExtractor(mux)
+	body := `{
+		"id":"evt-invalid-meta","type":"order.created",
+		"occurred_at":"2026-10-15T07:30:00Z","data":{},
+		"meta":{"tenant_id":"tenant-a","partition_key":"order-1","headers":["not","an","object"],"future_field":{"allowed":true}}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/events/order.created", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Tenant-ID", "tenant-a")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if publisher.calls != 0 {
+		t.Fatalf("publish calls = %d, want 0", publisher.calls)
+	}
+}
