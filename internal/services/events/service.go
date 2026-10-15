@@ -12,15 +12,15 @@ import (
 
 // Service handles event processing, inbox dedup, rule evaluation, and execution creation.
 type Service struct {
-	compiler          ports.RuleCompiler
-	evaluator         ports.RuleEvaluator
-	quarantine        ports.QuarantineRepository
-	clock             ports.Clock
-	beginTx           ports.TransactionManager
-	newRepos          ports.EventTxRepositoryFactory
-	contracts         ports.ContractRegistry
-	subscriberRouter  SubscriberRouter
-	revisions         *immutableRevisionCache
+	compiler         ports.RuleCompiler
+	evaluator        ports.RuleEvaluator
+	quarantine       ports.QuarantineRepository
+	clock            ports.Clock
+	beginTx          ports.TransactionManager
+	newRepos         ports.EventTxRepositoryFactory
+	contracts        ports.ContractRegistry
+	subscriberRouter SubscriberRouter
+	revisions        *immutableRevisionCache
 }
 
 // NewService constructs the event-processing service.
