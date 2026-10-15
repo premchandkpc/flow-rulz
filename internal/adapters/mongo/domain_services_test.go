@@ -57,7 +57,7 @@ func TestTenantDomainBSONRoundTripPreservesServiceDeployments(t *testing.T) {
 		EventTypes: []string{"orders.created"},
 		Deployments: []domain.ServiceDeployment{{
 			ServiceID: "order-worker", Name: "order-worker", Revision: 3, Active: true,
-			Rulesets: []domain.RulesetAssignment{{RulesetID: "order-created", Revision: 7}},
+			Rulesets:      []domain.RulesetAssignment{{RulesetID: "order-created", Revision: 7}},
 			WorkerProfile: domain.WorkerProfile{MinReplicas: 1, MaxReplicas: 4, Concurrency: 8},
 		}},
 	}
