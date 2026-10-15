@@ -145,7 +145,7 @@ func TestSaveServiceAssignsStableNATSSubjectAndRejectsDuplicateName(t *testing.T
 	repo := newRepositoryStub()
 	service := NewService(repo, fixedClock{now: time.Unix(30, 0).UTC()})
 	item, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
-		Name: "receiver",
+		Name: "receiver", EventTypes: []string{"orders.created"},
 	})
 	if err != nil {
 		t.Fatalf("SaveService() error = %v", err)
@@ -157,7 +157,7 @@ func TestSaveServiceAssignsStableNATSSubjectAndRejectsDuplicateName(t *testing.T
 		t.Fatalf("NATS subject = %q, want %q", item.NATSSubject, want)
 	}
 	if _, err := service.SaveService(context.Background(), "tenant-a", &domain.DomainService{
-		Name: "receiver",
+		Name: "receiver", EventTypes: []string{"orders.created"},
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate service name error = %v, want ErrConflict", err)
 	}
