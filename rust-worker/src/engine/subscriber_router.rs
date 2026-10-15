@@ -15,7 +15,7 @@ pub(super) async fn route_subscribers(
     event: &EventEnvelope,
 ) -> Result<Vec<Effect>> {
     let rows = sqlx::query(
-        "SELECT s.service_id FROM tenant_domain_services s \
+        "SELECT DISTINCT s.service_id FROM tenant_domain_services s \
          JOIN tenant_domain_subscriptions sub ON sub.tenant_id=s.tenant_id AND sub.service_id=s.service_id \
          JOIN tenant_domains d ON d.tenant_id=sub.tenant_id AND d.domain_id=sub.domain_id \
          WHERE s.tenant_id=$1 AND s.active=TRUE AND $2=ANY(d.event_types) \
