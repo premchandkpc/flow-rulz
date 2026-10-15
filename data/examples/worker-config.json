@@ -1,5 +1,5 @@
 {
-  "domain_id": "commerce",
+  "domain_id": "6a14c4f1-7c4d-4e65-a7d9-39b2a95f4b1a",
   "service_id": "order-worker",
   "deployment_revision": 1,
   "rulesets": ["order-review", "order-notification"],
