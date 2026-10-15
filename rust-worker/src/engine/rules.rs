@@ -336,10 +336,10 @@ fn build_child_event_payload(
     meta.remove("flow.deployment_revision");
     meta.insert("tenant_id".into(), json!(event.tenant_id));
     meta.insert("partition_key".into(), json!(partition_key));
-    meta.insert("headers".into(), json!({
-        "flowrulz_parent_event_id": event.id,
-        "flowrulz_child_event_id": child_id
-    }));
+    let mut headers = event.headers.clone();
+    headers.insert("flowrulz_parent_event_id".into(), event.id.clone());
+    headers.insert("flowrulz_child_event_id".into(), child_id.to_string());
+    meta.insert("headers".into(), json!(headers));
     if let Some(workflow_id) = &event.workflow_id { meta.insert("workflow_id".into(), json!(workflow_id)); }
     if let Some(correlation_id) = &event.correlation_id { meta.insert("correlation_id".into(), json!(correlation_id)); }
     meta.insert("causation_id".into(), json!(event.id));
