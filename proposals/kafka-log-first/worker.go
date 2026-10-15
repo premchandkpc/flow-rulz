@@ -268,6 +268,7 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 		}
 		offsetsByPartition[key] = offset.Next
 	}
+	maxOffsetByPartition := make(map[string]int64, len(batch.Offsets))
 	for _, record := range batch.Records {
 		if record.Topic == "" || record.Partition < 0 || record.Offset < 0 {
 			return errors.New("input record contains an invalid topic, partition, or offset")
@@ -276,6 +277,17 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 		next, exists := offsetsByPartition[key]
 		if !exists || next <= record.Offset {
 			return fmt.Errorf("input checkpoint does not cover %s[%d]@%d", record.Topic, record.Partition, record.Offset)
+		}
+		if previous, found := maxOffsetByPartition[key]; !found || record.Offset > previous {
+			maxOffsetByPartition[key] = record.Offset
+		}
+	}
+	if len(maxOffsetByPartition) != len(offsetsByPartition) {
+		return errors.New("input checkpoints must correspond exactly to partitions present in the batch")
+	}
+	for key, maxOffset := range maxOffsetByPartition {
+		if offsetsByPartition[key] != maxOffset+1 {
+			return fmt.Errorf("input checkpoint for %q must be exactly one past the highest processed offset", key)
 		}
 	}
 
@@ -304,6 +316,12 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 			return fmt.Errorf("evaluate event %s: %w", env.ID, err)
 		}
 		for _, effect := range effects {
+			if effect.TenantID != env.TenantID {
+				return fmt.Errorf("effect %q tenant %q does not match event tenant %q", effect.ID, effect.TenantID, env.TenantID)
+			}
+			if effect.ID == "" || effect.IdempotencyKey == "" || effect.Destination == "" || effect.PartitionKey == "" {
+				return errors.New("effect id, idempotency key, destination, and partition key are required")
+			}
 			value, err := w.Codec.EncodeEffect(effect)
 			if err != nil {
 				return err
@@ -313,6 +331,9 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 			}
 		}
 		for _, audit := range audits {
+			if audit.TenantID != env.TenantID || audit.EventID != env.ID || audit.RulesetID == "" || audit.Revision <= 0 {
+				return fmt.Errorf("audit for event %q has invalid tenant, event, or ruleset identity", env.ID)
+			}
 			value, err := w.Codec.EncodeAudit(audit)
 			if err != nil {
 				return err
