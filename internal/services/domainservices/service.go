@@ -118,6 +118,9 @@ func normalizeAndValidateDomain(item *domain.TenantDomain, tenantID string) erro
 	item.TenantID = tenantID
 	item.Name = strings.TrimSpace(item.Name)
 	item.EventTypes = uniqueTrimmed(item.EventTypes)
+	if item.EventTypes == nil {
+		item.EventTypes = []string{}
+	}
 	if !validTenantID(tenantID) || !namePattern.MatchString(item.Name) {
 		return fmt.Errorf("%w: a valid domain name is required", ErrInvalidInput)
 	}
