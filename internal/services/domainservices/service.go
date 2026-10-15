@@ -1,6 +1,4 @@
-// Package domainservices manages tenant domains and services.
-// It provides CRUD operations for domains and services, and validates
-// event types and tenant-scoped NATS delivery identities.
+// Package domainservices manages domain configuration and service ruleset assignments.
 package domainservices
 
 import (
@@ -35,8 +33,7 @@ const (
 	maxDomainsPerService   = 25
 )
 
-// Service manages tenant domains and services.
-// It handles CRUD operations, validation, and event type subscription queries.
+// Service manages domain configuration and service ruleset assignments.
 type Service struct {
 	repository ports.DomainServiceRepository
 	clock      ports.Clock
@@ -51,7 +48,7 @@ func NewService(repository ports.DomainServiceRepository, clock ports.Clock) *Se
 	return &Service{repository: repository, clock: clock}
 }
 
-// WithRuleService enables tenant-scoped verification of immutable ruleset revisions.
+// WithRuleService is retained for compatibility with legacy wiring. Rule assignments are resolved from event identity at runtime.
 func (s *Service) WithRuleService(ruleService ports.RuleService) *Service {
 	s.rules = ruleService
 	return s
@@ -60,9 +57,6 @@ func (s *Service) WithRuleService(ruleService ports.RuleService) *Service {
 // SaveDomain creates or updates a tenant domain.
 func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
 	if err := normalizeAndValidateDomain(item, tenantID); err != nil {
-		return nil, err
-	}
-	if err := s.validateAssignedRevisions(ctx, tenantID, item.Deployments); err != nil {
 		return nil, err
 	}
 	if err := s.ensureDomainNameAvailable(ctx, item); err != nil {
@@ -78,24 +72,6 @@ func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.
 		return nil, err
 	}
 	return item, nil
-}
-
-func (s *Service) validateAssignedRevisions(ctx context.Context, tenantID string, deployments []domain.ServiceDeployment) error {
-	if s.rules == nil {
-		return nil // Unit tests and migration tooling may validate shape without a live rule registry.
-	}
-	for _, deployment := range deployments {
-		for _, assignment := range deployment.Rulesets {
-			revision, err := s.rules.GetRevision(ctx, tenantID, assignment.RulesetID, assignment.Revision)
-			if err != nil {
-				return fmt.Errorf("%w: ruleset %q revision %d is not available in this tenant: %w", ErrInvalidInput, assignment.RulesetID, assignment.Revision, err)
-			}
-			if revision == nil || revision.TenantScope != tenantID || revision.RuleID != assignment.RulesetID || revision.Revision != assignment.Revision {
-				return fmt.Errorf("%w: ruleset %q revision %d does not match the requested tenant-scoped revision", ErrInvalidInput, assignment.RulesetID, assignment.Revision)
-			}
-		}
-	}
-	return nil
 }
 
 func (s *Service) validateDeploymentRevisionChanges(ctx context.Context, tenantID string, item *domain.TenantDomain) error {
@@ -142,15 +118,11 @@ func normalizeAndValidateDomain(item *domain.TenantDomain, tenantID string) erro
 	item.TenantID = tenantID
 	item.Name = strings.TrimSpace(item.Name)
 	item.EventTypes = uniqueTrimmed(item.EventTypes)
-	if !validTenantID(tenantID) || !namePattern.MatchString(item.Name) ||
-		len(item.EventTypes) == 0 || len(item.EventTypes) > maxEventTypesPerDomain {
-		return fmt.Errorf("%w: domain name and 1-%d event_types are required", ErrInvalidInput, maxEventTypesPerDomain)
+	if !validTenantID(tenantID) || !namePattern.MatchString(item.Name) {
+		return fmt.Errorf("%w: a valid domain name is required", ErrInvalidInput)
 	}
-	for _, eventType := range item.EventTypes {
-		if !eventTypePattern.MatchString(eventType) {
-			return fmt.Errorf("%w: invalid event type %q", ErrInvalidInput, eventType)
-		}
-	}
+	// Event type, tenant identity, and partition key are supplied by each event.
+	item.EventTypes = nil
 	if err := validateDeployments(item.Deployments); err != nil {
 		return err
 	}
@@ -177,7 +149,7 @@ func validateDeployments(deployments []domain.ServiceDeployment) error {
 		}
 		seenRulesets := make(map[string]struct{}, len(deployment.Rulesets))
 		for _, assignment := range deployment.Rulesets {
-			if strings.TrimSpace(assignment.RulesetID) == "" || len(assignment.RulesetID) > 128 || !validTenantID(assignment.RulesetID) || assignment.Revision <= 0 {
+			if strings.TrimSpace(assignment.RulesetID) == "" || len(assignment.RulesetID) > 128 || !validIdentifier(assignment.RulesetID) || assignment.Revision <= 0 {
 				return fmt.Errorf("%w: deployment %q contains an invalid ruleset assignment", ErrInvalidInput, deployment.ServiceID)
 			}
 			if _, exists := seenRulesets[assignment.RulesetID]; exists {
@@ -423,10 +395,14 @@ func (s *Service) SubscribersForEvent(ctx context.Context, tenantID, eventType s
 }
 
 func validTenantID(tenantID string) bool {
-	if tenantID == "" || len(tenantID) > 128 {
+	return validIdentifier(tenantID)
+}
+
+func validIdentifier(value string) bool {
+	if value == "" || len(value) > 128 {
 		return false
 	}
-	for _, r := range tenantID {
+	for _, r := range value {
 		if unicode.IsControl(r) {
 			return false
 		}
