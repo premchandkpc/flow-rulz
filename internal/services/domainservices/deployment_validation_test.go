@@ -128,7 +128,7 @@ type assignedRulesetLookupStub struct {
 	err      error
 }
 
-func (s *assignedRulesetLookupStub) GetRevision(_ context.Context, scope, rulesetID string, revision int64) (*domain.RuleRevision, error) {
+func (s *assignedRulesetLookupStub) GetRevision(_ context.Context, scope, _ string, _ int64) (*domain.RuleRevision, error) {
 	s.scope = scope
 	if s.err != nil {
 		return nil, s.err
@@ -136,8 +136,8 @@ func (s *assignedRulesetLookupStub) GetRevision(_ context.Context, scope, rulese
 	if s.revision == nil {
 		return nil, nil
 	}
-	copy := *s.revision
-	return &copy, nil
+	cloned := *s.revision
+	return &cloned, nil
 }
 
 func TestDomainServiceAssignmentRequiresGlobalImmutableRulesetRevision(t *testing.T) {
