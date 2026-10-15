@@ -16,7 +16,7 @@ The detailed current-state topology and file map live in [map.md](map.md). This 
 
 ## Runtime path
 
-1. Producers publish an EventEnvelope to the configured NATS subject family, currently events.shard.N.
+1. Producers publish an EventEnvelope to the configured NATS subject family, currently events.shard.N. The stable public fields are top-level; runtime identity, partitioning, tracing, and extension fields are nested under `meta`.
 2. The worker obtains shard leases and uses the bounded key queue to serialize events per partition key.
 3. The event service validates the fencing token, deduplicates in the inbox, resolves applicable active rulesets (including contract bindings), and evaluates them. A separate generic subscriber router resolves matching tenant subscriptions and creates stable delivery intents; executions, ruleset effects, subscriber deliveries, and inbox state commit atomically.
 4. The worker ACKs only after durable commit.
