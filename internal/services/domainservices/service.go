@@ -122,7 +122,6 @@ func normalizeAndValidateDomain(item *domain.TenantDomain, tenantID string) erro
 		return fmt.Errorf("%w: a valid domain name is required", ErrInvalidInput)
 	}
 	// Event type, tenant identity, and partition key are supplied by each event.
-	item.EventTypes = nil
 	if err := validateDeployments(item.Deployments); err != nil {
 		return err
 	}
