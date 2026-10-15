@@ -197,7 +197,7 @@ func (h *DomainServiceHandler) DeleteService(w http.ResponseWriter, r *http.Requ
 	responses.WriteNoContent(w)
 }
 
-func (h *DomainServiceHandler) ready(w http.ResponseWriter, r *http.Request) bool {
+func (h *DomainServiceHandler) ready(w http.ResponseWriter, _ *http.Request) bool {
 	if h.service == nil {
 		responses.WriteError(w, http.StatusServiceUnavailable, "domain configuration is not configured", responses.CodeInternalError)
 		return false
