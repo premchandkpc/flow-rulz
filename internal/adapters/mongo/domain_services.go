@@ -206,13 +206,13 @@ func (r *DomainServiceRepository) ListSubscribersForEvent(ctx context.Context, t
 }
 
 type tenantDomainDoc struct {
-	ID         string    `bson:"domain_id"`
-	TenantID   string    `bson:"tenant_id"`
-	Name       string    `bson:"name"`
-	EventTypes  []string                    `bson:"event_types"`
+	ID          string                     `bson:"domain_id"`
+	TenantID    string                     `bson:"tenant_id"`
+	Name        string                     `bson:"name"`
+	EventTypes  []string                   `bson:"event_types"`
 	Deployments []domain.ServiceDeployment `bson:"deployments,omitempty"`
-	CreatedAt   time.Time                   `bson:"created_at"`
-	UpdatedAt  time.Time `bson:"updated_at"`
+	CreatedAt   time.Time                  `bson:"created_at"`
+	UpdatedAt   time.Time                  `bson:"updated_at"`
 }
 
 func (d tenantDomainDoc) toDomain() *domain.TenantDomain {
