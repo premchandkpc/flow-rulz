@@ -132,6 +132,7 @@ type EventDoc struct {
 	ScheduledAt  *time.Time        `bson:"scheduled_at,omitempty"`
 	Data         []byte            `bson:"data"`
 	Headers      map[string]string `bson:"headers,omitempty"`
+	Meta         map[string]any    `bson:"meta,omitempty"`
 	Processed    bool              `bson:"processed"`
 	ExecutionID  string            `bson:"execution_id,omitempty"`
 	ProcessedAt  *time.Time        `bson:"processed_at,omitempty"`
@@ -140,6 +141,18 @@ type EventDoc struct {
 
 // EventDocFromDomain converts a domain event envelope to a MongoDB document.
 func EventDocFromDomain(event *domain.EventEnvelope) *EventDoc {
+	meta := make(map[string]any, len(event.Meta)+8)
+	for key, raw := range event.Meta {
+		var value any
+		if json.Unmarshal(raw, &value) == nil { meta[key] = value }
+	}
+	meta["tenant_id"] = event.TenantID
+	meta["partition_key"] = event.PartitionKey
+	if event.WorkflowID != "" { meta["workflow_id"] = event.WorkflowID }
+	if event.MessageKind != "" { meta["message_kind"] = event.MessageKind }
+	if event.CorrelationID != "" { meta["correlation_id"] = event.CorrelationID }
+	if event.CausationID != "" { meta["causation_id"] = event.CausationID }
+	if len(event.Headers) > 0 { meta["headers"] = event.Headers }
 	return &EventDoc{
 		EventID:      event.ID,
 		TenantID:     event.TenantID,
@@ -149,6 +162,7 @@ func EventDocFromDomain(event *domain.EventEnvelope) *EventDoc {
 		OccurredAt:   event.OccurredAt,
 		Data:         append([]byte(nil), event.Data...),
 		Headers:      event.Headers,
+		Meta:         meta,
 		Processed:    false,
 		CreatedAt:    time.Now().UTC(),
 	}
@@ -156,6 +170,10 @@ func EventDocFromDomain(event *domain.EventEnvelope) *EventDoc {
 
 // ToDomain converts the MongoDB event document to a domain event envelope.
 func (d *EventDoc) ToDomain() *domain.EventEnvelope {
+	meta := make(map[string]json.RawMessage, len(d.Meta))
+	for key, value := range d.Meta {
+		if raw, err := json.Marshal(value); err == nil { meta[key] = raw }
+	}
 	var data json.RawMessage
 	if d.Data != nil {
 		data = json.RawMessage(append([]byte(nil), d.Data...))
@@ -170,5 +188,15 @@ func (d *EventDoc) ToDomain() *domain.EventEnvelope {
 		OccurredAt:   d.OccurredAt,
 		Data:         data,
 		Headers:      d.Headers,
+		Meta:         meta,
+		MessageKind: metaStringFromMap(meta, "message_kind"),
+		CorrelationID: metaStringFromMap(meta, "correlation_id"),
+		CausationID: metaStringFromMap(meta, "causation_id"),
 	}
+}
+
+func metaStringFromMap(meta map[string]json.RawMessage, key string) string {
+	var value string
+	_ = json.Unmarshal(meta[key], &value)
+	return value
 }
