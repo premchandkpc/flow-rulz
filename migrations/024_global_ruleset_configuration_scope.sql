@@ -43,7 +43,6 @@ BEGIN
         JOIN contract_bindings b
           ON a.contract_name = b.contract_name
          AND a.contract_version = b.contract_version
-         AND a.rule_set = b.rule_set
          AND a.id < b.id
         WHERE a.contract_hash IS DISTINCT FROM b.contract_hash
     ) THEN
