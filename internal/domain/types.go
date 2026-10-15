@@ -119,12 +119,39 @@ type ContractSchema struct {
 
 // TenantDomain groups event types that tenant services can subscribe to.
 type TenantDomain struct {
-	ID         string    `json:"id"`
-	TenantID   string    `json:"tenant_id"`
-	Name       string    `json:"name"`
-	EventTypes []string  `json:"event_types"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          string                    `json:"id"`
+	TenantID    string                    `json:"tenant_id"`
+	Name        string                    `json:"name"`
+	EventTypes  []string                  `json:"event_types"`
+	Deployments []DomainServiceDeployment `json:"deployments,omitempty"`
+	CreatedAt   time.Time                 `json:"created_at"`
+	UpdatedAt   time.Time                 `json:"updated_at"`
+}
+
+// DomainServiceDeployment declares the immutable ruleset revisions assigned to one
+// execution-service worker pool. It is distinct from DomainService, which represents
+// subscriber registration and delivery routing.
+type DomainServiceDeployment struct {
+	ServiceID     string              `json:"service_id"`
+	Name          string              `json:"name"`
+	Revision      int64               `json:"revision"`
+	Active        bool                `json:"active"`
+	Rulesets      []RulesetAssignment `json:"rulesets"`
+	WorkerProfile WorkerProfile       `json:"worker_profile,omitempty"`
+}
+
+// RulesetAssignment pins a deployment to one immutable ruleset revision.
+type RulesetAssignment struct {
+	RulesetID string       `json:"ruleset_id"`
+	Revision  int64        `json:"revision"`
+	Contract  *ContractRef `json:"contract,omitempty"`
+}
+
+// WorkerProfile contains service-level worker scaling and concurrency hints.
+type WorkerProfile struct {
+	MinReplicas int `json:"min_replicas,omitempty"`
+	MaxReplicas int `json:"max_replicas,omitempty"`
+	Concurrency int `json:"concurrency,omitempty"`
 }
 
 // DomainService is a tenant-owned NATS consumer and its domain subscriptions.
