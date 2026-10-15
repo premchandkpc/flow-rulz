@@ -77,7 +77,7 @@ func TestRuleEvaluatorEvaluatesPinnedRulesAndRoutesOnce(t *testing.T) {
 		},
 		Router: router, Now: func() time.Time { return now },
 	}
-	effects, audits, err := evaluator.Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
+	effects, audits, err := evaluator.Evaluate(context.Background(), "domain-a/orders", 2, evaluatorEvent())
 	if err != nil { t.Fatalf("Evaluate() error = %v", err) }
 	if len(effects) != 3 { t.Fatalf("effects = %d, want 3", len(effects)) }
 	if len(audits) != 2 { t.Fatalf("audits = %d, want 2", len(audits)) }
@@ -102,14 +102,14 @@ func TestRuleEvaluatorRejectsInvalidEnvelopeAndDeployment(t *testing.T) {
 		{"missing tenant", func(e *EventEnvelope) { e.TenantID = "" }, nil},
 		{"missing event type", func(e *EventEnvelope) { e.EventType = "" }, nil},
 		{"missing partition key", func(e *EventEnvelope) { e.PartitionKey = "" }, nil},
-		{"wrong service", func(e *EventEnvelope) { e.Metadata.TargetServiceID = "tenant-a/domain-a/billing" }, nil},
+		{"wrong service", func(e *EventEnvelope) { e.Metadata.TargetServiceID = "domain-a/billing" }, nil},
 		{"wrong revision", func(e *EventEnvelope) { e.Metadata.DeploymentRevision = 1 }, nil},
 		{"hop limit", func(e *EventEnvelope) { e.Metadata.Hop = 4 }, ErrHopLimit},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			event := evaluatorEvent(); tt.edit(&event)
-			_, _, err := (&RuleEvaluator{Resolver: evaluatorResolver{}, MaxHop: 4}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, event)
+			_, _, err := (&RuleEvaluator{Resolver: evaluatorResolver{}, MaxHop: 4}).Evaluate(context.Background(), "domain-a/orders", 2, event)
 			if err == nil { t.Fatal("expected validation error") }
 			if tt.want != nil && !errors.Is(err, tt.want) { t.Fatalf("error = %v, want %v", err, tt.want) }
 		})
@@ -134,28 +134,28 @@ func TestRuleEvaluatorRejectsInvalidResolverReferences(t *testing.T) {
 
 func TestRuleEvaluatorPropagatesResolutionFailures(t *testing.T) {
 	resolveErr := errors.New("projection unavailable")
-	_, _, err := (&RuleEvaluator{Resolver: evaluatorResolver{resolveErr: resolveErr}}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
+	_, _, err := (&RuleEvaluator{Resolver: evaluatorResolver{resolveErr: resolveErr}}).Evaluate(context.Background(), "domain-a/orders", 2, evaluatorEvent())
 	if !errors.Is(err, resolveErr) { t.Fatalf("resolve error = %v", err) }
 
 	revisionErr := errors.New("immutable revision missing")
 	_, _, err = (&RuleEvaluator{Resolver: evaluatorResolver{
 		refs: []RulesetRef{{RulesetID: "orders-created", Revision: 1}},
 		revisionErr: revisionErr,
-	}}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
+	}}).Evaluate(context.Background(), "domain-a/orders", 2, evaluatorEvent())
 	if !errors.Is(err, ErrMissingRuleset) || !errors.Is(err, revisionErr) { t.Fatalf("revision error = %v", err) }
 
 	evaluationErr := errors.New("rule engine failed")
 	_, _, err = (&RuleEvaluator{Resolver: evaluatorResolver{
 		refs: []RulesetRef{{RulesetID: "orders-created", Revision: 1}},
 		compiled: evaluatorRuleset{err: evaluationErr},
-	}}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
+	}}).Evaluate(context.Background(), "domain-a/orders", 2, evaluatorEvent())
 	if !errors.Is(err, evaluationErr) { t.Fatalf("evaluation error = %v", err) }
 }
 
 func TestRuleEvaluatorRejectsNilCompiledRuleset(t *testing.T) {
 	_, _, err := (&RuleEvaluator{Resolver: evaluatorResolver{
 		refs: []RulesetRef{{RulesetID: "orders-created", Revision: 1}},
-	}}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
+	}}).Evaluate(context.Background(), "domain-a/orders", 2, evaluatorEvent())
 	if !errors.Is(err, ErrMissingRuleset) { t.Fatalf("error = %v, want ErrMissingRuleset", err) }
 }
 
@@ -184,7 +184,7 @@ func TestRuleEvaluatorRejectsMalformedEffects(t *testing.T) {
 				}
 				router = nil
 			}
-			_, _, err := (&RuleEvaluator{Resolver:resolver, Router:router}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
+			_, _, err := (&RuleEvaluator{Resolver:resolver, Router:router}).Evaluate(context.Background(), "domain-a/orders", 2, evaluatorEvent())
 			if err == nil { t.Fatal("expected malformed effect error") }
 		})
 	}
@@ -192,6 +192,6 @@ func TestRuleEvaluatorRejectsMalformedEffects(t *testing.T) {
 
 func TestRuleEvaluatorPropagatesSubscriberRouterFailure(t *testing.T) {
 	routerErr := errors.New("subscriber projection unavailable")
-	_, _, err := (&RuleEvaluator{Resolver:evaluatorResolver{}, Router:&evaluatorRouter{err:routerErr}}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
+	_, _, err := (&RuleEvaluator{Resolver:evaluatorResolver{}, Router:&evaluatorRouter{err:routerErr}}).Evaluate(context.Background(), "domain-a/orders", 2, evaluatorEvent())
 	if !errors.Is(err, routerErr) { t.Fatalf("router error = %v", err) }
 }
