@@ -78,6 +78,7 @@ impl Serialize for EventEnvelope {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct EventEnvelopeWire {
     id: String,
     #[serde(rename = "type")]
@@ -370,6 +371,32 @@ mod tests {
     fn numeric_string_comparison_matches_go_rules() {
         assert!(compare_eq(&json!(10), Some(&json!("10"))));
         assert!(!eval_predicate(&Predicate { all: None, any: None, not: None, path: Some("$.missing".into()), op: Some("neq".into()), value: Some(json!(1)) }, &json!({})).unwrap());
+    }
+
+    #[test]
+    fn event_envelope_rejects_invalid_or_missing_meta_identity() {
+        for input in [
+            json!({"id":"e","type":"orders.created","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"partition_key":"p"}}),
+            json!({"id":"e","type":"orders.created","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":42,"partition_key":"p"}}),
+            json!({"id":"e","type":"orders.created","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":"t","partition_key":false}}),
+            json!({"id":"e","type":"orders.created","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":"t","partition_key":"p"},"unknown_top_level":true}),
+        ] {
+            assert!(serde_json::from_value::<EventEnvelope>(input).is_err());
+        }
+    }
+
+    #[test]
+    fn event_envelope_reads_legacy_identity_but_serializes_canonical_meta() {
+        let input = json!({
+            "id":"e","type":"orders.created","tenant_id":"t","partition_key":"p",
+            "occurred_at":"2026-10-14T00:00:00Z","data":{}
+        });
+        let event: EventEnvelope = serde_json::from_value(input).unwrap();
+        let encoded = serde_json::to_value(event).unwrap();
+        assert_eq!(encoded["meta"]["tenant_id"], "t");
+        assert_eq!(encoded["meta"]["partition_key"], "p");
+        assert!(encoded.get("tenant_id").is_none());
+        assert!(encoded.get("partition_key").is_none());
     }
 
     #[test]
