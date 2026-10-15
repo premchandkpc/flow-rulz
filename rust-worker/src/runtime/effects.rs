@@ -86,7 +86,7 @@ async fn process_claimed_effect(
     row: sqlx::postgres::PgRow,
 ) -> Result<()> {
     let effect = decode_claimed_effect(&row)?;
-    match send_effect(js, config, &effect).await {
+    match send_effect(pool, js, config, &effect).await {
         Ok(()) => mark_effect_delivered(pool, claim, &effect.id).await,
         Err(error) => record_effect_failure(pool, claim, &effect, &error.to_string()).await,
     }
@@ -177,6 +177,7 @@ async fn schedule_effect_retry(pool: &PgPool, claim: &str, effect_id: &str, atte
 }
 
 async fn send_effect(
+    pool: &PgPool,
     js: &jetstream::Context,
     config: &Config,
     effect: &ClaimedEffect,
@@ -206,6 +207,19 @@ async fn send_effect(
             event.validate().context("validate service event")?;
             if event.tenant_id != effect.tenant_id || event.event_type != effect.name {
                 bail!("service event identity does not match its outbox effect");
+            }
+            // Match Go's dispatcher contract: a service deactivated after the
+            // delivery intent was committed must not receive new deliveries.
+            let active: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM tenant_domain_services WHERE tenant_id=$1 AND service_id=$2 AND active=TRUE)"
+            )
+            .bind(&effect.tenant_id)
+            .bind(&effect.destination)
+            .fetch_one(pool)
+            .await
+            .context("verify active tenant service")?;
+            if !active {
+                bail!("active tenant service {:?} was not found", effect.destination);
             }
             service_subject(&effect.tenant_id, &effect.destination)
         }
