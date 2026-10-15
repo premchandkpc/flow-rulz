@@ -85,10 +85,10 @@ func TestEventEnvelopeMarshalsIdentityFromMetaWhenTypedFieldsAreUnset(t *testing
 	event := EventEnvelope{
 		ID: "evt-1", Type: "orders.created",
 		OccurredAt: time.Date(2026, 10, 15, 7, 30, 0, 0, time.UTC),
-		Data: json.RawMessage(`{}`),
+		Data:       json.RawMessage(`{}`),
 		Meta: map[string]any{
-			"tenant_id":     "merchant-42",
-			"partition_key": "order-1007",
+			"tenant_id":      "merchant-42",
+			"partition_key":  "order-1007",
 			"future_context": map[string]any{"source": "checkout"},
 		},
 	}
