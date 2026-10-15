@@ -116,6 +116,15 @@ async fn persist_new_event(
     envelope: &EventEnvelope,
 ) -> Result<ProcessOutcome> {
     let revision = persistence::load_active_revision(tx, envelope).await?;
+    if let Some(required) = &revision.input_contract {
+        if envelope.contract.is_none() {
+            bail!("rule set {} requires contract {}@{}", revision.rule_id, required.name, required.version);
+        }
+        bail!("Rust worker cannot safely evaluate contract-bound rule set {} yet; route this event to the Go worker", revision.rule_id);
+    }
+    if envelope.contract.is_some() {
+        bail!("Rust worker cannot safely validate event contracts yet; route this event to the Go worker");
+    }
     let (matched_rules, effects) = rules::evaluate(&revision, envelope)?;
     let decision_hash = calculate_decision_hash(&revision, envelope, &matched_rules, &effects);
     let execution_id = calculate_execution_id(envelope, revision.revision);
