@@ -56,7 +56,7 @@ func TestValidateDeploymentRejectsDuplicateServiceIDsAndNames(t *testing.T) {
 		Rulesets: []domain.RulesetAssignment{{RulesetID: "orders-created", Revision: 1}},
 	}
 	tests := []struct {
-		name string
+		name   string
 		second domain.ServiceDeployment
 	}{
 		{name: "duplicate service id", second: domain.ServiceDeployment{
@@ -85,7 +85,7 @@ func TestValidateDeploymentRejectsDuplicateServiceIDsAndNames(t *testing.T) {
 type mappedRuleRevisionStub struct {
 	ports.RuleService
 	revisions map[string]*domain.RuleRevision
-	errs map[string]error
+	errs      map[string]error
 }
 
 func (r mappedRuleRevisionStub) GetRevision(_ context.Context, tenantID, rulesetID string, revision int64) (*domain.RuleRevision, error) {
@@ -104,11 +104,11 @@ func TestDeploymentRuleRevisionAndContractValidation(t *testing.T) {
 		InputContract: &domain.ContractRef{Name: "order.created", Version: "v1", SchemaHash: "sha256:abc"},
 	}
 	tests := []struct {
-		name string
-		revision *domain.RuleRevision
-		lookupErr error
-		contract *domain.ContractRef
-		wantErr bool
+		name            string
+		revision        *domain.RuleRevision
+		lookupErr       error
+		contract        *domain.ContractRef
+		wantErr         bool
 		wantLookupError bool
 	}{
 		{name: "matching immutable revision and contract", revision: goodRevision, contract: &domain.ContractRef{Name: "order.created", Version: "v1", SchemaHash: "sha256:abc"}},
