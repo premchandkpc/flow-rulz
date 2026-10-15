@@ -14,7 +14,7 @@ var (
 	ErrLogUnavailable       = errors.New("log storage unavailable")
 	ErrPositionUnavailable  = errors.New("log position unavailable")
 	ErrAmbiguousCommit      = errors.New("log transaction outcome is ambiguous")
-	ErrIdempotencyConflict  = errors.New("record id reused with different content")
+	ErrIdempotencyConflict = errors.New("record id reused with different content")
 )
 
 // LogRecord is the backend-neutral unit persisted in the durable log.
@@ -29,8 +29,8 @@ type LogRecord struct {
 	OccurredAt  time.Time
 }
 
-// LogPosition identifies a consumed input position. The backend interprets
-// Stream and Partition, while Sequence must be monotonic within that partition.
+// LogPosition identifies an existing durable log entry. The backend interprets
+// Stream and Partition; Sequence is the entry's stable position within the partition.
 type LogPosition struct {
 	Stream    string
 	Partition string
