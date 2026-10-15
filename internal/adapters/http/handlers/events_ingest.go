@@ -72,7 +72,7 @@ func validateEventMetadata(meta map[string]json.RawMessage) error {
 			return fmt.Errorf("meta.headers must be an object with string values")
 		}
 	}
-	for _, key := range []string{"schema_version", "hop"} {
+	for _, key := range []string{"hop"} {
 		if raw, exists := meta[key]; exists {
 			var value int64
 			if err := json.Unmarshal(raw, &value); err != nil || value < 0 {
