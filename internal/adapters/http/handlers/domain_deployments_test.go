@@ -50,7 +50,7 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	if res.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body = %s; want %d", res.Code, res.Body.String(), http.StatusCreated)
 	}
-	if !service.called || service.scope != domainConfigurationScope {
+	if !service.called || service.scope != domain.DomainConfigurationScope {
 		t.Fatalf("SaveDomain called=%t scope=%q", service.called, service.scope)
 	}
 	if len(service.item.Deployments) != 1 {
