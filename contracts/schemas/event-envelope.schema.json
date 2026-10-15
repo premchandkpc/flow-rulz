@@ -35,11 +35,11 @@
       "format": "date-time"
     },
     "workflow_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "message_kind": { "type": "string", "enum": ["event", "command", "effect", "request", "response"] },
+    "message_kind": { "type": "string", "minLength": 1, "maxLength": 64 },
     "contract": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version"],
+      "required": ["name", "version", "schema_hash"],
       "properties": {
         "name": { "type": "string", "minLength": 1, "maxLength": 128 },
         "version": { "type": "string", "minLength": 1, "maxLength": 64 },
