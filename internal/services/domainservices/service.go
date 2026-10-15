@@ -54,8 +54,9 @@ func (s *Service) WithRuleService(ruleService ports.RuleService) *Service {
 }
 
 // SaveDomain creates or updates a Domain configuration.
-func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
-	if err := normalizeAndValidateDomain(item, tenantID); err != nil {
+func (s *Service) SaveDomain(ctx context.Context, _ string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
+	scopeID := domain.DomainConfigurationScope
+	if err := normalizeAndValidateDomain(item, scopeID); err != nil {
 		return nil, err
 	}
 	if err := s.validateAssignedRulesets(ctx, item); err != nil {
@@ -64,10 +65,10 @@ func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.
 	if err := s.ensureDomainNameAvailable(ctx, item); err != nil {
 		return nil, err
 	}
-	if err := s.initializeDomainIdentity(ctx, tenantID, item); err != nil {
+	if err := s.initializeDomainIdentity(ctx, scopeID, item); err != nil {
 		return nil, err
 	}
-	if err := s.validateDeploymentRevisionChanges(ctx, tenantID, item); err != nil {
+	if err := s.validateDeploymentRevisionChanges(ctx, scopeID, item); err != nil {
 		return nil, err
 	}
 	if err := s.persistDomain(ctx, item); err != nil {
@@ -95,8 +96,8 @@ func (s *Service) validateAssignedRulesets(ctx context.Context, item *domain.Ten
 	return nil
 }
 
-func (s *Service) validateDeploymentRevisionChanges(ctx context.Context, tenantID string, item *domain.TenantDomain) error {
-	existing, err := s.repository.GetDomain(ctx, tenantID, item.ID)
+func (s *Service) validateDeploymentRevisionChanges(ctx context.Context, scopeID string, item *domain.TenantDomain) error {
+	existing, err := s.repository.GetDomain(ctx, scopeID, item.ID)
 	if err != nil {
 		return fmt.Errorf("load existing domain deployment revisions: %w", err)
 	}
@@ -132,17 +133,17 @@ func (s *Service) validateDeploymentRevisionChanges(ctx context.Context, tenantI
 	return nil
 }
 
-func normalizeAndValidateDomain(item *domain.TenantDomain, tenantID string) error {
+func normalizeAndValidateDomain(item *domain.TenantDomain, scopeID string) error {
 	if item == nil {
 		return fmt.Errorf("%w: domain is required", ErrInvalidInput)
 	}
-	item.TenantID = tenantID
+	item.TenantID = scopeID
 	item.Name = strings.TrimSpace(item.Name)
 	item.EventTypes = uniqueTrimmed(item.EventTypes)
 	if item.EventTypes == nil {
 		item.EventTypes = []string{}
 	}
-	if !validTenantID(tenantID) || !namePattern.MatchString(item.Name) {
+	if !validIdentifier(scopeID) || !namePattern.MatchString(item.Name) {
 		return fmt.Errorf("%w: a valid domain name is required", ErrInvalidInput)
 	}
 	// Event type, tenant identity, and partition key are supplied by each event.
@@ -202,12 +203,12 @@ func (s *Service) ensureDomainNameAvailable(ctx context.Context, item *domain.Te
 	return nil
 }
 
-func (s *Service) initializeDomainIdentity(ctx context.Context, tenantID string, item *domain.TenantDomain) error {
+func (s *Service) initializeDomainIdentity(ctx context.Context, scopeID string, item *domain.TenantDomain) error {
 	if item.ID == "" {
 		item.ID = domain.NewID()
 		return nil
 	}
-	existing, err := s.repository.GetDomain(ctx, tenantID, item.ID)
+	existing, err := s.repository.GetDomain(ctx, scopeID, item.ID)
 	if err != nil {
 		return fmt.Errorf("get domain before update: %w", err)
 	}
@@ -234,8 +235,8 @@ func (s *Service) persistDomain(ctx context.Context, item *domain.TenantDomain) 
 }
 
 // GetDomain retrieves a Domain by ID.
-func (s *Service) GetDomain(ctx context.Context, tenantID, domainID string) (*domain.TenantDomain, error) {
-	item, err := s.repository.GetDomain(ctx, tenantID, domainID)
+func (s *Service) GetDomain(ctx context.Context, _ string, domainID string) (*domain.TenantDomain, error) {
+	item, err := s.repository.GetDomain(ctx, domain.DomainConfigurationScope, domainID)
 	if err != nil {
 		return nil, fmt.Errorf("get domain: %w", err)
 	}
@@ -246,8 +247,8 @@ func (s *Service) GetDomain(ctx context.Context, tenantID, domainID string) (*do
 }
 
 // ListDomains returns all configured Domains.
-func (s *Service) ListDomains(ctx context.Context, tenantID string) ([]*domain.TenantDomain, error) {
-	items, err := s.repository.ListDomains(ctx, tenantID)
+func (s *Service) ListDomains(ctx context.Context, _ string) ([]*domain.TenantDomain, error) {
+	items, err := s.repository.ListDomains(ctx, domain.DomainConfigurationScope)
 	if err != nil {
 		return nil, fmt.Errorf("list domains: %w", err)
 	}
@@ -255,30 +256,31 @@ func (s *Service) ListDomains(ctx context.Context, tenantID string) ([]*domain.T
 }
 
 // DeleteDomain removes a Domain configuration.
-func (s *Service) DeleteDomain(ctx context.Context, tenantID, domainID string) error {
-	if _, err := s.GetDomain(ctx, tenantID, domainID); err != nil {
+func (s *Service) DeleteDomain(ctx context.Context, _ string, domainID string) error {
+	if _, err := s.GetDomain(ctx, domain.DomainConfigurationScope, domainID); err != nil {
 		return err
 	}
-	if err := s.repository.DeleteDomain(ctx, tenantID, domainID); err != nil {
+	if err := s.repository.DeleteDomain(ctx, domain.DomainConfigurationScope, domainID); err != nil {
 		return fmt.Errorf("delete domain: %w", err)
 	}
 	return nil
 }
 
 // SaveService creates or updates a domain service.
-func (s *Service) SaveService(ctx context.Context, tenantID string, item *domain.DomainService) (*domain.DomainService, error) {
-	if err := normalizeAndValidateService(item, tenantID); err != nil {
+func (s *Service) SaveService(ctx context.Context, _ string, item *domain.DomainService) (*domain.DomainService, error) {
+	scopeID := domain.DomainConfigurationScope
+	if err := normalizeAndValidateService(item, scopeID); err != nil {
 		return nil, err
 	}
 	if len(item.DomainIDs) > 0 {
-		if err := s.validateServiceDomains(ctx, tenantID, item.DomainIDs); err != nil {
+		if err := s.validateServiceDomains(ctx, scopeID, item.DomainIDs); err != nil {
 			return nil, err
 		}
 	}
 	if err := s.ensureServiceNameAvailable(ctx, item); err != nil {
 		return nil, err
 	}
-	if err := s.initializeServiceIdentity(ctx, tenantID, item); err != nil {
+	if err := s.initializeServiceIdentity(ctx, scopeID, item); err != nil {
 		return nil, err
 	}
 	if err := s.persistService(ctx, item); err != nil {
@@ -289,7 +291,7 @@ func (s *Service) SaveService(ctx context.Context, tenantID string, item *domain
 	return item, nil
 }
 
-func normalizeAndValidateService(item *domain.DomainService, tenantID string) error {
+func normalizeAndValidateService(item *domain.DomainService, scopeID string) error {
 	if item == nil {
 		return fmt.Errorf("%w: service is required", ErrInvalidInput)
 	}
@@ -301,7 +303,7 @@ func normalizeAndValidateService(item *domain.DomainService, tenantID string) er
 	if item.EventTypes == nil {
 		item.EventTypes = []string{}
 	}
-	if !validTenantID(tenantID) || !namePattern.MatchString(item.Name) || len(item.DomainIDs) > maxDomainsPerService {
+	if !validIdentifier(scopeID) || !namePattern.MatchString(item.Name) || len(item.DomainIDs) > maxDomainsPerService {
 		return fmt.Errorf("%w: a valid subscription name and at most %d legacy domain_ids are allowed", ErrInvalidInput, maxDomainsPerService)
 	}
 	if len(item.EventTypes) == 0 && len(item.DomainIDs) == 0 {
@@ -318,9 +320,9 @@ func normalizeAndValidateService(item *domain.DomainService, tenantID string) er
 	return nil
 }
 
-func (s *Service) validateServiceDomains(ctx context.Context, tenantID string, domainIDs []string) error {
+func (s *Service) validateServiceDomains(ctx context.Context, scopeID string, domainIDs []string) error {
 	for _, domainID := range domainIDs {
-		if _, err := s.GetDomain(ctx, tenantID, domainID); err != nil {
+		if _, err := s.GetDomain(ctx, scopeID, domainID); err != nil {
 			if errors.Is(err, ErrNotFound) {
 				return fmt.Errorf("%w: domain %q does not exist", ErrInvalidInput, domainID)
 			}
@@ -343,13 +345,13 @@ func (s *Service) ensureServiceNameAvailable(ctx context.Context, item *domain.D
 	return nil
 }
 
-func (s *Service) initializeServiceIdentity(ctx context.Context, tenantID string, item *domain.DomainService) error {
+func (s *Service) initializeServiceIdentity(ctx context.Context, scopeID string, item *domain.DomainService) error {
 	if item.ID == "" {
 		item.ID = domain.NewID()
 		item.Active = true
 		return nil
 	}
-	existing, err := s.repository.GetService(ctx, tenantID, item.ID)
+	existing, err := s.repository.GetService(ctx, scopeID, item.ID)
 	if err != nil {
 		return fmt.Errorf("get subscription before update: %w", err)
 	}
@@ -378,8 +380,8 @@ func (s *Service) persistService(ctx context.Context, item *domain.DomainService
 }
 
 // GetService retrieves a domain service by ID.
-func (s *Service) GetService(ctx context.Context, tenantID, serviceID string) (*domain.DomainService, error) {
-	item, err := s.repository.GetService(ctx, tenantID, serviceID)
+func (s *Service) GetService(ctx context.Context, _ string, serviceID string) (*domain.DomainService, error) {
+	item, err := s.repository.GetService(ctx, domain.DomainConfigurationScope, serviceID)
 	if err != nil {
 		return nil, fmt.Errorf("get subscription: %w", err)
 	}
@@ -392,8 +394,8 @@ func (s *Service) GetService(ctx context.Context, tenantID, serviceID string) (*
 }
 
 // ListServices returns all services for a tenant.
-func (s *Service) ListServices(ctx context.Context, tenantID string) ([]*domain.DomainService, error) {
-	items, err := s.repository.ListServices(ctx, tenantID)
+func (s *Service) ListServices(ctx context.Context, _ string) ([]*domain.DomainService, error) {
+	items, err := s.repository.ListServices(ctx, domain.DomainConfigurationScope)
 	if err != nil {
 		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
@@ -405,11 +407,11 @@ func (s *Service) ListServices(ctx context.Context, tenantID string) ([]*domain.
 }
 
 // DeleteService removes a domain service.
-func (s *Service) DeleteService(ctx context.Context, tenantID, serviceID string) error {
-	if _, err := s.GetService(ctx, tenantID, serviceID); err != nil {
+func (s *Service) DeleteService(ctx context.Context, _ string, serviceID string) error {
+	if _, err := s.GetService(ctx, domain.DomainConfigurationScope, serviceID); err != nil {
 		return err
 	}
-	if err := s.repository.DeleteService(ctx, tenantID, serviceID); err != nil {
+	if err := s.repository.DeleteService(ctx, domain.DomainConfigurationScope, serviceID); err != nil {
 		return fmt.Errorf("deactivate subscription: %w", err)
 	}
 	return nil
@@ -417,7 +419,7 @@ func (s *Service) DeleteService(ctx context.Context, tenantID, serviceID string)
 
 // SubscribersForEvent returns services subscribed to a specific event type.
 func (s *Service) SubscribersForEvent(ctx context.Context, tenantID, eventType string) ([]*domain.DomainService, error) {
-	items, err := s.repository.ListSubscribersForEvent(ctx, tenantID, eventType)
+	items, err := s.repository.ListSubscribersForEvent(ctx, domain.DomainConfigurationScope, eventType)
 	if err != nil {
 		return nil, fmt.Errorf("list event subscribers: %w", err)
 	}
@@ -429,10 +431,6 @@ func (s *Service) SubscribersForEvent(ctx context.Context, tenantID, eventType s
 		item.NATSSubject = domain.ServiceSubject(item.TenantID, item.ID)
 	}
 	return items, nil
-}
-
-func validTenantID(tenantID string) bool {
-	return validIdentifier(tenantID)
 }
 
 func validIdentifier(value string) bool {
