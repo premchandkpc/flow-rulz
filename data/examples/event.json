@@ -1,8 +1,6 @@
 {
   "id": "evt_01JORDER123",
   "type": "orders.created",
-  "tenant_id": "merchant-42",
-  "partition_key": "order-1007",
   "occurred_at": "2026-10-15T07:30:00Z",
   "contract": {
     "name": "OrderCreated",
@@ -14,7 +12,15 @@
     "total": 1250.5,
     "currency": "INR"
   },
-  "headers": {
-    "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+  "meta": {
+    "tenant_id": "merchant-42",
+    "partition_key": "order-1007",
+    "correlation_id": "corr_order_1007",
+    "headers": {
+      "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+    },
+    "source": "checkout-api",
+    "region": "ap-south-1",
+    "producer_sequence": 1042
   }
 }
