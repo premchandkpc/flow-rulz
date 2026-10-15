@@ -5,6 +5,7 @@ package logfirst
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -23,7 +24,7 @@ type EventEnvelope struct {
 	EventType     string          `json:"event_type"`
 	PartitionKey  string          `json:"partition_key"`
 	OccurredAt    time.Time       `json:"occurred_at"`
-	Payload       []byte          `json:"payload"`
+	Payload       json.RawMessage `json:"payload"`
 	Metadata      EventMetadata   `json:"metadata"`
 }
 
@@ -70,7 +71,7 @@ type Effect struct {
 	PartitionKey   string
 	CausationID    string
 	Hop            int
-	Payload        []byte
+	Payload        json.RawMessage
 }
 
 type ExecutionAudit struct {
