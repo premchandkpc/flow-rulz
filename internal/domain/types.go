@@ -123,15 +123,15 @@ type TenantDomain struct {
 	TenantID    string                    `json:"tenant_id"`
 	Name        string                    `json:"name"`
 	EventTypes  []string                  `json:"event_types"`
-	Deployments []DomainServiceDeployment `json:"deployments,omitempty"`
+	Deployments []ServiceDeployment `json:"deployments,omitempty"`
 	CreatedAt   time.Time                 `json:"created_at"`
 	UpdatedAt   time.Time                 `json:"updated_at"`
 }
 
-// DomainServiceDeployment declares the immutable ruleset revisions assigned to one
+// ServiceDeployment declares the immutable ruleset revisions assigned to one
 // execution-service worker pool. It is distinct from DomainService, which represents
 // subscriber registration and delivery routing.
-type DomainServiceDeployment struct {
+type ServiceDeployment struct {
 	ServiceID     string              `json:"service_id"`
 	Name          string              `json:"name"`
 	Revision      int64               `json:"revision"`
