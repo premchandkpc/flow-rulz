@@ -98,3 +98,28 @@ func TestDomainServiceSenderReturnsPublishErrorForOutboxRetry(t *testing.T) {
 		t.Fatal("Send() error = nil, want broker error")
 	}
 }
+
+func TestDomainServiceSenderResolvesGlobalSubscriptionForEventTenant(t *testing.T) {
+	publisher := &natsPublisherStub{}
+	sender := NewDomainServiceSender(domainServiceRepositoryStub{service: &domain.DomainService{
+		ID: "audit-consumer", TenantID: domain.DomainConfigurationScope, Active: true,
+	}}, publisher)
+	err := sender.Send(context.Background(), &domain.Effect{
+		ID: "effect-global-1", ExecutionID: "execution-1", TenantID: "tenant-a",
+		Destination: "audit-consumer", Name: "orders.created",
+		EffectType: domain.EffectTypeServiceEvent, Payload: serviceEventPayload(t),
+	}, "effect-global-1")
+	if err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	if want := domain.ServiceSubject(domain.DomainConfigurationScope, "audit-consumer"); publisher.subject != want {
+		t.Fatalf("subject = %q, want %q", publisher.subject, want)
+	}
+	var delivered domain.Effect
+	if err := json.Unmarshal(publisher.payload, &delivered); err != nil {
+		t.Fatalf("decode delivery: %v", err)
+	}
+	if delivered.TenantID != "tenant-a" {
+		t.Fatalf("delivery tenant identity = %q, want event tenant tenant-a", delivered.TenantID)
+	}
+}
