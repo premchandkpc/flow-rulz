@@ -283,7 +283,7 @@ mod tests {
             id: "e".into(), event_type: "orders.created".into(), tenant_id: "tenant-a".into(),
             partition_key: "p".into(), workflow_id: None, occurred_at: Utc::now(),
             data: json!({}), headers: Default::default(), contract: None, message_kind: None,
-            correlation_id: None, causation_id: None,
+            correlation_id: None, causation_id: None, meta: Default::default(),
         };
         assert!(validate_contract_support(&revision, &event).is_err());
     }
@@ -343,26 +343,36 @@ mod tests {
         let input = json!({
             "id": "event-1",
             "type": "orders.created",
-            "tenant_id": "tenant-a",
-            "partition_key": "order-1",
             "occurred_at": "2026-10-14T00:00:00Z",
             "data": {"amount": 12},
             "contract": {"name": "orders.created", "version": "1", "schema_hash": "schema-hash"},
-            "message_kind": "event",
-            "correlation_id": "correlation-1",
-            "causation_id": "causation-1",
-            "headers": {"source": "test"}
+            "meta": {
+                "tenant_id": "tenant-a",
+                "partition_key": "order-1",
+                "message_kind": "event",
+                "correlation_id": "correlation-1",
+                "causation_id": "causation-1",
+                "headers": {"source": "test"},
+                "future_field": {"enabled": true}
+            }
         });
         let event: EventEnvelope = serde_json::from_value(input).unwrap();
+        assert_eq!(event.tenant_id, "tenant-a");
+        assert_eq!(event.partition_key, "order-1");
         let encoded = serde_json::to_value(event).unwrap();
 
         assert_eq!(encoded["contract"]["name"], "orders.created");
         assert_eq!(encoded["contract"]["version"], "1");
         assert_eq!(encoded["contract"]["schema_hash"], "schema-hash");
-        assert_eq!(encoded["message_kind"], "event");
-        assert_eq!(encoded["correlation_id"], "correlation-1");
-        assert_eq!(encoded["causation_id"], "causation-1");
-        assert_eq!(encoded["headers"]["source"], "test");
+        assert_eq!(encoded["meta"]["tenant_id"], "tenant-a");
+        assert_eq!(encoded["meta"]["partition_key"], "order-1");
+        assert_eq!(encoded["meta"]["message_kind"], "event");
+        assert_eq!(encoded["meta"]["correlation_id"], "correlation-1");
+        assert_eq!(encoded["meta"]["causation_id"], "causation-1");
+        assert_eq!(encoded["meta"]["headers"]["source"], "test");
+        assert_eq!(encoded["meta"]["future_field"]["enabled"], true);
+        assert!(encoded.get("tenant_id").is_none());
+        assert!(encoded.get("partition_key").is_none());
     }
 
 }
