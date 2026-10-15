@@ -3,6 +3,7 @@ package flowrulz
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -20,20 +21,77 @@ type Transport interface {
 
 // Envelope wraps a typed payload with metadata
 type Envelope struct {
-	ID            string            `json:"id"`
-	Type          string            `json:"type"`
-	TenantID      string            `json:"tenant_id"`
-	PartitionKey  string            `json:"partition_key"`
-	WorkflowID    string            `json:"workflow_id,omitempty"`
-	CorrelationID string            `json:"correlation_id,omitempty"`
-	CausationID   string            `json:"causation_id,omitempty"`
-	OccurredAt    time.Time         `json:"occurred_at"`
-	Data          json.RawMessage   `json:"data"`
-	Contract      *ContractRef      `json:"contract,omitempty"`
-	MessageKind   string            `json:"message_kind,omitempty"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	SchemaVersion string            `json:"schema_version,omitempty"`
+	ID            string                     `json:"id"`
+	Type          string                     `json:"type"`
+	TenantID      string                     `json:"-"`
+	PartitionKey  string                     `json:"-"`
+	WorkflowID    string                     `json:"-"`
+	CorrelationID string                     `json:"-"`
+	CausationID   string                     `json:"-"`
+	OccurredAt    time.Time                  `json:"occurred_at"`
+	Data          json.RawMessage            `json:"data"`
+	Contract      *ContractRef               `json:"contract,omitempty"`
+	MessageKind   string                     `json:"-"`
+	Headers       map[string]string          `json:"-"`
+	SchemaVersion string                     `json:"-"`
+	Meta          map[string]json.RawMessage `json:"-"`
 }
+
+type envelopeWire struct {
+	ID string `json:"id"`
+	Type string `json:"type"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Data json.RawMessage `json:"data"`
+	Contract *ContractRef `json:"contract,omitempty"`
+	Meta map[string]json.RawMessage `json:"meta"`
+	TenantID string `json:"tenant_id,omitempty"`
+	PartitionKey string `json:"partition_key,omitempty"`
+	WorkflowID string `json:"workflow_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	CausationID string `json:"causation_id,omitempty"`
+	MessageKind string `json:"message_kind,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	SchemaVersion string `json:"schema_version,omitempty"`
+}
+
+func (e Envelope) MarshalJSON() ([]byte, error) {
+	meta := cloneEnvelopeMeta(e.Meta)
+	setEnvelopeMeta(meta,"tenant_id",e.TenantID)
+	setEnvelopeMeta(meta,"partition_key",e.PartitionKey)
+	setEnvelopeMeta(meta,"workflow_id",e.WorkflowID)
+	setEnvelopeMeta(meta,"correlation_id",e.CorrelationID)
+	setEnvelopeMeta(meta,"causation_id",e.CausationID)
+	setEnvelopeMeta(meta,"message_kind",e.MessageKind)
+	setEnvelopeMeta(meta,"schema_version",e.SchemaVersion)
+	if len(e.Headers)>0 { meta["headers"],_=json.Marshal(e.Headers) }
+	return json.Marshal(struct {
+		ID string `json:"id"`; Type string `json:"type"`; OccurredAt time.Time `json:"occurred_at"`
+		Data json.RawMessage `json:"data"`; Contract *ContractRef `json:"contract,omitempty"`; Meta map[string]json.RawMessage `json:"meta"`
+	}{e.ID,e.Type,e.OccurredAt,e.Data,e.Contract,meta})
+}
+
+func (e *Envelope) UnmarshalJSON(data []byte) error {
+	var wire envelopeWire
+	if err:=json.Unmarshal(data,&wire);err!=nil{return err}
+	e.ID,e.Type,e.OccurredAt,e.Data,e.Contract,e.Meta=wire.ID,wire.Type,wire.OccurredAt,wire.Data,wire.Contract,cloneEnvelopeMeta(wire.Meta)
+	e.TenantID=readEnvelopeMeta(e.Meta,"tenant_id");if e.TenantID==""{e.TenantID=wire.TenantID}
+	e.PartitionKey=readEnvelopeMeta(e.Meta,"partition_key");if e.PartitionKey==""{e.PartitionKey=wire.PartitionKey}
+	e.WorkflowID=readEnvelopeMeta(e.Meta,"workflow_id");if e.WorkflowID==""{e.WorkflowID=wire.WorkflowID}
+	e.CorrelationID=readEnvelopeMeta(e.Meta,"correlation_id");if e.CorrelationID==""{e.CorrelationID=wire.CorrelationID}
+	e.CausationID=readEnvelopeMeta(e.Meta,"causation_id");if e.CausationID==""{e.CausationID=wire.CausationID}
+	e.MessageKind=readEnvelopeMeta(e.Meta,"message_kind");if e.MessageKind==""{e.MessageKind=wire.MessageKind}
+	e.SchemaVersion=readEnvelopeMeta(e.Meta,"schema_version");if e.SchemaVersion==""{e.SchemaVersion=wire.SchemaVersion}
+	if raw:=e.Meta["headers"];len(raw)>0{if err:=json.Unmarshal(raw,&e.Headers);err!=nil{return fmt.Errorf("meta.headers: %w",err)}}
+	if e.Headers==nil{e.Headers=wire.Headers}
+	return nil
+}
+func cloneEnvelopeMeta(input map[string]json.RawMessage) map[string]json.RawMessage {
+	out:=make(map[string]json.RawMessage,len(input)+8)
+	for k,v:=range input{out[k]=append(json.RawMessage(nil),v...)}
+	return out
+}
+func setEnvelopeMeta(meta map[string]json.RawMessage,key,value string){if value!=""{encoded,_:=json.Marshal(value);meta[key]=encoded}}
+func readEnvelopeMeta(meta map[string]json.RawMessage,key string)string{var value string;_=json.Unmarshal(meta[key],&value);return value}
 
 // ContractRef identifies a contract by name, version, and schema hash.
 type ContractRef struct {
