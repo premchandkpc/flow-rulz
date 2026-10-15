@@ -52,7 +52,7 @@ The Rust service relies on the existing API service to apply the database migrat
 - Existing compiled revisions are evaluated, but Rust does not yet implement a rule-authoring/compiler API or input-contract validation. Differential Go-vs-Rust tests are required.
 - Fixed replica count and initial lease acquisition are implemented, but dynamic membership/rebalancing is not.
 - The Go key-queue/backpressure model, complete observability/tracing and all shutdown/recovery behavior are not fully ported.
-- Service callback endpoint checks do not yet resolve DNS names and pin/validate every resolved IP.
+- Automatic subscription-based fan-out is not implemented in this branch. Subscriber registrations alone do not cause delivery; only explicit ruleset-declared effects are dispatched.
 - Real PostgreSQL/NATS integration tests, crash-after-commit-before-ACK tests and stale-owner failure injection remain outstanding.
 
 Keep Go selected until the Rust service passes parity and integration tests. Do not run both runtimes against the same shard at once.
