@@ -97,7 +97,7 @@ type shardLeaseStub struct{ ports.ShardLeaseRepository }
 func (shardLeaseStub) AssertHeld(context.Context, uint32, string, int64) error { return nil }
 
 type subscriberRepositoryStub struct {
-	ports.DomainServiceRepository
+	ports.SubscriberRepository
 	lookups int
 }
 
@@ -125,7 +125,7 @@ func setupEventService(activeRule bool) (*Service, *inboxStub, *executionStub, *
 	repos := ports.EventTxRepos{
 		Inbox: inbox, Activations: activationStub{active: activeRule},
 		RuleRepo: ruleRepositoryStub{}, Executions: executions, Outbox: outbox,
-		ShardLeases: shardLeaseStub{}, DomainServices: subscribers,
+		ShardLeases: shardLeaseStub{}, Subscribers: subscribers,
 	}
 	service := NewService(
 		nil, eventEvaluatorStub{}, nil, domain.SystemClock{}, transactionManagerStub{tx: tx},
@@ -148,8 +148,7 @@ func TestProcessDoesNotNotifySubscribersWithoutActiveRule(t *testing.T) {
 		t.Fatalf("Process() error = %v, want ErrRuleNotReady", err)
 	}
 	if subscribers.lookups != 0 || len(outbox.inserted) != 0 || tx.committed {
-		t.Fatalf("no-active-rule event had subscriber lookups=%d outbox=%d committed=%t",
-			subscribers.lookups, len(outbox.inserted), tx.committed)
+		t.Fatalf("no-active-rule event had subscriber lookups=%d outbox=%d committed=%t", subscribers.lookups, len(outbox.inserted), tx.committed)
 	}
 	// New behavior: inbox is not inserted when no active rule exists (checked before dedup)
 	if inbox.inserted {
@@ -157,30 +156,29 @@ func TestProcessDoesNotNotifySubscribersWithoutActiveRule(t *testing.T) {
 	}
 }
 
-func TestProcessWritesSubscriberEffectsToEventTransactionOutbox(t *testing.T) {
+func TestProcessRoutesSubscribersThroughOutbox(t *testing.T) {
 	service, inbox, executions, outbox, subscribers, tx := setupEventService(true)
 	execution, err := service.Process(context.Background(), testEnvelope(), 1, 0, "worker-a")
 	if err != nil {
 		t.Fatalf("Process() error = %v", err)
 	}
-	if !tx.committed || !inbox.committed || executions.saved == nil {
-		t.Fatalf("transaction committed=%t inbox committed=%t execution saved=%t",
-			tx.committed, inbox.committed, executions.saved != nil)
+	if !tx.committed || !inbox.committed || executions.saved == nil || execution == nil {
+		t.Fatalf("transaction committed=%t inbox committed=%t execution saved=%t returned=%t",
+			tx.committed, inbox.committed, executions.saved != nil, execution != nil)
 	}
 	if subscribers.lookups != 1 || len(outbox.inserted) != 1 {
-		t.Fatalf("subscriber lookups=%d outbox effects=%d, want 1 each", subscribers.lookups, len(outbox.inserted))
+		t.Fatalf("subscriber lookups=%d outbox effects=%d, want one routed subscriber delivery", subscribers.lookups, len(outbox.inserted))
 	}
 	effect := outbox.inserted[0]
-	if effect.EffectType != domain.EffectTypeServiceEvent || effect.TenantID != "tenant-a" ||
-		effect.Destination != "service-a" || effect.ExecutionID != execution.ID || effect.ID == "" {
-		t.Fatalf("unexpected service event effect: %#v", effect)
+	if effect.EffectType != domain.EffectTypeServiceEvent || effect.TenantID != "tenant-a" || effect.Destination != "service-a" || effect.Name != "orders.created" || effect.ExecutionID != execution.ID || effect.ID == "" {
+		t.Fatalf("unexpected subscriber delivery effect: %#v", effect)
 	}
 	var payload domain.EventEnvelope
 	if err := json.Unmarshal(effect.Payload, &payload); err != nil {
-		t.Fatalf("decode effect payload: %v", err)
+		t.Fatalf("decode routed event payload: %v", err)
 	}
-	if payload.ID != "event-1" || payload.TenantID != "tenant-a" {
-		t.Fatalf("callback payload event identity = %#v", payload)
+	if payload.ID != "event-1" || payload.TenantID != "tenant-a" || payload.Type != "orders.created" {
+		t.Fatalf("unexpected routed event payload: %#v", payload)
 	}
 }
 

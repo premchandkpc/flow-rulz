@@ -367,6 +367,18 @@ The evaluator is a **pure function**:
 
 Given the same compiled revision and event, it **always** produces the same decision.
 
+### Subscriber Routing Boundary
+
+The rules evaluator is deterministic and side-effect-free. It does not query the tenant subscriber registry and does not implement subscriber-specific behavior.
+
+Tenant domains and service/subscriber registrations are control-plane configuration. A separate generic subscriber router applies the platform routing policy: match the event type to active subscriptions within the event's tenant, enforce the fan-out limit, and produce stable delivery intents. The router runs in the event transaction after a successful active-ruleset execution, so its intents commit atomically with the execution and outbox. The dispatcher publishes those intents through NATS JetStream. Events with no active ruleset do not trigger subscriber delivery. Explicit `service_event` actions remain ruleset-declared effects and are dispatched through the same outbox infrastructure.
+
+Keep these two contracts distinct:
+- **Ruleset effects:** outputs produced by evaluating a ruleset.
+- **Subscription routing:** deliveries produced because a registered subscriber matches an event under the platform routing policy.
+
+If both mechanisms are enabled, define deduplication and overlap semantics explicitly so the same logical delivery is not emitted twice.
+
 ### Contract Validation
 
 Rule revisions can declare an `input_contract`. Before activation, `ValidatePathsAgainstContract` checks that all predicate paths exist in the contract schema. This prevents activating rules that reference non-existent fields.

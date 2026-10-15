@@ -337,14 +337,14 @@ func setupTestUseCase(t *testing.T) (*svcevents.Service, *mockInbox, *mockExecut
 
 	newRepos := func(_ ports.Transaction) (ports.EventTxRepos, error) {
 		return ports.EventTxRepos{
-			Inbox:          inbox,
-			Activations:    activations,
-			RuleRepo:       ruleRepo,
-			Executions:     executions,
-			Outbox:         outbox,
-			ShardLeases:    newMockShardLease(),
-			DomainServices: noSubscribers{},
-			Bindings:       newMockBinding(),
+			Inbox:       inbox,
+			Activations: activations,
+			RuleRepo:    ruleRepo,
+			Executions:  executions,
+			Outbox:      outbox,
+			ShardLeases: newMockShardLease(),
+			Subscribers: noSubscribers{},
+			Bindings:    newMockBinding(),
 		}, nil
 	}
 

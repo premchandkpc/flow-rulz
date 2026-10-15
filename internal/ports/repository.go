@@ -181,6 +181,11 @@ type BindingRepository interface {
 	Delete(ctx context.Context, tenantID, bindingID string) error
 }
 
+// SubscriberRepository resolves active subscribers for a tenant event type. It is intentionally narrower than the domain-management repository.
+type SubscriberRepository interface {
+	ListSubscribersForEvent(ctx context.Context, tenantID, eventType string) ([]*domain.DomainService, error)
+}
+
 // DomainServiceRepository manages tenant domains, callback services, and matching subscriptions.
 type DomainServiceRepository interface {
 	SaveDomain(ctx context.Context, item *domain.TenantDomain) error

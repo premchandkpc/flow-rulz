@@ -208,6 +208,8 @@ async fn send_effect(
             if event.tenant_id != effect.tenant_id || event.event_type != effect.name {
                 bail!("service event identity does not match its outbox effect");
             }
+            // Match Go's dispatcher contract: a service deactivated after the
+            // delivery intent was committed must not receive new deliveries.
             let active: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM tenant_domain_services WHERE tenant_id=$1 AND service_id=$2 AND active=TRUE)"
             )

@@ -1,6 +1,6 @@
 # FlowRulz documentation
 
-FlowRulz is a Go event-driven rules runtime. Start with the [root README](../README.md) for development status, event lifecycle, module commands, and known security limits. [AGENTS.md](../AGENTS.md) is the engineering guide and file-by-file package map; the [architecture map](architecture/map.md) follows runtime wiring and dependency direction.
+FlowRulz is a Go event-driven rules runtime. Start with the [root README](../README.md) for development status, event lifecycle, module commands, and known security limits. The event transaction persists ruleset-declared effects plus durable delivery intents from a separate generic subscriber router. See [current architecture](architecture/overview.md), the [architecture map](architecture/map.md), and the [design notes](design.md) for the worker/router boundary. [AGENTS.md](../AGENTS.md) is the engineering guide and file-by-file package map.
 
 ## Documentation index
 
