@@ -367,7 +367,7 @@ func (s *Service) persistExecutionAndOutboxForRuleset(ctx context.Context, repos
 	}
 
 	if routeSubscribers {
-		subscriptionEffects, err := s.subscriberRouter.Route(ctx, repos.DomainServices, envelope, executionID, now)
+		subscriptionEffects, err := s.subscriberRouter.Route(ctx, repos.Subscribers, envelope, executionID, now)
 		if err != nil {
 			return nil, err
 		}
