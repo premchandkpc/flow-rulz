@@ -4,14 +4,15 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/flowrulz/flow-rulz/internal/adapters/http/middleware"
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/responses"
 	"github.com/flowrulz/flow-rulz/internal/domain"
 	"github.com/flowrulz/flow-rulz/internal/ports"
 	"github.com/flowrulz/flow-rulz/internal/services/domainservices"
 )
 
-// DomainServiceHandler handles HTTP requests for domain and service operations.
+// DomainServiceHandler exposes domain configuration. Services and rulesets are nested under each domain.
+const domainConfigurationScope = "__domain_configuration__"
+
 type DomainServiceHandler struct {
 	service ports.DomainServiceUseCase
 }
@@ -28,11 +29,6 @@ func (h *DomainServiceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/domains/{domainID}", h.GetDomain)
 	mux.HandleFunc("PUT /v1/domains/{domainID}", h.UpdateDomain)
 	mux.HandleFunc("DELETE /v1/domains/{domainID}", h.DeleteDomain)
-	mux.HandleFunc("GET /v1/services", h.ListServices)
-	mux.HandleFunc("POST /v1/services", h.CreateService)
-	mux.HandleFunc("GET /v1/services/{serviceID}", h.GetService)
-	mux.HandleFunc("PUT /v1/services/{serviceID}", h.UpdateService)
-	mux.HandleFunc("DELETE /v1/services/{serviceID}", h.DeleteService)
 }
 
 // ListDomains handles GET /v1/domains requests.
@@ -40,7 +36,7 @@ func (h *DomainServiceHandler) ListDomains(w http.ResponseWriter, r *http.Reques
 	if !h.ready(w, r) {
 		return
 	}
-	items, err := h.service.ListDomains(r.Context(), middleware.GetTenantID(r.Context()))
+	items, err := h.service.ListDomains(r.Context(), domainConfigurationScope)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -57,7 +53,7 @@ func (h *DomainServiceHandler) CreateDomain(w http.ResponseWriter, r *http.Reque
 	if !h.ready(w, r) {
 		return
 	}
-	saved, err := h.service.SaveDomain(r.Context(), middleware.GetTenantID(r.Context()), &item)
+	saved, err := h.service.SaveDomain(r.Context(), domainConfigurationScope, &item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -70,7 +66,7 @@ func (h *DomainServiceHandler) GetDomain(w http.ResponseWriter, r *http.Request)
 	if !h.ready(w, r) {
 		return
 	}
-	item, err := h.service.GetDomain(r.Context(), middleware.GetTenantID(r.Context()), r.PathValue("domainID"))
+	item, err := h.service.GetDomain(r.Context(), domainConfigurationScope, r.PathValue("domainID"))
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -88,7 +84,7 @@ func (h *DomainServiceHandler) UpdateDomain(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	item.ID = r.PathValue("domainID")
-	saved, err := h.service.SaveDomain(r.Context(), middleware.GetTenantID(r.Context()), &item)
+	saved, err := h.service.SaveDomain(r.Context(), domainConfigurationScope, &item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -101,19 +97,19 @@ func (h *DomainServiceHandler) DeleteDomain(w http.ResponseWriter, r *http.Reque
 	if !h.ready(w, r) {
 		return
 	}
-	if err := h.service.DeleteDomain(r.Context(), middleware.GetTenantID(r.Context()), r.PathValue("domainID")); err != nil {
+	if err := h.service.DeleteDomain(r.Context(), domainConfigurationScope, r.PathValue("domainID")); err != nil {
 		writeDomainServiceError(w, err)
 		return
 	}
 	responses.WriteNoContent(w)
 }
 
-// ListServices handles GET /v1/services requests.
+// ListServices is retained for internal compatibility but is not exposed as a public route.
 func (h *DomainServiceHandler) ListServices(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w, r) {
 		return
 	}
-	items, err := h.service.ListServices(r.Context(), middleware.GetTenantID(r.Context()))
+	items, err := h.service.ListServices(r.Context(), domainConfigurationScope)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -121,7 +117,7 @@ func (h *DomainServiceHandler) ListServices(w http.ResponseWriter, r *http.Reque
 	responses.WriteOK(w, map[string]any{"services": items, "total": len(items)})
 }
 
-// CreateService handles POST /v1/services requests.
+// CreateService is retained for internal compatibility but is not exposed as a public route.
 func (h *DomainServiceHandler) CreateService(w http.ResponseWriter, r *http.Request) {
 	var item domain.DomainService
 	if !h.decode(w, r, &item) {
@@ -130,7 +126,7 @@ func (h *DomainServiceHandler) CreateService(w http.ResponseWriter, r *http.Requ
 	if !h.ready(w, r) {
 		return
 	}
-	saved, err := h.service.SaveService(r.Context(), middleware.GetTenantID(r.Context()), &item)
+	saved, err := h.service.SaveService(r.Context(), domainConfigurationScope, &item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -138,12 +134,12 @@ func (h *DomainServiceHandler) CreateService(w http.ResponseWriter, r *http.Requ
 	responses.WriteCreated(w, saved)
 }
 
-// GetService handles GET /v1/services/{serviceID} requests.
+// GetService is retained for internal compatibility but is not exposed as a public route.
 func (h *DomainServiceHandler) GetService(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w, r) {
 		return
 	}
-	item, err := h.service.GetService(r.Context(), middleware.GetTenantID(r.Context()), r.PathValue("serviceID"))
+	item, err := h.service.GetService(r.Context(), domainConfigurationScope, r.PathValue("serviceID"))
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -151,7 +147,7 @@ func (h *DomainServiceHandler) GetService(w http.ResponseWriter, r *http.Request
 	responses.WriteOK(w, item)
 }
 
-// UpdateService handles PUT /v1/services/{serviceID} requests.
+// UpdateService is retained for internal compatibility but is not exposed as a public route.
 func (h *DomainServiceHandler) UpdateService(w http.ResponseWriter, r *http.Request) {
 	var item domain.DomainService
 	if !h.decode(w, r, &item) {
@@ -161,7 +157,7 @@ func (h *DomainServiceHandler) UpdateService(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	item.ID = r.PathValue("serviceID")
-	saved, err := h.service.SaveService(r.Context(), middleware.GetTenantID(r.Context()), &item)
+	saved, err := h.service.SaveService(r.Context(), domainConfigurationScope, &item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -169,12 +165,12 @@ func (h *DomainServiceHandler) UpdateService(w http.ResponseWriter, r *http.Requ
 	responses.WriteOK(w, saved)
 }
 
-// DeleteService handles DELETE /v1/services/{serviceID} requests.
+// DeleteService is retained for internal compatibility but is not exposed as a public route.
 func (h *DomainServiceHandler) DeleteService(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w, r) {
 		return
 	}
-	if err := h.service.DeleteService(r.Context(), middleware.GetTenantID(r.Context()), r.PathValue("serviceID")); err != nil {
+	if err := h.service.DeleteService(r.Context(), domainConfigurationScope, r.PathValue("serviceID")); err != nil {
 		writeDomainServiceError(w, err)
 		return
 	}
@@ -183,10 +179,10 @@ func (h *DomainServiceHandler) DeleteService(w http.ResponseWriter, r *http.Requ
 
 func (h *DomainServiceHandler) ready(w http.ResponseWriter, r *http.Request) bool {
 	if h.service == nil {
-		responses.WriteError(w, http.StatusServiceUnavailable, "domain and service management is not configured", responses.CodeInternalError)
+		responses.WriteError(w, http.StatusServiceUnavailable, "domain configuration is not configured", responses.CodeInternalError)
 		return false
 	}
-	if middleware.GetTenantID(r.Context()) == "" {
+	if domainConfigurationScope == "" {
 		responses.WriteError(w, http.StatusUnauthorized, "authenticated tenant identity is required", responses.CodeTenantRequired)
 		return false
 	}
