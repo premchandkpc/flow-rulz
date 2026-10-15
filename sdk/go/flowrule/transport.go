@@ -3,6 +3,7 @@ package flowrulz
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -18,21 +19,68 @@ type Transport interface {
 	Name() string
 }
 
-// Envelope wraps a typed payload with metadata
+// Envelope wraps a stable event envelope with extensible runtime metadata.
 type Envelope struct {
-	ID            string            `json:"id"`
-	Type          string            `json:"type"`
-	TenantID      string            `json:"tenant_id"`
-	PartitionKey  string            `json:"partition_key"`
-	WorkflowID    string            `json:"workflow_id,omitempty"`
-	CorrelationID string            `json:"correlation_id,omitempty"`
-	CausationID   string            `json:"causation_id,omitempty"`
-	OccurredAt    time.Time         `json:"occurred_at"`
-	Data          json.RawMessage   `json:"data"`
-	Contract      *ContractRef      `json:"contract,omitempty"`
-	MessageKind   string            `json:"message_kind,omitempty"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	SchemaVersion string            `json:"schema_version,omitempty"`
+	ID            string                     `json:"-"`
+	Type          string                     `json:"-"`
+	TenantID      string                     `json:"-"`
+	PartitionKey  string                     `json:"-"`
+	WorkflowID    string                     `json:"-"`
+	CorrelationID string                     `json:"-"`
+	CausationID   string                     `json:"-"`
+	OccurredAt    time.Time                  `json:"-"`
+	Data          json.RawMessage            `json:"-"`
+	Contract      *ContractRef               `json:"-"`
+	MessageKind   string                     `json:"-"`
+	Headers       map[string]string          `json:"-"`
+	SchemaVersion string                     `json:"-"`
+	Meta          map[string]json.RawMessage `json:"-"`
+}
+
+type envelopeWire struct {
+	ID         string                     `json:"id"`
+	Type       string                     `json:"type"`
+	OccurredAt time.Time                  `json:"occurred_at"`
+	Data       json.RawMessage            `json:"data"`
+	Contract   *ContractRef               `json:"contract,omitempty"`
+	Meta       map[string]json.RawMessage `json:"meta"`
+}
+
+func (e Envelope) MarshalJSON() ([]byte, error) {
+	meta := make(map[string]json.RawMessage, len(e.Meta)+8)
+	for key, value := range e.Meta { meta[key] = append(json.RawMessage(nil), value...) }
+	for key, value := range map[string]string{
+		"tenant_id":e.TenantID, "partition_key":e.PartitionKey, "workflow_id":e.WorkflowID,
+		"correlation_id":e.CorrelationID, "causation_id":e.CausationID,
+		"message_kind":e.MessageKind, "schema_version":e.SchemaVersion,
+	} {
+		if value == "" { continue }
+		encoded, err := json.Marshal(value); if err != nil { return nil, err }; meta[key] = encoded
+	}
+	if len(e.Headers)>0 { encoded,err:=json.Marshal(e.Headers); if err!=nil{return nil,err}; meta["headers"]=encoded }
+	return json.Marshal(envelopeWire{ID:e.ID,Type:e.Type,OccurredAt:e.OccurredAt,Data:e.Data,Contract:e.Contract,Meta:meta})
+}
+
+func (e *Envelope) UnmarshalJSON(data []byte) error {
+	var top map[string]json.RawMessage
+	if err:=json.Unmarshal(data,&top);err!=nil{return err}
+	allowed:=map[string]bool{"id":true,"type":true,"occurred_at":true,"data":true,"contract":true,"meta":true}
+	for key:=range top { if !allowed[key] { return fmt.Errorf("unknown event envelope field %q; put runtime metadata inside meta",key) } }
+	var wire envelopeWire
+	if err:=json.Unmarshal(data,&wire);err!=nil{return err}
+	if wire.Meta==nil{return fmt.Errorf("meta is required")}
+	*e=Envelope{ID:wire.ID,Type:wire.Type,OccurredAt:wire.OccurredAt,Data:wire.Data,Contract:wire.Contract,Meta:wire.Meta}
+	readString:=func(key string,target *string)error{
+		raw,ok:=e.Meta[key];if !ok{return nil}
+		if err:=json.Unmarshal(raw,target);err!=nil{return fmt.Errorf("meta.%s must be a string: %w",key,err)}
+		delete(e.Meta,key);return nil
+	}
+	for key,target:=range map[string]*string{
+		"tenant_id":&e.TenantID,"partition_key":&e.PartitionKey,"workflow_id":&e.WorkflowID,
+		"correlation_id":&e.CorrelationID,"causation_id":&e.CausationID,"message_kind":&e.MessageKind,"schema_version":&e.SchemaVersion,
+	}{if err:=readString(key,target);err!=nil{return err}}
+	if raw,ok:=e.Meta["headers"];ok{if err:=json.Unmarshal(raw,&e.Headers);err!=nil{return fmt.Errorf("meta.headers must be an object of strings: %w",err)};delete(e.Meta,"headers")}
+	return nil
 }
 
 // ContractRef identifies a contract by name, version, and schema hash.
