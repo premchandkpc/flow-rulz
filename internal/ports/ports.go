@@ -27,14 +27,14 @@ type TransactionManager interface {
 // atomically. Keeping this bundle narrow prevents unrelated persistence concerns
 // from leaking into the event-processing use case.
 type EventTxRepos struct {
-	Inbox          InboxRepository
-	Activations    ActivationRepository
-	RuleRepo       RuleRepository
-	Executions     ExecutionRepository
-	Outbox         OutboxWriter
-	ShardLeases    ShardLeaseRepository
-	Subscribers    SubscriberRepository
-	Bindings       BindingRepository
+	Inbox       InboxRepository
+	Activations ActivationRepository
+	RuleRepo    RuleRepository
+	Executions  ExecutionRepository
+	Outbox      OutboxWriter
+	ShardLeases ShardLeaseRepository
+	Subscribers SubscriberRepository
+	Bindings    BindingRepository
 }
 
 // RuleTxRepos contains only the repositories needed to activate a rule revision.
