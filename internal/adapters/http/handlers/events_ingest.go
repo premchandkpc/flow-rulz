@@ -198,7 +198,9 @@ func buildEventEnvelope(
 	tenantID string,
 ) *domain.EventEnvelope {
 	meta := cloneIngestionMeta(request.Meta)
-	if meta == nil { meta = make(map[string]json.RawMessage) }
+	if meta == nil {
+		meta = make(map[string]json.RawMessage)
+	}
 	meta["tenant_id"], _ = json.Marshal(tenantID)
 	meta["partition_key"], _ = json.Marshal(strings.TrimSpace(eventMetaString(request.Meta, "partition_key")))
 	headers := buildEventHeaders(request)
@@ -220,9 +222,13 @@ func eventMetaString(meta map[string]json.RawMessage, key string) string {
 }
 
 func cloneIngestionMeta(input map[string]json.RawMessage) map[string]json.RawMessage {
-	if input == nil { return nil }
+	if input == nil {
+		return nil
+	}
 	out := make(map[string]json.RawMessage, len(input))
-	for key, value := range input { out[key] = append(json.RawMessage(nil), value...) }
+	for key, value := range input {
+		out[key] = append(json.RawMessage(nil), value...)
+	}
 	return out
 }
 
@@ -231,12 +237,20 @@ func buildEventHeaders(request eventIngestionRequest) map[string]string {
 	if raw := request.Meta["headers"]; len(raw) > 0 {
 		var metaHeaders map[string]string
 		if json.Unmarshal(raw, &metaHeaders) == nil {
-			for key, value := range metaHeaders { headers[key] = value }
+			for key, value := range metaHeaders {
+				headers[key] = value
+			}
 		}
 	}
-	if value := eventMetaString(request.Meta, "correlation_id"); value != "" { headers["Correlation-ID"] = value }
-	if value := eventMetaString(request.Meta, "causation_id"); value != "" { headers["Causation-ID"] = value }
-	if value := eventMetaString(request.Meta, "schema_version"); value != "" { headers["Schema-Version"] = value }
+	if value := eventMetaString(request.Meta, "correlation_id"); value != "" {
+		headers["Correlation-ID"] = value
+	}
+	if value := eventMetaString(request.Meta, "causation_id"); value != "" {
+		headers["Causation-ID"] = value
+	}
+	if value := eventMetaString(request.Meta, "schema_version"); value != "" {
+		headers["Schema-Version"] = value
+	}
 	return headers
 }
 
