@@ -8,6 +8,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// ContractRef identifies an immutable payload contract.
+type ContractRef struct {
+	Name string `json:"name"`
+	Version string `json:"version"`
+	SchemaHash string `json:"schema_hash,omitempty"`
+}
+
 // Envelope is a stable event envelope. Runtime identity and extensible metadata
 // are serialized inside Meta, never as top-level event fields.
 type Envelope struct {
@@ -18,6 +25,7 @@ type Envelope struct {
 	WorkflowID   string                     `json:"-"`
 	OccurredAt   time.Time                  `json:"-"`
 	Data         json.RawMessage            `json:"-"`
+	Contract     *ContractRef               `json:"-"`
 	Headers      map[string]string          `json:"-"`
 	Meta         map[string]json.RawMessage `json:"-"`
 }
@@ -27,6 +35,7 @@ type envelopeWire struct {
 	Type       string                     `json:"type"`
 	OccurredAt time.Time                  `json:"occurred_at"`
 	Data       json.RawMessage            `json:"data"`
+	Contract   *ContractRef               `json:"contract,omitempty"`
 	Meta       map[string]json.RawMessage `json:"meta"`
 }
 
@@ -48,7 +57,7 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 		if err != nil { return nil, err }
 		meta["headers"] = encoded
 	}
-	return json.Marshal(envelopeWire{ID:e.ID, Type:e.Type, OccurredAt:e.OccurredAt, Data:e.Data, Meta:meta})
+	return json.Marshal(envelopeWire{ID:e.ID, Type:e.Type, OccurredAt:e.OccurredAt, Data:e.Data, Contract:e.Contract, Meta:meta})
 }
 
 func (e *Envelope) UnmarshalJSON(data []byte) error {
@@ -61,7 +70,7 @@ func (e *Envelope) UnmarshalJSON(data []byte) error {
 	var wire envelopeWire
 	if err := json.Unmarshal(data, &wire); err != nil { return err }
 	if wire.Meta == nil { return fmt.Errorf("meta is required") }
-	*e = Envelope{ID:wire.ID, Type:wire.Type, OccurredAt:wire.OccurredAt, Data:wire.Data, Meta:wire.Meta}
+	*e = Envelope{ID:wire.ID, Type:wire.Type, OccurredAt:wire.OccurredAt, Data:wire.Data, Contract:wire.Contract, Meta:wire.Meta}
 	readString := func(key string, target *string) error {
 		raw, ok := e.Meta[key]
 		if !ok { return nil }
