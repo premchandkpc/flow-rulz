@@ -227,8 +227,7 @@ func cloneIngestionMeta(input map[string]json.RawMessage) map[string]json.RawMes
 }
 
 func buildEventHeaders(request eventIngestionRequest) map[string]string {
-	headers := make(map[string]string, len(request.Headers)+3)
-	for key, value := range request.Headers { headers[key] = value }
+	headers := make(map[string]string, len(request.Meta)+3)
 	if raw := request.Meta["headers"]; len(raw) > 0 {
 		var metaHeaders map[string]string
 		if json.Unmarshal(raw, &metaHeaders) == nil {
