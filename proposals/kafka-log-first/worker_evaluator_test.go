@@ -179,7 +179,7 @@ func TestRuleEvaluatorRejectsMalformedEffects(t *testing.T) {
 			router := &evaluatorRouter{effects: tt.subEffects}
 			if !tt.useRouter {
 				resolver = evaluatorResolver{
-					refs: []RulesetRef{{TenantID:"tenant-a", RulesetID:"orders-created", Revision:1}},
+					refs: []RulesetRef{{RulesetID:"orders-created", Revision:1}},
 					compiled: evaluatorRuleset{effects:tt.ruleEffects},
 				}
 				router = nil
