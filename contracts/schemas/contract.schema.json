@@ -21,7 +21,10 @@
     },
     "compatibility": { "type": "string", "maxLength": 64 },
     "owner": { "type": "string", "maxLength": 128 },
-    "deprecated": { "type": "boolean" }
+    "deprecated": { "type": "boolean" },
+    "schema_hash": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
   },
   "$defs": {
     "contractRef": {
