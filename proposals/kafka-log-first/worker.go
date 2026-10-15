@@ -59,9 +59,8 @@ type Offset struct {
 	Next      int64
 }
 
-// RulesetRef pins a tenant-scoped ruleset to an immutable revision.
+// RulesetRef pins a globally configured ruleset to an immutable revision.
 type RulesetRef struct {
-	TenantID  string
 	RulesetID string
 	Revision  int64
 }
@@ -106,7 +105,7 @@ type Resolver interface {
 }
 
 // SubscriberRouter is intentionally separate from the rule evaluator. It returns
-// generic delivery intents for active, tenant-scoped subscribers.
+// generic delivery intents for active subscriptions matching the event type.
 type SubscriberRouter interface {
 	Route(context.Context, EventEnvelope, string) ([]Effect, error)
 }
@@ -156,15 +155,15 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, deploymentID string, deplo
 	var effects []Effect
 	var audits []ExecutionAudit
 	for _, ref := range refs {
-		if ref.TenantID != env.TenantID || ref.RulesetID == "" || ref.Revision <= 0 {
-			return nil, nil, errors.New("resolver returned an invalid or cross-tenant ruleset reference")
+		if ref.RulesetID == "" || ref.Revision <= 0 {
+			return nil, nil, errors.New("resolver returned an invalid ruleset reference")
 		}
 		ruleset, contentHash, err := e.Resolver.GetRevision(ctx, ref)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %s/%s@%d: %w", ErrMissingRuleset, ref.TenantID, ref.RulesetID, ref.Revision, err)
+			return nil, nil, fmt.Errorf("%w: %s@%d: %w", ErrMissingRuleset, ref.RulesetID, ref.Revision, err)
 		}
 		if ruleset == nil {
-			return nil, nil, fmt.Errorf("%w: %s/%s@%d: resolver returned a nil compiled ruleset", ErrMissingRuleset, ref.TenantID, ref.RulesetID, ref.Revision)
+			return nil, nil, fmt.Errorf("%w: %s@%d: resolver returned a nil compiled ruleset", ErrMissingRuleset, ref.RulesetID, ref.Revision)
 		}
 		ruleEffects, err := ruleset.Evaluate(ctx, env)
 		if err != nil {
@@ -194,7 +193,7 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, deploymentID string, deplo
 
 	// Subscriber fan-out occurs once per input event, even when this deployment has
 	// no assigned rulesets. It is a separate routing stage, never nested inside rule evaluation.
-	// The router must generate deterministic IDs and tenant-filter every subscription.
+	// The router must generate deterministic IDs and retain the event tenant on each delivery intent.
 	if e.Router != nil {
 		subscriptionEffects, err := e.Router.Route(ctx, env, env.ID)
 		if err != nil {
