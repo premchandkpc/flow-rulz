@@ -42,7 +42,7 @@ func (h *EventIngestionHandler) RegisterRoutes(mux *http.ServeMux) {
 type eventIngestionRequest struct {
 	ID            string              `json:"id"`
 	Type          string              `json:"type"`
-	Meta          map[string]any     `json:"meta"`
+	Meta          map[string]any      `json:"meta"`
 	WorkflowID    string              `json:"workflow_id,omitempty"`
 	OccurredAt    time.Time           `json:"occurred_at"`
 	Data          json.RawMessage     `json:"data"`
