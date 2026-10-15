@@ -38,7 +38,7 @@ func (s *memoryLogStore) Append(ctx context.Context, record LogRecord) (LogPosit
 		return LogPosition{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		_ = tx.Abort(context.Background())
+		_ = tx.Abort(ctx)
 		return LogPosition{}, err
 	}
 	var sequence int64
