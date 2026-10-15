@@ -59,8 +59,17 @@ impl Serialize for EventEnvelope {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where S: Serializer {
         let mut meta = self.meta.clone();
-        meta.insert("tenant_id".into(), Value::String(self.tenant_id.clone()));
-        meta.insert("partition_key".into(), Value::String(self.partition_key.clone()));
+        for (key, value) in [
+            ("tenant_id", self.tenant_id.as_str()),
+            ("partition_key", self.partition_key.as_str()),
+        ] {
+            if let Some(existing) = meta.get(key) {
+                if existing.as_str() != Some(value) {
+                    return Err(serde::ser::Error::custom(format!("event field and meta.{key} disagree")));
+                }
+            }
+            meta.insert(key.into(), Value::String(value.to_owned()));
+        }
         EventEnvelopeWireRef {
             id: &self.id,
             event_type: &self.event_type,
@@ -83,10 +92,6 @@ struct EventEnvelopeWire {
     id: String,
     #[serde(rename = "type")]
     event_type: String,
-    #[serde(default)]
-    tenant_id: Option<String>,
-    #[serde(default)]
-    partition_key: Option<String>,
     #[serde(default)]
     workflow_id: Option<String>,
     occurred_at: DateTime<Utc>,
@@ -111,11 +116,17 @@ impl<'de> Deserialize<'de> for EventEnvelope {
     where D: Deserializer<'de> {
         let wire = EventEnvelopeWire::deserialize(deserializer)?;
         let tenant_id = wire.meta.get("tenant_id").and_then(Value::as_str)
-            .map(str::to_owned).or(wire.tenant_id)
-            .ok_or_else(|| serde::de::Error::custom("meta.tenant_id is required"))?;
+            .map(str::to_owned)
+            .ok_or_else(|| serde::de::Error::custom("meta.tenant_id is required and must be a string"))?;
         let partition_key = wire.meta.get("partition_key").and_then(Value::as_str)
-            .map(str::to_owned).or(wire.partition_key)
-            .ok_or_else(|| serde::de::Error::custom("meta.partition_key is required"))?;
+            .map(str::to_owned)
+            .ok_or_else(|| serde::de::Error::custom("meta.partition_key is required and must be a string"))?;
+        if tenant_id.trim().is_empty() {
+            return Err(serde::de::Error::custom("meta.tenant_id must be non-empty"));
+        }
+        if partition_key.trim().is_empty() {
+            return Err(serde::de::Error::custom("meta.partition_key must be non-empty"));
+        }
         if wire.meta.get("tenant_id").is_some_and(|v| !v.is_string()) {
             return Err(serde::de::Error::custom("meta.tenant_id must be a string"));
         }
