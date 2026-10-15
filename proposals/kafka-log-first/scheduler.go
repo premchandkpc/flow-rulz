@@ -5,6 +5,7 @@ package logfirst
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 )
 
@@ -27,7 +28,7 @@ type DueSchedule struct {
 // OccurrenceID must be deterministic for a schedule revision and due occurrence.
 // Production code should use a documented stable hash/UUID algorithm.
 func OccurrenceID(scheduleID string, revision int64, dueAt time.Time) string {
-	return scheduleID + ":" + time.Unix(dueAt.Unix(), 0).UTC().Format(time.RFC3339) + ":" + formatRevision(revision)
+	return scheduleID + ":" + time.Unix(dueAt.Unix(), 0).UTC().Format(time.RFC3339) + ":" + strconv.FormatInt(revision, 10)
 }
 
 type ScheduleCodec interface {
@@ -94,27 +95,3 @@ func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
 	return nil
 }
 
-func formatRevision(revision int64) string {
-	// Keep the skeleton dependency-free; replace with strconv.FormatInt in the
-	// production adapter if this package is moved into the runnable application.
-	const digits = "0123456789"
-	if revision == 0 {
-		return "0"
-	}
-	negative := revision < 0
-	if negative {
-		revision = -revision
-	}
-	var buf [20]byte
-	i := len(buf)
-	for revision > 0 {
-		i--
-		buf[i] = digits[revision%10]
-		revision /= 10
-	}
-	if negative {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
