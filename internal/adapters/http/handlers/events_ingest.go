@@ -45,7 +45,7 @@ type eventIngestionRequest struct {
 	Meta          map[string]any     `json:"meta"`
 	WorkflowID    string              `json:"workflow_id,omitempty"`
 	OccurredAt    time.Time           `json:"occurred_at"`
-	Data          []byte              `json:"data"`
+	Data          json.RawMessage     `json:"data"`
 	Headers       map[string]string   `json:"headers,omitempty"`
 	CorrelationID string              `json:"correlation_id,omitempty"`
 	CausationID   string              `json:"causation_id,omitempty"`
@@ -181,7 +181,7 @@ func buildEventEnvelope(
 	return &domain.EventEnvelope{
 		ID: strings.TrimSpace(request.ID), Type: eventType, TenantID: tenantID,
 		PartitionKey: strings.TrimSpace(request.Meta["partition_key"].(string)), WorkflowID: request.WorkflowID,
-		OccurredAt: request.OccurredAt, Data: json.RawMessage(request.Data), Headers: headers,
+		OccurredAt: request.OccurredAt, Data: request.Data, Headers: headers,
 		Contract: request.Contract, MessageKind: request.MessageKind, CorrelationID: request.CorrelationID, CausationID: request.CausationID,
 		Meta: request.Meta,
 	}
