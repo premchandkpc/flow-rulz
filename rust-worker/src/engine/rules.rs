@@ -446,6 +446,8 @@ mod tests {
         let mut parent = event("tenant-a");
         parent.workflow_id = Some("workflow-1".into());
         parent.correlation_id = Some("correlation-1".into());
+        parent.headers.insert("trace-id".into(), "trace-1".into());
+        parent.meta.insert("producer".into(), json!("checkout-api"));
         let action: EmitEventAction = serde_json::from_value(json!({
             "type": "orders.approved",
             "partition_key_policy": "inherit",
@@ -459,6 +461,8 @@ mod tests {
         assert_eq!(payload["meta"]["tenant_id"], parent.tenant_id);
         assert_eq!(payload["meta"]["partition_key"], "order-1");
         assert_eq!(payload["meta"]["headers"]["flowrulz_parent_event_id"], "event-1");
+        assert_eq!(payload["meta"]["headers"]["trace-id"], "trace-1");
+        assert_eq!(payload["meta"]["producer"], "checkout-api");
         assert!(payload.get("tenant_id").is_none());
         assert!(payload.get("partition_key").is_none());
     }
