@@ -39,15 +39,15 @@ Use a topic prefix configurable per environment, shown below as `flow.`. Configu
 | Topic | Key | Value / meaning | Cleanup |
 |---|---|---|---|
 | `flow.events` | `tenant_id + ":" + partition_key` | Versioned `EventEnvelope` | Time/size retention, sized for replay policy |
-| `flow.rulesets` | `tenant_id + ":" + ruleset_id + ":" + revision` | Immutable compiled/source rule revision | Compacted; retain revision history through explicit policy |
-| `flow.ruleset-activation` | `tenant_id + ":" + ruleset_id` | Active revision and optional effective-from marker | Compacted |
-| `flow.contracts` | `tenant_id + ":" + contract_id + ":" + version` | Immutable JSON Schema / contract metadata | Compacted |
-| `flow.contract-ruleset-bindings` | `tenant_id + ":" + contract_id + ":" + version + ":" + ruleset_id` | Independent contract-to-ruleset binding, activation policy, and priority; one contract may bind to multiple rulesets | Compacted |
-| `flow.domains` | `tenant_id + ":" + domain_id` | Event domain configuration | Compacted |
-| `flow.services` | `tenant_id + ":" + domain_id + ":" + service_id` | Service identity within a domain, deployment metadata, worker profile, and status | Compacted |
-| `flow.service-deployments` | `tenant_id + ":" + domain_id + ":" + service_id` | Immutable deployment revision: assigned ruleset IDs/revisions, concurrency/resource profile, activation generation | Compacted |
+| `flow.rulesets` | `ruleset_id + ":" + revision` | Immutable compiled/source rule revision | Compacted; retain revision history through explicit policy |
+| `flow.ruleset-activation` | `ruleset_id` | Active revision and optional effective-from marker | Compacted |
+| `flow.contracts` | `contract_id + ":" + version` | Immutable JSON Schema / contract metadata | Compacted |
+| `flow.contract-ruleset-bindings` | `contract_id + ":" + version + ":" + ruleset_id` | Independent contract-to-ruleset binding, activation policy, and priority; one contract may bind to multiple rulesets | Compacted |
+| `flow.domains` | `domain_id` | Event domain configuration | Compacted |
+| `flow.services` | `domain_id + ":" + service_id` | Service identity within a domain, deployment metadata, worker profile, and status | Compacted |
+| `flow.service-deployments` | `domain_id + ":" + service_id` | Immutable deployment revision: assigned ruleset IDs/revisions, concurrency/resource profile, activation generation | Compacted |
 | `flow.service-work.<service-token>` | `tenant_id + ":" + partition_key` | Routed event copy addressed to one service deployment; target service ID is part of the envelope | Time/size retention; separate topic/ACL boundary per deployed service or deployment group |
-| `flow.subscriptions` | `tenant_id + ":" + subscriber_id` | Receiver subscription filters, independent of execution-service deployment | Compacted |
+| `flow.subscriptions` | `subscriber_id` | Receiver subscription filters, independent of execution-service deployment | Compacted |
 | `flow.schedules` | `tenant_id + ":" + schedule_id` | Schedule upsert; tombstone on cancel/fire | Compacted |
 | `flow.commands` | Destination-specific key | Generic command envelope | Time/size retention |
 | `flow.service-deliveries` | `tenant_id + ":" + service_id + ":" + event_id` | One delivery intent per matching subscriber | Time/size retention |
@@ -149,7 +149,7 @@ The deployment resolver validates that every referenced immutable ruleset revisi
 
 ### Routed event metadata
 
-The producer-facing event envelope does not choose an internal worker deployment. After validating the event, the router resolves the tenant-scoped Domain → Service deployment mapping and writes a routed copy to the target service work stream. The routed copy adds trusted internal metadata:
+The producer-facing event envelope does not choose an internal worker deployment. After validating the event, the router resolves the global Domain → Service deployment mapping and writes a routed copy to the target service work stream. Tenant identity and partition key are taken from the event envelope and are not part of Domain configuration. The routed copy adds trusted internal metadata:
 
 ```json
 {
@@ -158,7 +158,7 @@ The producer-facing event envelope does not choose an internal worker deployment
 }
 ```
 
-Workers reject a routed record if these fields do not match the deployment identity configured at process startup. These fields are routing metadata, not authorization; broker ACLs and tenant-scoped deployment validation are still required.
+Workers reject a routed record if these fields do not match the deployment identity configured at process startup. These fields are routing metadata, not authorization; broker ACLs and event identity validation are still required.
 
 ### RulesetActivation v1
 
