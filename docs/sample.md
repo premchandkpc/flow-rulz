@@ -17,4 +17,4 @@ domain.json ──selects deployment──> worker-config.json
 event.json ──provides runtime identity──> tenant_id + partition_key
 ```
 
-The worker configuration's `domain_id` is illustrative; in a live deployment, use the `id` returned by `POST /v1/domains`, not the Domain name. The files are illustrative and should be validated against the schemas and API handlers before being used in a live environment. The examples do not imply that the Kafka proposal is implemented.
+The worker configuration's `domain_id` is illustrative; in a live deployment, use the `id` returned by `POST /v1/domains`, not the Domain name. The files are illustrative and should be validated against the schemas and API handlers before being used in a live environment. Each deployable domain example also has a `domains/<name>/domain.json` file with the complete Service-to-ruleset assignments. The examples do not imply that the Kafka proposal is implemented.
