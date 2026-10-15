@@ -16,20 +16,96 @@ type SystemClock struct{}
 // Now provides the now.
 func (SystemClock) Now() time.Time { return time.Now().UTC() }
 
-// EventEnvelope represents the event envelope.
+// EventEnvelope is the public event wire format. Runtime identity and extensible
+// metadata are serialized inside "meta"; the flat fields remain internal conveniences.
 type EventEnvelope struct {
-	ID            string            `json:"id"`
-	Type          string            `json:"type"`
-	TenantID      string            `json:"tenant_id"`
-	PartitionKey  string            `json:"partition_key"`
-	WorkflowID    string            `json:"workflow_id,omitempty"`
-	OccurredAt    time.Time         `json:"occurred_at"`
-	Data          json.RawMessage   `json:"data"`
-	Contract      *ContractRef      `json:"contract,omitempty"`
-	MessageKind   string            `json:"message_kind,omitempty"`
-	CorrelationID string            `json:"correlation_id,omitempty"`
-	CausationID   string            `json:"causation_id,omitempty"`
-	Headers       map[string]string `json:"headers,omitempty"`
+	ID            string                     `json:"-"`
+	Type          string                     `json:"-"`
+	TenantID      string                     `json:"-"`
+	PartitionKey  string                     `json:"-"`
+	WorkflowID    string                     `json:"-"`
+	OccurredAt    time.Time                  `json:"-"`
+	Data          json.RawMessage            `json:"-"`
+	Contract      *ContractRef               `json:"-"`
+	MessageKind   string                     `json:"-"`
+	CorrelationID string                     `json:"-"`
+	CausationID   string                     `json:"-"`
+	Headers       map[string]string          `json:"-"`
+	Meta          map[string]json.RawMessage `json:"-"`
+}
+
+type eventEnvelopeWire struct {
+	ID         string                     `json:"id"`
+	Type       string                     `json:"type"`
+	OccurredAt time.Time                  `json:"occurred_at"`
+	Data       json.RawMessage            `json:"data"`
+	Contract   *ContractRef               `json:"contract,omitempty"`
+	Meta       map[string]json.RawMessage `json:"meta"`
+}
+
+// MarshalJSON keeps all extensible metadata under "meta" while retaining unknown
+// metadata fields during processing and replay.
+func (e EventEnvelope) MarshalJSON() ([]byte, error) {
+	meta := make(map[string]json.RawMessage, len(e.Meta)+8)
+	for key, value := range e.Meta {
+		meta[key] = append(json.RawMessage(nil), value...)
+	}
+	putString := func(key, value string) error {
+		if value == "" {
+			return nil
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil { return err }
+		meta[key] = encoded
+		return nil
+	}
+	if err := putString("tenant_id", e.TenantID); err != nil { return nil, err }
+	if err := putString("partition_key", e.PartitionKey); err != nil { return nil, err }
+	if err := putString("workflow_id", e.WorkflowID); err != nil { return nil, err }
+	if err := putString("message_kind", e.MessageKind); err != nil { return nil, err }
+	if err := putString("correlation_id", e.CorrelationID); err != nil { return nil, err }
+	if err := putString("causation_id", e.CausationID); err != nil { return nil, err }
+	if len(e.Headers) > 0 {
+		encoded, err := json.Marshal(e.Headers)
+		if err != nil { return nil, err }
+		meta["headers"] = encoded
+	}
+	if len(meta) == 0 { meta = nil }
+	return json.Marshal(eventEnvelopeWire{ID:e.ID, Type:e.Type, OccurredAt:e.OccurredAt, Data:e.Data, Contract:e.Contract, Meta:meta})
+}
+
+// UnmarshalJSON rejects legacy top-level identity fields but accepts arbitrary
+// additional keys inside "meta" for forward-compatible event metadata.
+func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(data, &top); err != nil { return err }
+	allowed := map[string]bool{"id":true, "type":true, "occurred_at":true, "data":true, "contract":true, "meta":true}
+	for key := range top {
+		if !allowed[key] { return fmt.Errorf("unknown event envelope field %q; runtime metadata belongs inside meta", key) }
+	}
+	var wire eventEnvelopeWire
+	if err := json.Unmarshal(data, &wire); err != nil { return err }
+	if len(wire.Meta) == 0 { return fmt.Errorf("meta is required") }
+	*e = EventEnvelope{ID:wire.ID, Type:wire.Type, OccurredAt:wire.OccurredAt, Data:wire.Data, Contract:wire.Contract, Meta:wire.Meta}
+	readString := func(key string, target *string) error {
+		raw, ok := e.Meta[key]
+		if !ok { return nil }
+		if err := json.Unmarshal(raw, target); err != nil { return fmt.Errorf("meta.%s must be a string: %w", key, err) }
+		delete(e.Meta, key)
+		return nil
+	}
+	for key, target := range map[string]*string{
+		"tenant_id": &e.TenantID, "partition_key": &e.PartitionKey,
+		"workflow_id": &e.WorkflowID, "message_kind": &e.MessageKind,
+		"correlation_id": &e.CorrelationID, "causation_id": &e.CausationID,
+	} {
+		if err := readString(key, target); err != nil { return err }
+	}
+	if raw, ok := e.Meta["headers"]; ok {
+		if err := json.Unmarshal(raw, &e.Headers); err != nil { return fmt.Errorf("meta.headers must be an object of strings: %w", err) }
+		delete(e.Meta, "headers")
+	}
+	return nil
 }
 
 // VirtualShard provides the virtual shard.
