@@ -29,7 +29,9 @@ const (
 // a trusted proxy that authenticates callers and overwrites the trusted headers.
 func TenantExtractor(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
+		if r.URL.Path == "/health" || isGlobalConfigurationRoute(r.URL.Path) {
+			// Domain deployments and generic subscriptions are global configuration.
+			// Runtime tenant identity is carried by each event, not control-plane headers.
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -47,6 +49,11 @@ func TenantExtractor(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), TenantIDKey, tenantID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func isGlobalConfigurationRoute(path string) bool {
+	return path == "/v1/domains" || strings.HasPrefix(path, "/v1/domains/") ||
+		path == "/v1/subscriptions" || strings.HasPrefix(path, "/v1/subscriptions/")
 }
 
 func tenantForRequest(r *http.Request) (string, int) {
