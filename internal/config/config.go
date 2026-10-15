@@ -49,6 +49,8 @@ type WorkerConfig struct {
 	NumShards               uint32
 	WorkerReplicas          uint32
 	WorkerID                string
+	ServiceID               string
+	DeploymentRevision      int64
 	MaxGlobalInFlight       int
 	FetchBatchSize          int
 	EffectPublishIntervalMS int
@@ -161,6 +163,8 @@ func loadWorkerConfig() WorkerConfig {
 		NumShards:               uint32(toUint32(getIntEnv("NUM_SHARDS", int(DefaultNumShards)))),
 		WorkerReplicas:          uint32(toUint32(getIntEnv("WORKER_REPLICAS", 1))),
 		WorkerID:                getEnv("WORKER_ID", ""),
+		ServiceID:               strings.TrimSpace(getEnv("FLOW_SERVICE_ID", "")),
+		DeploymentRevision:      int64(getIntEnv("FLOW_DEPLOYMENT_REVISION", 0)),
 		MaxGlobalInFlight:       toInt(getIntEnv("MAX_GLOBAL_IN_FLIGHT", 100)),
 		FetchBatchSize:          toInt(getIntEnv("FETCH_BATCH_SIZE", 100)),
 		EffectPublishIntervalMS: toInt(getIntEnv("EFFECT_PUBLISH_INTERVAL_MS", 5000)),
@@ -313,6 +317,12 @@ func (c *Config) validateEnvironmentAuth() error {
 }
 
 func (c *Config) validateWorker() error {
+	if c.Worker.ServiceID == "" && c.Worker.DeploymentRevision != 0 {
+		return fmt.Errorf("FLOW_SERVICE_ID is required when FLOW_DEPLOYMENT_REVISION is set")
+	}
+	if c.Worker.ServiceID != "" && c.Worker.DeploymentRevision <= 0 {
+		return fmt.Errorf("FLOW_DEPLOYMENT_REVISION must be > 0 when FLOW_SERVICE_ID is set")
+	}
 	if err := c.validateWorkerConcurrency(); err != nil {
 		return err
 	}
