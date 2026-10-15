@@ -91,8 +91,8 @@ pub(super) struct Effect {
 }
 
 pub(super) fn evaluate(revision: &RuleRevision, event: &EventEnvelope) -> Result<(Vec<String>, Vec<Effect>)> {
-    if revision.tenant_scope != event.tenant_id {
-        bail!("rule revision tenant scope does not match event tenant");
+    if revision.tenant_scope != "__domain_configuration__" {
+        bail!("rule revision is not in the global configuration scope");
     }
 
     let mut matched = Vec::new();
