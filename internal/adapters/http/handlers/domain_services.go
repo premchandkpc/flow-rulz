@@ -58,6 +58,9 @@ func (h *DomainServiceHandler) CreateDomain(w http.ResponseWriter, r *http.Reque
 	if !decodeStrictRequest(w, r, &item) {
 		return
 	}
+	if !validateDomainRequestMetadata(w, &item) {
+		return
+	}
 	if !h.validateDomainServices(w, &item) {
 		return
 	}
@@ -89,6 +92,9 @@ func (h *DomainServiceHandler) GetDomain(w http.ResponseWriter, r *http.Request)
 func (h *DomainServiceHandler) UpdateDomain(w http.ResponseWriter, r *http.Request) {
 	var item domain.TenantDomain
 	if !decodeStrictRequest(w, r, &item) {
+		return
+	}
+	if !validateDomainRequestMetadata(w, &item) {
 		return
 	}
 	if !h.ready(w, r) {
@@ -250,6 +256,14 @@ func decodeSubscriptionRequest(w http.ResponseWriter, r *http.Request) (*domain.
 		return nil, false
 	}
 	return &domain.DomainService{Name: request.Name, EventTypes: request.EventTypes}, true
+}
+
+func validateDomainRequestMetadata(w http.ResponseWriter, item *domain.TenantDomain) bool {
+	if item.ID != "" || !item.CreatedAt.IsZero() || !item.UpdatedAt.IsZero() {
+		responses.WriteError(w, http.StatusBadRequest, "id, created_at, and updated_at are server-managed fields", responses.CodeValidationFailed)
+		return false
+	}
+	return true
 }
 
 func (h *DomainServiceHandler) validateDomainServices(w http.ResponseWriter, item *domain.TenantDomain) bool {
