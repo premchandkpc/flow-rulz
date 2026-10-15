@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowrulz.dev/schemas/domain.schema.json",
+  "title": "FlowRulz Domain Configuration Request",
+  "description": "Create/update request for global Domain configuration. The server owns id and timestamps. Runtime event identity and partition key are not configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "services"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9-]{0,62}$"
+    },
+    "services": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "service-deployment.schema.json"
+      }
+    }
+  }
+}

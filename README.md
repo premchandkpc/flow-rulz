@@ -2,13 +2,13 @@
 
 FlowRulz is a Go-based, event-driven rules runtime. NATS JetStream retains the durable message log; runtime caches accelerate reads, while PostgreSQL stores transactional processing state and the outbox. Rules are compiled into immutable revisions; a worker evaluates incoming events and commits an execution record plus resulting effects; effects are delivered asynchronously through an outbox.
 
-> Security: do not expose the HTTP API directly to untrusted networks. Production tenant identity must come from validated JWT claims or an authenticated trusted proxy that strips and replaces trusted headers. Development-only caller-supplied tenant headers are not authentication.
+> Security: do not expose the HTTP API directly to untrusted networks. Authenticate control-plane callers with validated JWT claims or a trusted proxy. Domain configuration does not carry tenant identity; event producers must be authorized to assert the runtime `tenant_id` and `partition_key` on each event.
 
 ## Processes
 
 | Process | Entrypoint | Responsibility |
 |---|---|---|
-| HTTP API (control plane) | cmd/api | Rule revisions/activation, admin-scoped workflow definitions, contracts, batch/quarantine read views, tenant domains/services, read-only execution and trace views |
+| HTTP API (control plane) | cmd/api | Rule revisions/activation, admin-scoped workflow definitions, contracts, batch/quarantine read views, Domain configuration and subscriptions, read-only execution and trace views |
 | Worker | cmd/worker | NATS JetStream consumption, shard leases/fencing, per-process key serialization, event evaluation, outbox publishing |
 | Code generator | cmd/codegen | Generate Go, Java, Protobuf, and JSON Schema artifacts from a contract already registered in storage |
 | Migration CLI | cmd/migrate | Apply pending migrations; only the up command is implemented |
@@ -17,7 +17,7 @@ The root module uses Go 1.26.0. Both sdk/go and the newer sdk/go/flowrulz client
 
 ## Control plane / data plane boundary
 
-The HTTP API is a control-plane service. It creates and validates configuration (domains, contracts, rule revisions, workflow definitions, and registered provider/service capabilities) and exposes management/read-only operational views. It does not accept business events and does not connect to NATS to publish them. Producers publish `EventEnvelope` messages directly to NATS JetStream using the configured subject and shard contract. Only `cmd/worker` consumes business events and evaluates rules. The Go SDK's HTTP event transport is rejected; configure `FLOWRULZ_TRANSPORT=nats` for event publication. A `schedule_event` rule action is persisted through the transactional outbox and then the worker-owned scheduler. Correlated workflow `wait`/resume semantics are not yet supported.
+The HTTP API is a control-plane service. It creates and validates configuration (Domains and nested Services/rulesets, contracts, rule revisions, workflow definitions, and generic subscriptions) and exposes management/read-only operational views. It does not accept business events and does not connect to NATS to publish them. Producers publish `EventEnvelope` messages directly to NATS JetStream using the configured subject and shard contract. Only `cmd/worker` consumes business events and evaluates rules. The Go SDK's HTTP event transport is rejected; configure `FLOWRULZ_TRANSPORT=nats` for event publication. A `schedule_event` rule action is persisted through the transactional outbox and then the worker-owned scheduler. Correlated workflow `wait`/resume semantics are not yet supported.
 
 ## Event lifecycle
 
@@ -25,18 +25,39 @@ The HTTP API is a control-plane service. It creates and validates configuration 
 2. The worker consumes only shards for which it owns a lease. The key queue serializes work for each partition key within this worker process and can allow concurrency across keys. This alone does not guarantee end-to-end per-key ordering across redelivery, lease handoff, or concurrent outbox publishers.
 3. Inside one storage transaction, the event service validates the fencing token, checks the inbox for duplicates, resolves applicable active rulesets (including contract bindings when present), evaluates rules, and writes execution records, ruleset-declared effects, and subscriber delivery intents produced by the separate subscription router.
 4. The worker acknowledges the broker delivery only after the transaction commits.
-5. The outbox dispatcher publishes durable effects: child events return to `events.shard.N`; command effects go to `commands.<destination>.<name>`; generic effects go to `effects.<topic>`; explicit `service_event` effects and subscription-router deliveries use a tenant-scoped `services.<tenant-hash>.<service-hash>` subject. Delivery is at-least-once.
+5. The outbox dispatcher publishes durable effects: child events return to `events.shard.N`; command effects go to `commands.<destination>.<name>`; generic effects go to `effects.<topic>`; explicit `service_event` effects and subscription-router deliveries use a scope-hashed `services.<scope-hash>.<subscription-hash>` subject. Delivery is at-least-once.
 6. The scheduler claims due scheduled events and publishes them to the same event subject family.
 
 NATS delivery is at-least-once. JetStream is the durable append-only message log; PostgreSQL is the durable transactional state store for inbox deduplication, executions, and outbox delivery state. Runtime caches are disposable accelerators and must be rebuildable from durable stores. The inbox prevents duplicate event execution when storage constraints and transaction semantics hold. External effects are effectively-once only when the destination honors the idempotency key. Do not claim exactly-once delivery.
 
-## Tenant domains and receiving services
+## Domain configuration and service deployments
 
-Tenant-owned event domains and receiver registrations are managed through the `/v1/domains` and `/v1/services` management APIs. The management API remains HTTP; application messages between producers, workers, and receivers use NATS JetStream. A domain groups event type names and a service can register interest in one or more domains. After a successful active-ruleset execution, the separate generic subscription router resolves active tenant-scoped subscribers matching the event type and adds one stable `service_event` delivery intent per subscriber to the same transaction's outbox. Events without an active ruleset do not trigger subscriber delivery. Rule evaluation does not query subscribers or implement subscriber-specific business behavior.
+Domain configuration is managed through the `/v1/domains` API. See the [Domain guide](docs/domain.md), [API guide](docs/api.md), [ruleset guide](docs/ruleset.md), [contract guide](docs/contract.md), [event guide](docs/event.md), [worker guide](docs/worker.md), and [sample walkthrough](docs/sample.md); JSON fixtures live in [data/examples](data/examples/). A Domain contains named execution Services, and each Service declares its assigned ruleset revisions and optional worker profile. The public domain payload contains `name` and `services[]`; it does not configure tenant identity, event types, or partition keys. Those values arrive on each event. The worker uses the event's tenant identity and partition key for runtime routing, deduplication, and ordering.
 
-FlowRulz assigns each service a stable, tenant-isolated `nats_subject` such as `services.<tenant-hash>.<service-hash>`. Receivers create a durable JetStream consumer for their exact subject on the configured `NATS_STREAM`; subjects are unique per service so one receiver cannot steal another receiver's fan-out copy. Command effects publish to `commands.<destination>.<name>`, where `destination` is a single lowercase subject token and `name` is a dot-separated set of lowercase tokens. Generic `emit` effects publish to `effects.<topic>`.
+Example:
 
-Each declared effect delivery is a JSON effect envelope containing the stable outbox `id`, `idempotency_key`, `tenant_id`, `execution_id`, `destination`, `name`, `effect_type`, and original JSON `payload`. Receivers must deduplicate by `idempotency_key` (or stable effect ID), commit their own state before ACKing, and assume at-least-once delivery. Transient publish errors leave the outbox eligible for retry; a successful broker publish does not prove that the receiver completed its business operation. HTTP callback URLs are not the delivery path. Hashed subjects provide routing separation, not authorization: configure NATS credentials and subject permissions so each receiver can consume only its assigned subject and publish only approved response subjects. Never share an unrestricted broker credential with tenant-owned receivers.
+```json
+{
+  "name": "orders",
+  "services": [
+    {
+      "service_id": "orders-worker",
+      "name": "orders-worker",
+      "revision": 3,
+      "active": true,
+      "rulesets": [
+        { "ruleset_id": "order-created", "revision": 7 },
+        { "ruleset_id": "payment-requested", "revision": 2 }
+      ],
+      "worker_profile": { "min_replicas": 1, "max_replicas": 4, "concurrency": 8 }
+    }
+  ]
+}
+```
+
+Generic subscriber fan-out remains a separate routing stage, independent of rule evaluation and execution Service deployments. Receiver registrations use `/v1/subscriptions`; they are not the execution Services nested inside a Domain. The router creates stable delivery intents in the same transaction as the event execution. Delivery is at-least-once, so receivers must deduplicate using the effect's idempotency key. HTTP callback URLs are not the delivery path.
+
+The management API does not accept tenant identity as configuration. Runtime event envelopes still carry `tenant_id` and `partition_key`; these are event-level identity and ordering fields, not Domain fields. Configure broker credentials and subject permissions separately; hashed subjects are routing identifiers, not authorization.
 
 ## Run locally
 
@@ -89,7 +110,7 @@ err = typed.Send(ctx, &transactioninitiated.Initiated{
 }, flowrulz.WithPartitionKey("account-456"))
 ~~~
 
-Generated `Subscribe` methods use live core NATS subscriptions and are available only with the NATS transport. They receive matching events for the configured tenant without competing with the worker's JetStream WorkQueue consumer. They are best-effort rather than durable: events published while disconnected are not replayed, and handler failures stop the subscription without ACK/retry behavior.
+Generated `Subscribe` methods use live core NATS subscriptions and are available only with the NATS transport. They receive matching event types without competing with the worker's JetStream WorkQueue consumer. They are best-effort rather than durable: events published while disconnected are not replayed, and handler failures stop the subscription without ACK/retry behavior.
 
 Environment variable names and local defaults are documented in .env.example. API and worker startup initialize storage/migrations. The Go worker publishes all command and service effects through NATS JetStream; no HTTP destination URL is required.
 
@@ -99,7 +120,7 @@ Environment variable names and local defaults are documented in .env.example. AP
 - internal/domain contains business types, validation, state transitions, IDs, and hashes.
 - internal/ports defines broker, storage, transaction, and service interfaces.
 - internal/rules contains rule compilation and deterministic evaluation.
-- internal/services contains event, effects, tenant domain/service, rules, batch, workflow, and quarantine use cases.
+- internal/services contains event, effects, Domain configuration and subscriptions, rules, batch, workflow, and quarantine use cases.
 - internal/application and internal/runtime contain worker orchestration, the per-key queue, shard leases, and the scheduler.
 - internal/adapters contains HTTP management handlers, PostgreSQL, MongoDB, NATS, Redis, fake test destinations, and NATS effect destinations.
 - internal/storage selects and wires the configured persistence backend.
@@ -115,7 +136,7 @@ Start with docs/README.md for the documentation index.
 
 ## Important limitations
 
-- Production tenant resolution requires validated JWT identity or a trusted proxy token and authenticated-tenant header. The proxy boundary is not first-party authentication; do not expose the API directly to untrusted networks.
+- Domain configuration has no tenant field. Runtime events must carry `tenant_id` and `partition_key`; authenticate producers before trusting those fields. Control-plane API authentication remains separate and must be enabled before exposing it to untrusted networks.
 - /health is a liveness endpoint only. Use /ready for database and NATS reachability; neither endpoint proves workers are processing.
 - The API starts HTTP only. No gRPC server is implemented; the SDK's gRPC transport requires a compatible server deployed separately.
 - Migration rollback/status commands and live infrastructure-backed chaos tests are not implemented.

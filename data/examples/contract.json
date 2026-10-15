@@ -1,0 +1,23 @@
+{
+  "name": "OrderCreated",
+  "version": "v1",
+  "kind": "event",
+  "description": "An order has been accepted by the commerce API.",
+  "fields": {
+    "order_id": {
+      "type": "string",
+      "required": true,
+      "description": "Stable order identifier."
+    },
+    "total": {
+      "type": "number",
+      "required": true,
+      "description": "Order total in the currency's minor-unit policy."
+    },
+    "currency": {
+      "type": "string",
+      "required": true,
+      "enum": ["INR", "USD"]
+    }
+  }
+}

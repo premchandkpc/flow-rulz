@@ -13,7 +13,7 @@ import (
 
 const maxDomainServicePayloadBytes = 1 << 20
 
-// DomainServiceSender publishes tenant service deliveries to each service's
+// DomainServiceSender publishes generic subscription deliveries to each service's
 // unique NATS subject. Each receiver owns a durable consumer for that subject.
 type DomainServiceSender struct {
 	services  ports.DomainServiceRepository
@@ -25,7 +25,7 @@ func NewDomainServiceSender(services ports.DomainServiceRepository, publisher po
 	return &DomainServiceSender{services: services, publisher: publisher}
 }
 
-// Send publishes an event delivery after verifying that its tenant service is active.
+// Send publishes an event delivery after verifying that its subscription is active.
 func (s *DomainServiceSender) Send(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
 	if _, err := validateAndDecodeEffect(effect); err != nil {
 		return err
@@ -45,10 +45,10 @@ func (s *DomainServiceSender) Send(ctx context.Context, effect *domain.Effect, i
 	message.IdempotencyKey = idempotencyKey
 	payload, err := json.Marshal(&message)
 	if err != nil {
-		return fmt.Errorf("encode tenant service delivery: %w", err)
+		return fmt.Errorf("encode subscription delivery: %w", err)
 	}
 	if err := s.publisher.Publish(ctx, subject, payload); err != nil {
-		return fmt.Errorf("publish event to tenant service subject %q: %w", subject, err)
+		return fmt.Errorf("publish event to subscription subject %q: %w", subject, err)
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func validateAndDecodeEffect(effect *domain.Effect) (*domain.EventEnvelope, erro
 		return nil, errors.New("send domain service event: effect is nil")
 	}
 	if effect.TenantID == "" || effect.Destination == "" || effect.Name == "" {
-		return nil, errors.New("send domain service event: tenant, service, and event type are required")
+		return nil, errors.New("send domain service event: event tenant, subscription, and event type are required")
 	}
 	if effect.EffectType != domain.EffectTypeServiceEvent {
 		return nil, fmt.Errorf("send domain service event: unsupported effect type %q", effect.EffectType)
@@ -68,7 +68,7 @@ func validateAndDecodeEffect(effect *domain.Effect) (*domain.EventEnvelope, erro
 	}
 	var event domain.EventEnvelope
 	if err := json.Unmarshal(effect.Payload, &event); err != nil {
-		return nil, fmt.Errorf("decode tenant service event: %w", err)
+		return nil, fmt.Errorf("decode subscription event: %w", err)
 	}
 	if err := event.Validate(); err != nil {
 		return nil, fmt.Errorf("validate tenant service event: %w", err)
@@ -85,10 +85,16 @@ func (s *DomainServiceSender) loadActiveService(ctx context.Context, effect *dom
 	}
 	service, err := s.services.GetService(ctx, effect.TenantID, effect.Destination)
 	if err != nil {
-		return nil, fmt.Errorf("get subscribed tenant service: %w", err)
+		return nil, fmt.Errorf("get subscription: %w", err)
+	}
+	if service == nil {
+		service, err = s.services.GetService(ctx, domain.DomainConfigurationScope, effect.Destination)
+		if err != nil {
+			return nil, fmt.Errorf("get global subscription: %w", err)
+		}
 	}
 	if service == nil || !service.Active {
-		return nil, fmt.Errorf("subscribed tenant service %q is unavailable", effect.Destination)
+		return nil, fmt.Errorf("subscription %q is unavailable", effect.Destination)
 	}
 	return service, nil
 }

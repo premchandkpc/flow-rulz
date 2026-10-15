@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/flowrulz/flow-rulz/internal/adapters/http/middleware"
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/responses"
 	"github.com/flowrulz/flow-rulz/internal/domain"
 	"github.com/flowrulz/flow-rulz/internal/ports"
@@ -61,7 +60,7 @@ func (h *RuleHandler) CreateRevision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activation, err := h.ruleSvc.CompileAndActivate(r.Context(), middleware.GetTenantID(r.Context()), ruleSet, source, "api")
+	activation, err := h.ruleSvc.CompileAndActivate(r.Context(), domain.DomainConfigurationScope, ruleSet, source, "api")
 	if err != nil {
 		responses.WriteError(w, http.StatusUnprocessableEntity, err.Error(), responses.CodeValidationFailed)
 		return
@@ -69,13 +68,13 @@ func (h *RuleHandler) CreateRevision(w http.ResponseWriter, r *http.Request) {
 	responses.WriteCreated(w, activation)
 }
 
-// ListRevisions lists revisions visible to the current tenant.
+// ListRevisions lists revisions visible to the global configuration.
 func (h *RuleHandler) ListRevisions(w http.ResponseWriter, r *http.Request) {
 	ruleSet := r.PathValue("ruleSet")
-	tenantScope := middleware.GetTenantID(r.Context())
+	configurationScope := domain.DomainConfigurationScope
 
 	ctx := r.Context()
-	revisions, err := h.ruleSvc.ListRevisions(ctx, tenantScope)
+	revisions, err := h.ruleSvc.ListRevisions(ctx, configurationScope)
 	if err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, err.Error(), responses.CodeInternalError)
 		return
@@ -102,7 +101,7 @@ func (h *RuleHandler) ListRevisions(w http.ResponseWriter, r *http.Request) {
 func (h *RuleHandler) GetRevision(w http.ResponseWriter, r *http.Request) {
 	ruleSet := r.PathValue("ruleSet")
 	revisionStr := r.PathValue("revision")
-	tenantScope := middleware.GetTenantID(r.Context())
+	configurationScope := domain.DomainConfigurationScope
 
 	revision, err := strconv.ParseInt(revisionStr, 10, 64)
 	if err != nil {
@@ -111,7 +110,7 @@ func (h *RuleHandler) GetRevision(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	rev, err := h.ruleSvc.GetRevision(ctx, tenantScope, ruleSet, revision)
+	rev, err := h.ruleSvc.GetRevision(ctx, configurationScope, ruleSet, revision)
 	if err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, err.Error(), responses.CodeInternalError)
 		return
@@ -127,10 +126,10 @@ func (h *RuleHandler) GetRevision(w http.ResponseWriter, r *http.Request) {
 // Deactivate deactivates the requested rule set.
 func (h *RuleHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 	ruleSet := r.PathValue("ruleSet")
-	tenantScope := middleware.GetTenantID(r.Context())
+	configurationScope := domain.DomainConfigurationScope
 
 	ctx := r.Context()
-	if err := h.ruleSvc.Deactivate(ctx, tenantScope, ruleSet); err != nil {
+	if err := h.ruleSvc.Deactivate(ctx, configurationScope, ruleSet); err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, err.Error(), responses.CodeInternalError)
 		return
 	}
@@ -138,12 +137,12 @@ func (h *RuleHandler) Deactivate(w http.ResponseWriter, r *http.Request) {
 	responses.WriteOK(w, map[string]string{"status": "deactivated"})
 }
 
-// ListActiveRules lists active rules for the current tenant.
+// ListActiveRules lists active rules for the global configuration.
 func (h *RuleHandler) ListActiveRules(w http.ResponseWriter, r *http.Request) {
-	tenantScope := middleware.GetTenantID(r.Context())
+	configurationScope := domain.DomainConfigurationScope
 
 	ctx := r.Context()
-	active, err := h.ruleSvc.ListActiveRules(ctx, tenantScope)
+	active, err := h.ruleSvc.ListActiveRules(ctx, configurationScope)
 	if err != nil {
 		responses.WriteError(w, http.StatusInternalServerError, err.Error(), responses.CodeInternalError)
 		return
@@ -187,5 +186,5 @@ func (h *RuleHandler) CheckRule(w http.ResponseWriter, r *http.Request) {
 		responses.WriteOK(w, &ports.RuleCheckResult{Error: err.Error()})
 		return
 	}
-	responses.WriteOK(w, checker.CheckRule(r.Context(), middleware.GetTenantID(r.Context()), req.EventType, source, req.Event))
+	responses.WriteOK(w, checker.CheckRule(r.Context(), domain.DomainConfigurationScope, req.EventType, source, req.Event))
 }

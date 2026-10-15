@@ -1,0 +1,20 @@
+{
+  "id": "evt_01JORDER123",
+  "type": "orders.created",
+  "tenant_id": "merchant-42",
+  "partition_key": "order-1007",
+  "occurred_at": "2026-10-15T07:30:00Z",
+  "contract": {
+    "name": "OrderCreated",
+    "version": "v1",
+    "schema_hash": "ba15f7bb8dfdece5936119341a9468f203fed70045e922192f6fa87d5a744939"
+  },
+  "data": {
+    "order_id": "order-1007",
+    "total": 1250.5,
+    "currency": "INR"
+  },
+  "headers": {
+    "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+  }
+}

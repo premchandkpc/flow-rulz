@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -25,17 +26,26 @@ func NewDomainServiceRepository(querier Querier) *DomainServiceRepository {
 
 // SaveDomain inserts or updates a tenant domain.
 func (r *DomainServiceRepository) SaveDomain(ctx context.Context, item *domain.TenantDomain) error {
-	_, err := r.querier.Exec(ctx, `
-		INSERT INTO tenant_domains (tenant_id, domain_id, name, event_types, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+	deploymentItems := item.Deployments
+	if deploymentItems == nil {
+		deploymentItems = []domain.ServiceDeployment{}
+	}
+	deployments, err := json.Marshal(deploymentItems)
+	if err != nil {
+		return fmt.Errorf("encode domain service deployments: %w", err)
+	}
+	_, err = r.querier.Exec(ctx, `
+		INSERT INTO tenant_domains (tenant_id, domain_id, name, event_types, deployments, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (tenant_id, domain_id) DO UPDATE SET
-			name = EXCLUDED.name, event_types = EXCLUDED.event_types, updated_at = EXCLUDED.updated_at
-	`, item.TenantID, item.ID, item.Name, item.EventTypes, item.CreatedAt, item.UpdatedAt)
+			name = EXCLUDED.name, event_types = EXCLUDED.event_types,
+			deployments = EXCLUDED.deployments, updated_at = EXCLUDED.updated_at
+	`, item.TenantID, item.ID, item.Name, item.EventTypes, deployments, item.CreatedAt, item.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return fmt.Errorf("%w: tenant domain name already exists", domain.ErrDomainServiceConflict)
+			return fmt.Errorf("%w: domain name already exists", domain.ErrDomainServiceConflict)
 		}
-		return fmt.Errorf("save tenant domain: %w", err)
+		return fmt.Errorf("save domain: %w", err)
 	}
 	return nil
 }
@@ -43,15 +53,21 @@ func (r *DomainServiceRepository) SaveDomain(ctx context.Context, item *domain.T
 // GetDomain retrieves a tenant domain by ID.
 func (r *DomainServiceRepository) GetDomain(ctx context.Context, tenantID, domainID string) (*domain.TenantDomain, error) {
 	item := &domain.TenantDomain{}
+	var deployments []byte
 	err := r.querier.QueryRow(ctx, `
-		SELECT domain_id, tenant_id, name, event_types, created_at, updated_at
+		SELECT domain_id, tenant_id, name, event_types, deployments, created_at, updated_at
 		FROM tenant_domains WHERE tenant_id = $1 AND domain_id = $2
-	`, tenantID, domainID).Scan(&item.ID, &item.TenantID, &item.Name, &item.EventTypes, &item.CreatedAt, &item.UpdatedAt)
+	`, tenantID, domainID).Scan(&item.ID, &item.TenantID, &item.Name, &item.EventTypes, &deployments, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get tenant domain: %w", err)
+		return nil, fmt.Errorf("get domain: %w", err)
+	}
+	if len(deployments) > 0 {
+		if err := json.Unmarshal(deployments, &item.Deployments); err != nil {
+			return nil, fmt.Errorf("decode domain service deployments: %w", err)
+		}
 	}
 	return item, nil
 }
@@ -59,24 +75,30 @@ func (r *DomainServiceRepository) GetDomain(ctx context.Context, tenantID, domai
 // ListDomains returns all domains for a tenant.
 func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID string) ([]*domain.TenantDomain, error) {
 	rows, err := r.querier.Query(ctx, `
-		SELECT domain_id, tenant_id, name, event_types, created_at, updated_at
+		SELECT domain_id, tenant_id, name, event_types, deployments, created_at, updated_at
 		FROM tenant_domains WHERE tenant_id = $1 ORDER BY name
 	`, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("list tenant domains: %w", err)
+		return nil, fmt.Errorf("list domains: %w", err)
 	}
 	defer rows.Close()
 
 	items := make([]*domain.TenantDomain, 0)
 	for rows.Next() {
 		item := &domain.TenantDomain{}
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EventTypes, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan tenant domain: %w", err)
+		var deployments []byte
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EventTypes, &deployments, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan domain: %w", err)
+		}
+		if len(deployments) > 0 {
+			if err := json.Unmarshal(deployments, &item.Deployments); err != nil {
+				return nil, fmt.Errorf("decode domain service deployments: %w", err)
+			}
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate tenant domains: %w", err)
+		return nil, fmt.Errorf("iterate domains: %w", err)
 	}
 	return items, nil
 }
@@ -85,7 +107,7 @@ func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID stri
 func (r *DomainServiceRepository) DeleteDomain(ctx context.Context, tenantID, domainID string) error {
 	_, err := r.querier.Exec(ctx, `DELETE FROM tenant_domains WHERE tenant_id = $1 AND domain_id = $2`, tenantID, domainID)
 	if err != nil {
-		return fmt.Errorf("delete tenant domain: %w", err)
+		return fmt.Errorf("delete domain: %w", err)
 	}
 	return nil
 }
@@ -95,14 +117,14 @@ func (r *DomainServiceRepository) SaveService(ctx context.Context, item *domain.
 	if pool, ok := r.querier.(*pgxpool.Pool); ok {
 		tx, err := pool.Begin(ctx)
 		if err != nil {
-			return fmt.Errorf("begin save tenant service: %w", err)
+			return fmt.Errorf("begin save subscription: %w", err)
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 		if err := (&DomainServiceRepository{querier: tx}).saveService(ctx, item); err != nil {
 			return err
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("commit tenant service: %w", err)
+			return fmt.Errorf("commit subscription: %w", err)
 		}
 		return nil
 	}
@@ -112,26 +134,27 @@ func (r *DomainServiceRepository) SaveService(ctx context.Context, item *domain.
 
 func (r *DomainServiceRepository) saveService(ctx context.Context, item *domain.DomainService) error {
 	_, err := r.querier.Exec(ctx, `
-		INSERT INTO tenant_domain_services (tenant_id, service_id, name, endpoint_url, active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO tenant_domain_services (tenant_id, service_id, name, endpoint_url, event_types, active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (tenant_id, service_id) DO UPDATE SET
-			name = EXCLUDED.name, endpoint_url = EXCLUDED.endpoint_url, active = EXCLUDED.active, updated_at = EXCLUDED.updated_at
-	`, item.TenantID, item.ID, item.Name, item.EndpointURL, item.Active, item.CreatedAt, item.UpdatedAt)
+			name = EXCLUDED.name, endpoint_url = EXCLUDED.endpoint_url, event_types = EXCLUDED.event_types,
+			active = EXCLUDED.active, updated_at = EXCLUDED.updated_at
+	`, item.TenantID, item.ID, item.Name, item.EndpointURL, item.EventTypes, item.Active, item.CreatedAt, item.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return fmt.Errorf("%w: tenant service name already exists", domain.ErrDomainServiceConflict)
+			return fmt.Errorf("%w: subscription name already exists", domain.ErrDomainServiceConflict)
 		}
-		return fmt.Errorf("save tenant service: %w", err)
+		return fmt.Errorf("save subscription: %w", err)
 	}
 	if _, err := r.querier.Exec(ctx, `DELETE FROM tenant_domain_subscriptions WHERE tenant_id = $1 AND service_id = $2`, item.TenantID, item.ID); err != nil {
-		return fmt.Errorf("replace tenant service subscriptions: %w", err)
+		return fmt.Errorf("replace legacy subscription domain links: %w", err)
 	}
 	for _, domainID := range item.DomainIDs {
 		if _, err := r.querier.Exec(ctx, `
 			INSERT INTO tenant_domain_subscriptions (tenant_id, service_id, domain_id)
 			VALUES ($1, $2, $3)
 		`, item.TenantID, item.ID, domainID); err != nil {
-			return fmt.Errorf("save tenant service subscription %q: %w", domainID, err)
+			return fmt.Errorf("save legacy subscription domain link %q: %w", domainID, err)
 		}
 	}
 	return nil
@@ -141,14 +164,14 @@ func (r *DomainServiceRepository) saveService(ctx context.Context, item *domain.
 func (r *DomainServiceRepository) GetService(ctx context.Context, tenantID, serviceID string) (*domain.DomainService, error) {
 	item := &domain.DomainService{}
 	err := r.querier.QueryRow(ctx, `
-		SELECT service_id, tenant_id, name, endpoint_url, active, created_at, updated_at
+		SELECT service_id, tenant_id, name, endpoint_url, event_types, active, created_at, updated_at
 		FROM tenant_domain_services WHERE tenant_id = $1 AND service_id = $2
-	`, tenantID, serviceID).Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.Active, &item.CreatedAt, &item.UpdatedAt)
+	`, tenantID, serviceID).Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.EventTypes, &item.Active, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get tenant service: %w", err)
+		return nil, fmt.Errorf("get subscription: %w", err)
 	}
 	item.DomainIDs, err = r.listServiceDomains(ctx, tenantID, serviceID)
 	if err != nil {
@@ -160,24 +183,24 @@ func (r *DomainServiceRepository) GetService(ctx context.Context, tenantID, serv
 // ListServices returns all services for a tenant.
 func (r *DomainServiceRepository) ListServices(ctx context.Context, tenantID string) ([]*domain.DomainService, error) {
 	rows, err := r.querier.Query(ctx, `
-		SELECT service_id, tenant_id, name, endpoint_url, active, created_at, updated_at
+		SELECT service_id, tenant_id, name, endpoint_url, event_types, active, created_at, updated_at
 		FROM tenant_domain_services WHERE tenant_id = $1 ORDER BY name
 	`, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("list tenant services: %w", err)
+		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
 	defer rows.Close()
 
 	items := make([]*domain.DomainService, 0)
 	for rows.Next() {
 		item := &domain.DomainService{}
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan tenant service: %w", err)
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.EventTypes, &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan subscription: %w", err)
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate tenant services: %w", err)
+		return nil, fmt.Errorf("iterate subscriptions: %w", err)
 	}
 	for _, item := range items {
 		item.DomainIDs, err = r.listServiceDomains(ctx, tenantID, item.ID)
@@ -195,7 +218,7 @@ func (r *DomainServiceRepository) DeleteService(ctx context.Context, tenantID, s
 		WHERE tenant_id = $1 AND service_id = $2
 	`, tenantID, serviceID, time.Now().UTC())
 	if err != nil {
-		return fmt.Errorf("deactivate tenant service: %w", err)
+		return fmt.Errorf("deactivate subscription: %w", err)
 	}
 	return nil
 }
@@ -203,32 +226,40 @@ func (r *DomainServiceRepository) DeleteService(ctx context.Context, tenantID, s
 // ListSubscribersForEvent returns services subscribed to an event type.
 func (r *DomainServiceRepository) ListSubscribersForEvent(ctx context.Context, tenantID, eventType string) ([]*domain.DomainService, error) {
 	rows, err := r.querier.Query(ctx, `
-		SELECT DISTINCT s.service_id, s.tenant_id, s.name, s.endpoint_url, s.active, s.created_at, s.updated_at
+		SELECT DISTINCT s.service_id, s.tenant_id, s.name, s.endpoint_url, s.event_types, s.active, s.created_at, s.updated_at
 		FROM tenant_domain_services s
-		JOIN tenant_domain_subscriptions sub ON sub.tenant_id = s.tenant_id AND sub.service_id = s.service_id
-		JOIN tenant_domains d ON d.tenant_id = sub.tenant_id AND d.domain_id = sub.domain_id
-		WHERE s.tenant_id = $1 AND s.active = TRUE AND d.event_types @> ARRAY[$2]::text[]
+		WHERE s.tenant_id IN ($1, $3) AND s.active = TRUE
+		  AND (
+			s.event_types @> ARRAY[$2]::text[]
+			OR EXISTS (
+				SELECT 1
+				FROM tenant_domain_subscriptions sub
+				JOIN tenant_domains d ON d.tenant_id = sub.tenant_id AND d.domain_id = sub.domain_id
+				WHERE sub.tenant_id = s.tenant_id AND sub.service_id = s.service_id
+				  AND d.event_types @> ARRAY[$2]::text[]
+			)
+		  )
 		ORDER BY s.service_id
 		LIMIT 101
-	`, tenantID, eventType)
+	`, tenantID, eventType, domain.DomainConfigurationScope)
 	if err != nil {
-		return nil, fmt.Errorf("list services subscribed to event: %w", err)
+		return nil, fmt.Errorf("list subscriptions for event: %w", err)
 	}
 	defer rows.Close()
 
 	items := make([]*domain.DomainService, 0)
 	for rows.Next() {
 		item := &domain.DomainService{}
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan event subscriber: %w", err)
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.EventTypes, &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan event subscription: %w", err)
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate event subscribers: %w", err)
+		return nil, fmt.Errorf("iterate event subscriptions: %w", err)
 	}
 	if len(items) > 100 {
-		return nil, fmt.Errorf("event %q exceeds maximum of 100 tenant subscribers", eventType)
+		return nil, fmt.Errorf("event %q exceeds maximum of 100 subscriptions", eventType)
 	}
 	return items, nil
 }

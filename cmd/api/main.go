@@ -71,7 +71,7 @@ func run() error {
 		domain.BatchConfig{Mode: domain.BatchModeNone},
 	)
 	quarantineSvc := svcquarantine.NewService(repositories.Quarantine)
-	domainServicesSvc := svcdomains.NewService(repositories.DomainServices, domain.SystemClock{})
+	domainServicesSvc := svcdomains.NewService(repositories.DomainServices, domain.SystemClock{}).WithRuleService(rulesSvc)
 
 	var authValidator *auth.Validator
 	if cfg.Auth.JWTSecret != "" {

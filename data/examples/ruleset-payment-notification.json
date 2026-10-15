@@ -1,0 +1,25 @@
+{
+  "rule_set": "payment-notification",
+  "revision": 1,
+  "mode": "all_matches",
+  "input_contract": {
+    "name": "PaymentAuthorized",
+    "version": "v1",
+    "schema_hash": "6c3240662d5dae05b03dc1639ea99bb8368766d5add6aebaac69bd1ae3ba9b20"
+  },
+  "rules": [
+    {
+      "id": "notify-authorized-payment",
+      "priority": 10,
+      "when": { "path": "$.status", "op": "eq", "value": "authorized" },
+      "then": [
+        {
+          "emit": {
+            "topic": "payments.notifications",
+            "data": { "payment_id": "$.payment_id", "order_id": "$.order_id", "channel": "merchant" }
+          }
+        }
+      ]
+    }
+  ]
+}

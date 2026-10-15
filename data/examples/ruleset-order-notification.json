@@ -1,0 +1,25 @@
+{
+  "rule_set": "order-notification",
+  "revision": 7,
+  "mode": "all_matches",
+  "input_contract": {
+    "name": "OrderCreated",
+    "version": "v1",
+    "schema_hash": "ba15f7bb8dfdece5936119341a9468f203fed70045e922192f6fa87d5a744939"
+  },
+  "rules": [
+    {
+      "id": "notify-inr-order",
+      "priority": 10,
+      "when": { "path": "$.currency", "op": "eq", "value": "INR" },
+      "then": [
+        {
+          "emit": {
+            "topic": "orders.notifications",
+            "data": { "order_id": "$.order_id", "channel": "merchant" }
+          }
+        }
+      ]
+    }
+  ]
+}

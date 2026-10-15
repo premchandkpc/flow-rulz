@@ -29,11 +29,11 @@ func (SubscriberRouter) Route(
 	now time.Time,
 ) ([]domain.OutboxEffect, error) {
 	if repository == nil {
-		return nil, fmt.Errorf("tenant domain service repository is not configured")
+		return nil, fmt.Errorf("subscription repository is not configured")
 	}
 	subscribers, err := repository.ListSubscribersForEvent(ctx, envelope.TenantID, envelope.Type)
 	if err != nil {
-		return nil, fmt.Errorf("list tenant subscribers for event: %w", err)
+		return nil, fmt.Errorf("list subscriptions for event: %w", err)
 	}
 	if len(subscribers) > maxSubscriberFanout {
 		return nil, fmt.Errorf("event %q exceeds the %d-service fan-out limit", envelope.Type, maxSubscriberFanout)
@@ -46,7 +46,13 @@ func (SubscriberRouter) Route(
 
 	effects := make([]domain.OutboxEffect, 0, len(subscribers))
 	for _, subscriber := range subscribers {
-		if subscriber == nil || !subscriber.Active || subscriber.TenantID != envelope.TenantID {
+		if subscriber == nil || !subscriber.Active {
+			continue
+		}
+		// Global subscriptions are configured without tenant identity and may
+		// receive matching events from any tenant. Legacy scoped subscriptions
+		// remain isolated to the event tenant during migration.
+		if subscriber.TenantID != envelope.TenantID && subscriber.TenantID != domain.DomainConfigurationScope {
 			continue
 		}
 		effects = append(effects, domain.OutboxEffect{

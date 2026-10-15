@@ -111,6 +111,22 @@ fn validate_message_routing(envelope: &EventEnvelope, config: &Config, shard: u3
     if computed_shard != shard {
         bail!("message routed to shard {shard} but envelope hashes to {computed_shard}");
     }
+    if let Some(expected_service_id) = &config.service_id {
+        let target_service_id = envelope.headers.get("flow.service_id")
+            .ok_or_else(|| anyhow!("service deployment routing header flow.service_id is required"))?;
+        if target_service_id != expected_service_id {
+            bail!("message targets service deployment {target_service_id}, not this worker's {expected_service_id}");
+        }
+        let expected_revision = config.deployment_revision
+            .ok_or_else(|| anyhow!("worker deployment revision is not configured"))?;
+        let target_revision = envelope.headers.get("flow.deployment_revision")
+            .ok_or_else(|| anyhow!("service deployment routing header flow.deployment_revision is required"))?
+            .parse::<i64>()
+            .map_err(|_| anyhow!("flow.deployment_revision must be an integer"))?;
+        if target_revision != expected_revision {
+            bail!("message targets deployment revision {target_revision}, not this worker's {expected_revision}");
+        }
+    }
     Ok(())
 }
 
@@ -214,4 +230,117 @@ fn is_permanent_event_error(error: &anyhow::Error) -> bool {
      "action must contain exactly one supported action", "predicate path missing",
      "inbox duplicate has no committed execution", "inbox points to missing execution",
      "exceeds the 100-service fan-out limit", "command destination and name are required"].iter().any(|needle| message.contains(needle))
+}
+
+
+#[cfg(test)]
+mod deployment_routing_tests {
+    use super::*;
+    use crate::engine::{ContractRef, EventEnvelope};
+    use chrono::{DateTime, Utc};
+    use serde_json::json;
+    use std::{collections::HashMap, time::Duration};
+
+    fn config(service_id: Option<&str>, revision: Option<i64>) -> Config {
+        Config {
+            nats_url: "nats://localhost:4222".into(),
+            stream: "flowrulz".into(),
+            durable: "worker".into(),
+            database_url: "postgres://localhost/flowrulz".into(),
+            worker_id: "worker-1".into(),
+            service_id: service_id.map(str::to_owned),
+            deployment_revision: revision,
+            num_shards: 16,
+            worker_replicas: 1,
+            lease_ttl: Duration::from_secs(30),
+            lease_renew_interval: Duration::from_secs(5),
+            ack_wait: Duration::from_secs(30),
+            retry_delay: Duration::from_secs(5),
+            fetch_batch_size: 10,
+            rulesets: vec![],
+            effect_poll_interval: Duration::from_secs(5),
+            scheduler_poll_interval: Duration::from_secs(5),
+            scheduler_batch_size: 10,
+        }
+    }
+
+    fn event(headers: HashMap<String, String>) -> EventEnvelope {
+        EventEnvelope {
+            id: "event-1".into(),
+            event_type: "orders.created".into(),
+            tenant_id: "tenant-a".into(),
+            partition_key: "order-1".into(),
+            workflow_id: None,
+            occurred_at: "2026-10-15T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+            data: json!({"order_id":"order-1"}),
+            headers,
+            contract: Some(ContractRef {
+                name: "orders.created".into(),
+                version: "v1".into(),
+                schema_hash: Some("sha256:abc".into()),
+            }),
+            message_kind: None,
+            correlation_id: None,
+            causation_id: None,
+        }
+    }
+
+    #[test]
+    fn accepts_exact_service_and_deployment_revision() {
+        let cfg = config(Some("domain-a/orders"), Some(3));
+        let env = event(HashMap::from([
+            ("flow.service_id".into(), "domain-a/orders".into()),
+            ("flow.deployment_revision".into(), "3".into()),
+        ]));
+        let shard = env.virtual_shard(cfg.num_shards).unwrap();
+        assert!(validate_message_routing(&env, &cfg, shard).is_ok());
+    }
+
+    #[test]
+    fn rejects_missing_or_mismatched_service_identity() {
+        let cfg = config(Some("domain-a/orders"), Some(3));
+        let shard = event(HashMap::new()).virtual_shard(cfg.num_shards).unwrap();
+        assert!(validate_message_routing(&event(HashMap::new()), &cfg, shard).is_err());
+
+        let env = event(HashMap::from([
+            ("flow.service_id".into(), "domain-a/billing".into()),
+            ("flow.deployment_revision".into(), "3".into()),
+        ]));
+        let shard = env.virtual_shard(cfg.num_shards).unwrap();
+        assert!(validate_message_routing(&env, &cfg, shard).is_err());
+    }
+
+    #[test]
+    fn rejects_missing_malformed_and_stale_deployment_revision() {
+        let cfg = config(Some("domain-a/orders"), Some(3));
+        for revision in [None, Some("not-a-number"), Some("2")] {
+            let mut headers = HashMap::from([("flow.service_id".into(), "domain-a/orders".into())]);
+            if let Some(value) = revision {
+                headers.insert("flow.deployment_revision".into(), value.into());
+            }
+            let env = event(headers);
+            let shard = env.virtual_shard(cfg.num_shards).unwrap();
+            assert!(validate_message_routing(&env, &cfg, shard).is_err(), "revision case {revision:?} should fail");
+        }
+    }
+
+    #[test]
+    fn rejects_wrong_shard_even_when_service_matches() {
+        let cfg = config(Some("domain-a/orders"), Some(3));
+        let env = event(HashMap::from([
+            ("flow.service_id".into(), "domain-a/orders".into()),
+            ("flow.deployment_revision".into(), "3".into()),
+        ]));
+        let correct = env.virtual_shard(cfg.num_shards).unwrap();
+        let wrong = (correct + 1) % cfg.num_shards;
+        assert!(validate_message_routing(&env, &cfg, wrong).is_err());
+    }
+
+    #[test]
+    fn permits_legacy_routing_when_deployment_identity_is_unset() {
+        let cfg = config(None, None);
+        let env = event(HashMap::new());
+        let shard = env.virtual_shard(cfg.num_shards).unwrap();
+        assert!(validate_message_routing(&env, &cfg, shard).is_ok());
+    }
 }

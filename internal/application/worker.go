@@ -12,6 +12,8 @@ import (
 
 // WorkerConfig holds runtime limits and polling intervals for a worker.
 type WorkerConfig struct {
+	ServiceID              string
+	DeploymentRevision     int64
 	MaxGlobalInFlight      int
 	FetchBatchSize         int
 	EffectPublishInterval  time.Duration

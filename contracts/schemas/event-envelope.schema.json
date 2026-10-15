@@ -19,6 +19,7 @@
       "pattern": "^[a-z][a-z0-9.]*[a-z0-9]$"
     },
     "tenant_id": {
+      "description": "Runtime event identity only; never a Domain or Service configuration field.",
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
@@ -33,6 +34,20 @@
       "type": "string",
       "format": "date-time"
     },
+    "workflow_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "message_kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "schema_hash"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "schema_hash": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "causation_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "data": {
       "type": "object",
       "additionalProperties": true

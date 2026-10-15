@@ -4,7 +4,7 @@ This guide describes the current implementation. It does not certify the service
 
 ## Security and exposure warning
 
-JWT authentication and scope checks are available through `internal/auth`; enable them with `REQUIRE_AUTH=true`, a high-entropy `JWT_SECRET` (at least 32 characters), and the expected issuer/audience. In production, tenant extraction also supports a fail-closed trusted-proxy contract via `FLOWRULZ_TRUSTED_PROXY_TOKEN`, `X-Proxy-Auth`, and `X-Authenticated-Tenant-ID`. A validated JWT tenant claim is authoritative; conflicting caller-supplied tenant values are rejected. Do not expose the API to untrusted multi-tenant traffic until authentication is required in the deployed configuration, every resource path has been audited, and cross-tenant negative tests plus proxy/header-stripping behavior are verified.
+JWT authentication and scope checks are available through `internal/auth`; enable them with `REQUIRE_AUTH=true`, a high-entropy `JWT_SECRET` (at least 32 characters), and the expected issuer/audience. Global configuration routes (`/v1/domains`, `/v1/subscriptions`, `/v1/rules`, `/v1/contracts`) use control-plane authentication and do not require a tenant configuration field. Runtime/event-scoped routes still use fail-closed tenant extraction via a validated JWT claim or trusted proxy contract (`FLOWRULZ_TRUSTED_PROXY_TOKEN`, `X-Proxy-Auth`, and `X-Authenticated-Tenant-ID`). A validated JWT tenant claim is authoritative for runtime-scoped operations; conflicting caller-supplied tenant values are rejected. Do not expose the API to untrusted multi-tenant traffic until authentication is required in the deployed configuration, every resource path has been audited, and cross-tenant negative tests plus proxy/header-stripping behavior are verified.
 
 Native configuration defaults the HTTP server to `127.0.0.1:8080`. The local Compose file publishes API, PostgreSQL, NATS, NATS monitoring and Redis ports on host loopback only. Compose starts three worker replicas by default (`WORKER_REPLICAS=3`) using the fixed-replica shard lease allocation. It still uses demo credentials. Do not reuse those credentials or treat the development stack as a production deployment.
 
@@ -109,7 +109,7 @@ Apply pending migrations:
 make migrate-up
 ~~~
 
-The migration CLI currently supports only `up`. There are no supported `down` or `status` commands. Do not edit an applied migration; add a new numbered migration and verify both upgrade behavior and the resulting schema. Migration files currently have a numbering gap, which should not be backfilled by renumbering applied files.
+Migration 024 consolidates ruleset revisions, activations, and contract bindings into the global configuration scope. It deliberately fails if legacy scopes contain conflicting ruleset content, active revisions, or binding policies; reconcile those conflicts before retrying. The migration CLI currently supports only `up`. There are no supported `down` or `status` commands. Do not edit an applied migration; add a new numbered migration and verify both upgrade behavior and the resulting schema. Migration files currently have a numbering gap, which should not be backfilled by renumbering applied files.
 
 PostgreSQL is the default transactional backend. MongoDB is optional, but must be deployed as a replica set or sharded cluster for transactions. Do not assume full adapter equivalence from the current in-memory contract tests.
 
@@ -174,7 +174,7 @@ The event transaction validates the fencing token before writes, and the queue s
 
 ### API tenant isolation
 
-This remains a release blocker until deployment authentication is mandatory and correctly configured. JWT validation and trusted-proxy tenant resolution are implemented, but configuration alone does not prove production wiring or complete resource-level authorization. Verify every read/write path and cross-tenant denial tests before exposing the service.
+This remains a release blocker until deployment authentication is mandatory and correctly configured. JWT validation and trusted-proxy tenant resolution are implemented for runtime-scoped operations, while global configuration uses control-plane authentication. Configuration alone does not prove production wiring or complete resource-level authorization. Verify every read/write path and cross-tenant denial tests before exposing the service.
 
 ## Operational readiness
 

@@ -1,0 +1,12 @@
+{
+  "name": "PaymentAuthorized",
+  "version": "v1",
+  "kind": "event",
+  "description": "A payment authorization decision was produced.",
+  "fields": {
+    "amount": { "type": "number", "required": true },
+    "order_id": { "type": "string", "required": true },
+    "payment_id": { "type": "string", "required": true },
+    "status": { "type": "string", "required": true, "enum": ["authorized", "declined"] }
+  }
+}

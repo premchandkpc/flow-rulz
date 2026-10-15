@@ -1,0 +1,34 @@
+{
+  "name": "commerce",
+  "services": [
+    {
+      "service_id": "order-worker",
+      "name": "order-worker",
+      "revision": 1,
+      "active": true,
+      "rulesets": [
+        { "ruleset_id": "order-review", "revision": 3 },
+        { "ruleset_id": "order-notification", "revision": 7 }
+      ],
+      "worker_profile": {
+        "min_replicas": 1,
+        "max_replicas": 4,
+        "concurrency": 8
+      }
+    },
+    {
+      "service_id": "payment-worker",
+      "name": "payment-worker",
+      "revision": 1,
+      "active": true,
+      "rulesets": [
+        { "ruleset_id": "payment-risk", "revision": 2 }
+      ],
+      "worker_profile": {
+        "min_replicas": 1,
+        "max_replicas": 2,
+        "concurrency": 4
+      }
+    }
+  ]
+}

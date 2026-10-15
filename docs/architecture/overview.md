@@ -27,7 +27,7 @@ Delivery is at-least-once. Inbox/outbox patterns improve recovery and handoff co
 
 ## Subscriber routing boundary
 
-Tenant domains and service/subscriber registrations are control-plane configuration. Rule evaluation never queries subscribers or implements subscriber-specific behavior. A separate generic subscription router matches event types against active, tenant-scoped subscriptions and creates one stable delivery intent per matching subscriber. Those intents are inserted into the same transaction's outbox as rule effects, after a successful active-ruleset execution; events with no active ruleset are not fanned out. The dispatcher publishes committed intents through NATS JetStream. Go and Rust must preserve matching, tenant isolation, effect identity, fan-out limits, and commit/ACK semantics.
+Domains and Service/ruleset assignments are global control-plane configuration. Event tenant identity is supplied by each event and is not part of the Domain API. Rule evaluation never queries subscribers or implements subscriber-specific behavior. A separate generic subscription router matches event types against active, active subscriptions and creates one stable delivery intent per matching subscriber. Those intents are inserted into the same transaction's outbox as rule effects, after a successful active-ruleset execution; events with no active ruleset are not fanned out. The dispatcher publishes committed intents through NATS JetStream. Go and Rust must preserve event tenant isolation in runtime data, effect identity, fan-out limits, and commit/ACK semantics.
 
 ## Control plane / data plane boundary
 

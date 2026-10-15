@@ -80,7 +80,7 @@ const (
 
 // RuleRevision represents the rule revision.
 type RuleRevision struct {
-	TenantScope     string          `json:"tenant_scope"`
+	TenantScope     string          `json:"-"`
 	RuleID          string          `json:"rule_id"`
 	Revision        int64           `json:"revision"`
 	ContentHash     string          `json:"content_hash"`
@@ -117,38 +117,67 @@ type ContractSchema struct {
 	UpdatedAt       time.Time                `json:"updated_at,omitempty"`
 }
 
-// TenantDomain groups event types that tenant services can subscribe to.
+// DomainConfigurationScope is the internal persistence namespace for shared configuration.
+// It is not an event tenant and is never exposed by the public API.
+const DomainConfigurationScope = "__domain_configuration__"
+
+// TenantDomain is persisted domain configuration. Runtime event identity and routing keys are not configuration.
 type TenantDomain struct {
-	ID         string    `json:"id"`
-	TenantID   string    `json:"tenant_id"`
-	Name       string    `json:"name"`
-	EventTypes []string  `json:"event_types"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          string              `json:"id"`
+	TenantID    string              `json:"-"`
+	Name        string              `json:"name"`
+	EventTypes  []string            `json:"-"`
+	Deployments []ServiceDeployment `json:"services"`
+	CreatedAt   time.Time           `json:"created_at"`
+	UpdatedAt   time.Time           `json:"updated_at"`
 }
 
-// DomainService is a tenant-owned NATS consumer and its domain subscriptions.
+// ServiceDeployment declares the ruleset revisions assigned to one service worker pool.
+type ServiceDeployment struct {
+	ServiceID     string              `json:"service_id"`
+	Name          string              `json:"name"`
+	Revision      int64               `json:"revision"`
+	Active        bool                `json:"active"`
+	Rulesets      []RulesetAssignment `json:"rulesets"`
+	WorkerProfile WorkerProfile       `json:"worker_profile,omitempty"`
+}
+
+// RulesetAssignment pins a deployment to one immutable ruleset revision.
+type RulesetAssignment struct {
+	RulesetID string `json:"ruleset_id"`
+	Revision  int64  `json:"revision"`
+}
+
+// WorkerProfile contains service-level worker scaling and concurrency hints.
+type WorkerProfile struct {
+	MinReplicas int `json:"min_replicas,omitempty"`
+	MaxReplicas int `json:"max_replicas,omitempty"`
+	Concurrency int `json:"concurrency,omitempty"`
+}
+
+// DomainService is a generic event subscription. It is separate from execution Services nested under a Domain.
 // nolint:revive // type name stutters with package name but is a domain concept
 // DomainService represents the domain service.
 type DomainService struct {
 	ID          string    `json:"id"`
-	TenantID    string    `json:"tenant_id"`
+	TenantID    string    `json:"-"`
 	Name        string    `json:"name"`
 	NATSSubject string    `json:"nats_subject"`
-	EndpointURL string    `json:"endpoint_url,omitempty"` // Deprecated legacy field; never used for delivery.
-	DomainIDs   []string  `json:"domain_ids"`
+	EndpointURL string    `json:"-"` // Deprecated legacy field; never used for delivery.
+	EventTypes  []string  `json:"event_types"`
+	DomainIDs   []string  `json:"-"` // Legacy internal domain subscriptions; new subscriptions use event_types.
 	Active      bool      `json:"active"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// ServiceSubject returns a stable, tenant-isolated NATS subject for a service.
-// Hashing identifiers keeps subjects valid and prevents tenant/service names from
-// leaking into broker monitoring while ensuring each subscriber gets its own copy.
-func ServiceSubject(tenantID, serviceID string) string {
-	tenantHash := sha256.Sum256([]byte(tenantID))
+// ServiceSubject returns a stable NATS subject scoped by tenant for legacy
+// subscriptions or by the shared configuration scope for global subscriptions.
+// Hashing identifiers avoids exposing internal identifiers in broker monitoring.
+func ServiceSubject(scopeID, serviceID string) string {
+	scopeHash := sha256.Sum256([]byte(scopeID))
 	serviceHash := sha256.Sum256([]byte(serviceID))
-	return "services." + hex.EncodeToString(tenantHash[:12]) + "." + hex.EncodeToString(serviceHash[:12])
+	return "services." + hex.EncodeToString(scopeHash[:12]) + "." + hex.EncodeToString(serviceHash[:12])
 }
 
 // ContractField represents the contract field.
@@ -531,7 +560,7 @@ type QuarantineEntry struct {
 
 // RuleActivation represents the rule activation.
 type RuleActivation struct {
-	TenantScope string    `json:"tenant_scope"`
+	TenantScope string    `json:"-"`
 	RuleSet     string    `json:"rule_set"`
 	Revision    int64     `json:"revision"`
 	Version     int64     `json:"version"`

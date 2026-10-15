@@ -1,0 +1,52 @@
+{
+  "rule_set": "order-review",
+  "revision": 3,
+  "mode": "first_match",
+  "input_contract": {
+    "name": "OrderCreated",
+    "version": "v1",
+    "schema_hash": "ba15f7bb8dfdece5936119341a9468f203fed70045e922192f6fa87d5a744939"
+  },
+  "rules": [
+    {
+      "id": "high-value-review",
+      "priority": 100,
+      "name": "Review high-value orders",
+      "when": {
+        "path": "$.total",
+        "op": "gte",
+        "value": 1000
+      },
+      "then": [
+        {
+          "emit": {
+            "topic": "orders.review",
+            "data": {
+              "order_id": "$.order_id",
+              "reason": "high_value"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "default-accepted",
+      "priority": 10,
+      "when": {
+        "path": "$.total",
+        "op": "lt",
+        "value": 1000
+      },
+      "then": [
+        {
+          "emit": {
+            "topic": "orders.accepted",
+            "data": {
+              "order_id": "$.order_id"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

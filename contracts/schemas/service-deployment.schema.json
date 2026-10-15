@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowrulz.dev/schemas/service-deployment.schema.json",
+  "title": "FlowRulz Domain Service Deployment",
+  "description": "Nested execution deployment configuration for one Service within a Domain. Tenant identity and partition key are supplied by runtime events. Contract-to-ruleset bindings remain independent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["service_id", "name", "revision", "active", "rulesets"],
+  "properties": {
+    "service_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "description": "Local service identifier within its parent domain. Worker routing identity is domain_id/service_id."
+    },
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "active": { "type": "boolean" },
+    "worker_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min_replicas": { "type": "integer", "minimum": 0, "default": 1 },
+        "max_replicas": { "type": "integer", "minimum": 1, "default": 3 },
+        "concurrency": { "type": "integer", "minimum": 1, "default": 1 }
+      }
+    },
+    "rulesets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ruleset_id", "revision"],
+        "properties": {
+          "ruleset_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "revision": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  }
+}

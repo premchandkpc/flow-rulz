@@ -1,0 +1,118 @@
+// Package logfirst contains the scheduler transaction boundary for the
+// Kafka/Redpanda log-first proposal. Timer heap and partition replay are omitted.
+package logfirst
+
+import (
+	"context"
+	"errors"
+	"strconv"
+	"time"
+)
+
+// ScheduleRecord is the versioned durable representation of a scheduled event.
+type ScheduleRecord struct {
+	SchemaVersion int           `json:"schema_version"`
+	TenantID      string        `json:"tenant_id"`
+	ScheduleID    string        `json:"schedule_id"`
+	Revision      int64         `json:"revision"`
+	DueAt         time.Time     `json:"due_at"`
+	Event         EventEnvelope `json:"event"`
+	Status        string        `json:"status"`
+}
+
+// DueSchedule carries a due schedule and the input checkpoint to advance atomically.
+type DueSchedule struct {
+	Key           []byte
+	Record        ScheduleRecord
+	Occurrence    string
+	InputPosition InputCheckpoint
+}
+
+// OccurrenceID must be deterministic for a schedule revision and due occurrence.
+// Production code should use a documented stable hash/UUID algorithm.
+func OccurrenceID(scheduleID string, revision int64, dueAt time.Time) string {
+	return scheduleID + ":" + dueAt.UTC().Format(time.RFC3339Nano) + ":" + strconv.FormatInt(revision, 10)
+}
+
+// ScheduleCodec serializes a scheduled event into the backend-neutral envelope.
+type ScheduleCodec interface {
+	EncodeEvent(EventEnvelope) ([]byte, error)
+}
+
+// Scheduler atomically emits due events, removes schedules, and advances checkpoints.
+type Scheduler struct {
+	Store          LogStore
+	Codec          ScheduleCodec
+	EventsTopic    string
+	SchedulesTopic string
+	GroupID        string
+}
+
+// FireDue atomically publishes the due event and tombstones the compacted schedule
+// key. If the transaction aborts, read-committed consumers see neither output.
+// The caller must only call this for a due record in a partition currently assigned
+// to this scheduler; on assignment loss it must stop and discard local heap entries.
+func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
+	if s.Store == nil || s.Codec == nil || s.EventsTopic == "" || s.SchedulesTopic == "" || s.GroupID == "" {
+		return errors.New("scheduler dependencies are not configured")
+	}
+	if due.Record.ScheduleID == "" || due.Record.TenantID == "" || due.Record.Revision <= 0 {
+		return errors.New("schedule identity, tenant, and positive revision are required")
+	}
+	if len(due.Key) == 0 {
+		return errors.New("compacted schedule key is required")
+	}
+	if due.Record.DueAt.IsZero() || due.Record.Event.EventType == "" || due.Record.Event.PartitionKey == "" {
+		return errors.New("schedule due time, event type, and event partition key are required")
+	}
+	if due.Occurrence == "" || due.Occurrence != OccurrenceID(due.Record.ScheduleID, due.Record.Revision, due.Record.DueAt) {
+		return errors.New("occurrence must match the deterministic schedule revision and due time")
+	}
+	if due.InputPosition.Stream == "" || due.InputPosition.Partition == "" || due.InputPosition.NextSequence < 0 {
+		return errors.New("consumed input position is required")
+	}
+	if due.Record.SchemaVersion != 1 {
+		return ErrUnsupportedSchema
+	}
+
+	event := due.Record.Event
+	event.SchemaVersion = 1
+	event.ID = due.Occurrence
+	event.TenantID = due.Record.TenantID
+	if event.Metadata.CausationID == "" {
+		event.Metadata.CausationID = "schedule:" + due.Record.ScheduleID
+	}
+	payload, err := s.Codec.EncodeEvent(event)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.Store.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = tx.Abort(abortCtx)
+		}
+	}()
+
+	if err := tx.Append(ctx, LogRecord{ID: event.ID, TenantID: event.TenantID, PartitionKey: event.PartitionKey, Kind: s.EventsTopic, Key: []byte(event.TenantID + ":" + event.PartitionKey), Value: payload}); err != nil {
+		return err
+	}
+	// A nil value is a Kafka tombstone for this compacted schedule key.
+	if err := tx.Append(ctx, LogRecord{ID: "schedule-tombstone:" + due.Record.TenantID + ":" + due.Record.ScheduleID + ":" + strconv.FormatInt(due.Record.Revision, 10), TenantID: due.Record.TenantID, PartitionKey: string(due.Key), Kind: s.SchedulesTopic, Key: due.Key, Value: nil}); err != nil {
+		return err
+	}
+	if err := tx.CommitInputPosition(ctx, s.GroupID, []InputCheckpoint{due.InputPosition}); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	committed = true
+	return nil
+}
