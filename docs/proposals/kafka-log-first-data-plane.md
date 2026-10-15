@@ -251,3 +251,51 @@ Set bounded retry attempts and a DLQ policy. Alert on sustained consumer lag, sc
 - **Remove PostgreSQL but keep NATS:** not recommended as a shortcut. JetStream does not provide Kafka-style transactional consume-transform-produce plus consumer offset commit semantics, so the application would need to rebuild dedupe, ownership, and atomic publication behavior.
 
 **Recommendation:** treat Kafka/Redpanda as a deliberate v2 architecture proposal, not an immediate replacement. First decide whether eliminating the PostgreSQL hot-path round trip is worth the broker migration and new activation/read-model complexity. Prove it with a narrow vertical slice before rewriting the repository.
+
+
+## Application-owned log storage port and future extraction
+
+The log is an application capability, not a vendor dependency scattered through FlowRulz. The service owns the interface and its semantics; an adapter owns the storage technology. This is the seam that allows the persistence implementation to move into a separately deployed third-party storage service later.
+
+### Layering
+
+```text
+API / Worker / Scheduler
+          |
+          v
+Application use cases
+          |
+          +---- Rule evaluator / subscriber router (domain logic)
+          |
+          v
+       LogStore                 <- owned by FlowRulz application
+          |
+          +---- EmbeddedLogAdapter       (initial implementation, if selected)
+          +---- KafkaLogAdapter           (future/optional)
+          +---- RemoteStorageService     (future adapter over HTTP/gRPC)
+```
+
+The domain and application layers must not import storage SDKs, SQL drivers, Kafka/NATS clients, filesystem details, or remote-service generated clients. Composition at the process boundary chooses the adapter. Avoid a generic repository abstraction that hides ordering, replay, checkpoints, or transaction semantics: those are part of this log's contract.
+
+### Required port semantics
+
+- Append records with stable IDs and partition keys.
+- Replay/read records from a position with explicit ordering and retention behavior.
+- Start a transaction that appends output records and commits the consumed input position atomically, where the chosen backend supports it.
+- Return typed errors for transient failure, permanent rejection, conflict, unavailable history, and ambiguous commit outcome.
+- Support context cancellation, bounded request sizes, and backpressure.
+- Enforce tenant authorization independently of the tenant value in a record.
+- Expose health and metrics without leaking payloads.
+
+A local file/WAL adapter is **not automatically highly available**: it is durable only according to its fsync/replication policy and can be lost with its host or volume. A remote adapter adds network partitions and ambiguous commit results. Stable idempotency keys and a status/retry protocol are mandatory for those cases.
+
+### Extraction path
+
+1. Keep the port in this repository and test the application against a fake implementation.
+2. Implement one concrete adapter and run contract tests against it, including crash/replay, duplicate append, ordering, and ambiguous timeout cases.
+3. If storage becomes a separate service, move only the adapter implementation and storage-owned schema/operations. Keep the FlowRulz port and domain behavior stable.
+4. Add a remote adapter implementing the same contract; do not make domain packages call the third-party service directly.
+5. Run the same contract suite against both adapters before cutover. Use explicit versioning and a migration/reconciliation plan; do not dual-write business effects.
+6. Keep vendor-specific features behind optional capability interfaces only when their semantics are explicitly needed. Do not pretend all backends support identical transactions.
+
+The `LogStore` interface in `proposals/kafka-log-first/storage.go` is a contract sketch. It does not imply that a concrete embedded WAL or remote service adapter exists yet. The worker/scheduler transaction sketches must be wired through this port in the implementation phase; they must not independently create vendor clients.
