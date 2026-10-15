@@ -1,10 +1,18 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://flow-rulz.io/schemas/event-envelope-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flow-rulz.dev/schemas/event-envelope.schema.json",
   "title": "FlowRulz Event Envelope",
+  "description": "Stable event identity and payload live at the top level. Runtime identity and extensible routing/tracing metadata live in meta.",
   "type": "object",
-  "required": ["id", "type", "tenant_id", "partition_key", "occurred_at", "data"],
   "additionalProperties": false,
+  "required": [
+    "id",
+    "type",
+    "occurred_at",
+    "contract",
+    "data",
+    "meta"
+  ],
   "properties": {
     "id": {
       "type": "string",
@@ -18,45 +26,104 @@
       "maxLength": 128,
       "pattern": "^[a-z][a-z0-9.]*[a-z0-9]$"
     },
-    "tenant_id": {
-      "description": "Runtime event identity only; never a Domain or Service configuration field.",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 64,
-      "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
-    },
-    "partition_key": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 256
-    },
     "occurred_at": {
       "type": "string",
       "format": "date-time"
     },
-    "workflow_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "message_kind": { "type": "string", "minLength": 1, "maxLength": 64 },
     "contract": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version", "schema_hash"],
+      "required": [
+        "name",
+        "version",
+        "schema_hash"
+      ],
       "properties": {
-        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "schema_hash": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "schema_hash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
       }
     },
-    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "causation_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "data": {
       "type": "object",
       "additionalProperties": true
     },
-    "headers": {
+    "meta": {
       "type": "object",
-      "additionalProperties": {
-        "type": "string"
-      }
+      "description": "Runtime identity, routing, tracing, and future metadata. New metadata keys may be added without changing the envelope schema.",
+      "required": [
+        "tenant_id",
+        "partition_key"
+      ],
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Runtime event scope supplied with the event. Not Domain or Service configuration."
+        },
+        "partition_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Stable ordering key for events that must be processed sequentially."
+        },
+        "workflow_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "message_kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "correlation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "causation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "traceparent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "flow.service_id": {
+          "type": "string",
+          "description": "Internal routing value added or verified by trusted routing infrastructure, not trusted directly from an untrusted producer."
+        },
+        "flow.deployment_revision": {
+          "type": [
+            "integer",
+            "string"
+          ],
+          "description": "Internal deployment revision added or verified by trusted routing infrastructure."
+        }
+      },
+      "additionalProperties": true
     }
   }
 }
