@@ -36,6 +36,8 @@ func newCommandSender(publisher ports.SubjectPublisher) (ports.EffectSender, err
 
 func newWorkerConfig(cfg *config.Config) application.WorkerConfig {
 	workerConfig := application.DefaultWorkerConfig()
+	workerConfig.ServiceID = cfg.Worker.ServiceID
+	workerConfig.DeploymentRevision = cfg.Worker.DeploymentRevision
 	workerConfig.MaxGlobalInFlight = cfg.Worker.MaxGlobalInFlight
 	workerConfig.FetchBatchSize = cfg.Worker.FetchBatchSize
 	workerConfig.EffectPublishInterval = cfg.EffectPublishInterval()
