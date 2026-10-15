@@ -265,7 +265,7 @@ mod deployment_routing_tests {
         }
     }
 
-    fn event(headers: HashMap<String, String>) -> EventEnvelope {
+    fn event(meta: HashMap<String, serde_json::Value>) -> EventEnvelope {
         EventEnvelope {
             id: "event-1".into(),
             event_type: "orders.created".into(),
@@ -274,7 +274,8 @@ mod deployment_routing_tests {
             workflow_id: None,
             occurred_at: "2026-10-15T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
             data: json!({"order_id":"order-1"}),
-            headers,
+            headers: HashMap::new(),
+            meta,
             contract: Some(ContractRef {
                 name: "orders.created".into(),
                 version: "v1".into(),
@@ -290,8 +291,8 @@ mod deployment_routing_tests {
     fn accepts_exact_service_and_deployment_revision() {
         let cfg = config(Some("domain-a/orders"), Some(3));
         let env = event(HashMap::from([
-            ("flow.service_id".into(), "domain-a/orders".into()),
-            ("flow.deployment_revision".into(), "3".into()),
+            ("flow.service_id".into(), json!("domain-a/orders")),
+            ("flow.deployment_revision".into(), json!(3)),
         ]));
         let shard = env.virtual_shard(cfg.num_shards).unwrap();
         assert!(validate_message_routing(&env, &cfg, shard).is_ok());
@@ -304,8 +305,8 @@ mod deployment_routing_tests {
         assert!(validate_message_routing(&event(HashMap::new()), &cfg, shard).is_err());
 
         let env = event(HashMap::from([
-            ("flow.service_id".into(), "domain-a/billing".into()),
-            ("flow.deployment_revision".into(), "3".into()),
+            ("flow.service_id".into(), json!("domain-a/billing")),
+            ("flow.deployment_revision".into(), json!("3")),
         ]));
         let shard = env.virtual_shard(cfg.num_shards).unwrap();
         assert!(validate_message_routing(&env, &cfg, shard).is_err());
@@ -315,11 +316,11 @@ mod deployment_routing_tests {
     fn rejects_missing_malformed_and_stale_deployment_revision() {
         let cfg = config(Some("domain-a/orders"), Some(3));
         for revision in [None, Some("not-a-number"), Some("2")] {
-            let mut headers = HashMap::from([("flow.service_id".into(), "domain-a/orders".into())]);
+            let mut meta = HashMap::from([("flow.service_id".into(), json!("domain-a/orders"))]);
             if let Some(value) = revision {
-                headers.insert("flow.deployment_revision".into(), value.into());
+                meta.insert("flow.deployment_revision".into(), json!(value));
             }
-            let env = event(headers);
+            let env = event(meta);
             let shard = env.virtual_shard(cfg.num_shards).unwrap();
             assert!(validate_message_routing(&env, &cfg, shard).is_err(), "revision case {revision:?} should fail");
         }
