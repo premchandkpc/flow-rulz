@@ -29,7 +29,6 @@ var (
 )
 
 const (
-	maxEventTypesPerDomain = 100
 	maxDomainsPerService   = 25
 )
 
@@ -37,7 +36,6 @@ const (
 type Service struct {
 	repository ports.DomainServiceRepository
 	clock      ports.Clock
-	rules      ports.RuleService
 }
 
 // NewService creates a new domain Service with the given repository and clock.
@@ -46,12 +44,6 @@ func NewService(repository ports.DomainServiceRepository, clock ports.Clock) *Se
 		clock = domain.SystemClock{}
 	}
 	return &Service{repository: repository, clock: clock}
-}
-
-// WithRuleService is retained for compatibility with legacy wiring. Rule assignments are resolved from event identity at runtime.
-func (s *Service) WithRuleService(ruleService ports.RuleService) *Service {
-	s.rules = ruleService
-	return s
 }
 
 // SaveDomain creates or updates a tenant domain.
