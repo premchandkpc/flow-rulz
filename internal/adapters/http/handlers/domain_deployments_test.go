@@ -51,7 +51,7 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 		t.Fatalf("status = %d, body = %s; want %d", res.Code, res.Body.String(), http.StatusCreated)
 	}
 	if !service.called || service.scope != domainConfigurationScope {
-		t.Fatalf("SaveDomain called=%t scope=%q", service.called, service.tenantID)
+		t.Fatalf("SaveDomain called=%t scope=%q", service.called, service.scope)
 	}
 	if len(service.item.Deployments) != 1 {
 		t.Fatalf("deployment assignments = %#v", service.item.Deployments)
@@ -66,6 +66,15 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	var response map[string]any
 	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
 		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if _, exists := response["tenant_id"]; exists {
+		t.Fatal("domain API must not expose tenant_id")
+	}
+	if _, exists := response["event_types"]; exists {
+		t.Fatal("domain API must not expose event_types configuration")
+	}
+	if _, exists := response["services"]; !exists {
+		t.Fatal("domain API response must expose nested services")
 	}
 }
 
@@ -90,8 +99,7 @@ func TestCreateDomainRejectsMalformedDeploymentJSON(t *testing.T) {
 	handler := NewDomainServiceHandler(service)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
-	req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(`{"name":"orders","deployments":[`))
-	req = req.WithContext(req.Context())
+	req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(`{"name":"orders","services":[`))
 	res := httptest.NewRecorder()
 	mux.ServeHTTP(res, req)
 	if res.Code != http.StatusBadRequest {
