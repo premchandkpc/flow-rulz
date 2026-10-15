@@ -5,7 +5,7 @@
   "input_contract": {
     "name": "OrderCreated",
     "version": "v1",
-    "schema_hash": "replace-with-registry-computed-hash"
+    "schema_hash": "ba15f7bb8dfdece5936119341a9468f203fed70045e922192f6fa87d5a744939"
   },
   "rules": [
     {
