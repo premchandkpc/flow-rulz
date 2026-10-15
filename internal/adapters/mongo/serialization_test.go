@@ -27,6 +27,7 @@ func TestJSONPayloadDocumentsRoundTripThroughBSON(t *testing.T) {
 			ID: "evt-1", TenantID: "tenant-a", Type: "order.created", PartitionKey: "order-1",
 			OccurredAt: time.Now().UTC(), Data: json.RawMessage(`{"amount":42,"nested":{"ok":true}}`),
 			Headers: map[string]string{"trace-id": "trace-1"},
+			Meta: map[string]json.RawMessage{"source": json.RawMessage(`"checkout-api"`), "producer_sequence": json.RawMessage(`1042`)},
 		}
 		var stored EventDoc
 		mongoBSONRoundTrip(t, EventDocFromDomain(source), &stored)
@@ -36,6 +37,14 @@ func TestJSONPayloadDocumentsRoundTripThroughBSON(t *testing.T) {
 		}
 		if got.Headers["trace-id"] != "trace-1" {
 			t.Fatalf("event headers = %#v", got.Headers)
+		}
+		var sourceName string
+		if err := json.Unmarshal(got.Meta["source"], &sourceName); err != nil || sourceName != "checkout-api" {
+			t.Fatalf("event source metadata = %q, err=%v", sourceName, err)
+		}
+		var sequence int
+		if err := json.Unmarshal(got.Meta["producer_sequence"], &sequence); err != nil || sequence != 1042 {
+			t.Fatalf("event producer sequence = %d, err=%v", sequence, err)
 		}
 	})
 
