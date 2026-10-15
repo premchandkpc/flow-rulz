@@ -10,6 +10,7 @@ func TestEnvelopeUsesExtensibleMetaAndPreservesUnknownFields(t *testing.T) {
 	event := &Envelope{
 		ID:"evt-1", Type:"orders.created", TenantID:"merchant-42", PartitionKey:"order-1",
 		OccurredAt:time.Date(2026,10,15,7,30,0,0,time.UTC), Data:json.RawMessage(`{"order_id":"order-1"}`),
+		Contract:&ContractRef{Name:"OrderCreated",Version:"v1",SchemaHash:"abc"},
 		Meta:map[string]json.RawMessage{"producer":json.RawMessage(`"checkout-api"`),"future":json.RawMessage(`{"enabled":true}`)},
 		Headers:map[string]string{"traceparent":"trace-1"},
 	}
@@ -23,6 +24,7 @@ func TestEnvelopeUsesExtensibleMetaAndPreservesUnknownFields(t *testing.T) {
 	var decoded Envelope
 	if err:=json.Unmarshal(encoded,&decoded);err!=nil{t.Fatal(err)}
 	if decoded.TenantID!="merchant-42"||decoded.PartitionKey!="order-1"{t.Fatalf("decoded identity = %#v",decoded)}
+	if decoded.Contract==nil||decoded.Contract.Name!="OrderCreated"||decoded.Contract.SchemaHash!="abc"{t.Fatalf("contract not preserved: %#v",decoded.Contract)}
 	if string(decoded.Meta["future"])!=`{"enabled":true}`{t.Fatalf("unknown metadata lost: %s",decoded.Meta["future"])}
 }
 
