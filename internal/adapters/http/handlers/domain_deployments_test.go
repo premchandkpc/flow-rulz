@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/flowrulz/flow-rulz/internal/adapters/http/middleware"
 	"github.com/flowrulz/flow-rulz/internal/domain"
 	"github.com/flowrulz/flow-rulz/internal/ports"
 )
@@ -16,13 +15,13 @@ import (
 type deploymentCaptureUseCase struct {
 	ports.DomainServiceUseCase
 	called   bool
-	tenantID string
+	scope string
 	item     *domain.TenantDomain
 }
 
 func (s *deploymentCaptureUseCase) SaveDomain(_ context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
 	s.called = true
-	s.tenantID = tenantID
+	s.scope = tenantID
 	cloned := *item
 	s.item = &cloned
 	return item, nil
@@ -35,8 +34,7 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	handler.RegisterRoutes(mux)
 	body := `{
 		"name":"orders",
-		"event_types":["orders.created"],
-		"deployments":[{
+		"services":[{
 			"service_id":"order-worker",
 			"name":"order-worker",
 			"revision":3,
@@ -46,16 +44,14 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 		}]
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(body))
-	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, "tenant-a")
-	req = req.WithContext(ctx)
 	res := httptest.NewRecorder()
 	mux.ServeHTTP(res, req)
 
 	if res.Code != http.StatusCreated {
 		t.Fatalf("status = %d, body = %s; want %d", res.Code, res.Body.String(), http.StatusCreated)
 	}
-	if !service.called || service.tenantID != "tenant-a" {
-		t.Fatalf("SaveDomain called=%t tenant=%q", service.called, service.tenantID)
+	if !service.called || service.scope != domainConfigurationScope {
+		t.Fatalf("SaveDomain called=%t scope=%q", service.called, service.tenantID)
 	}
 	if len(service.item.Deployments) != 1 {
 		t.Fatalf("deployment assignments = %#v", service.item.Deployments)
@@ -73,19 +69,19 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	}
 }
 
-func TestCreateDomainRequiresTrustedTenantContext(t *testing.T) {
+func TestCreateDomainDoesNotRequireTenantConfiguration(t *testing.T) {
 	service := &deploymentCaptureUseCase{}
 	handler := NewDomainServiceHandler(service)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
-	req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(`{"name":"orders","event_types":["orders.created"]}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(`{"name":"orders","services":[]}`))
 	res := httptest.NewRecorder()
 	mux.ServeHTTP(res, req)
-	if res.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, body = %s; want unauthorized", res.Code, res.Body.String())
+	if res.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s; want created without tenant configuration", res.Code, res.Body.String())
 	}
-	if service.called {
-		t.Fatal("SaveDomain must not be called without tenant context")
+	if !service.called {
+		t.Fatal("SaveDomain must be called without requiring tenant configuration")
 	}
 }
 
@@ -95,7 +91,7 @@ func TestCreateDomainRejectsMalformedDeploymentJSON(t *testing.T) {
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 	req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(`{"name":"orders","deployments":[`))
-	req = req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, "tenant-a"))
+	req = req.WithContext(req.Context())
 	res := httptest.NewRecorder()
 	mux.ServeHTTP(res, req)
 	if res.Code != http.StatusBadRequest {
