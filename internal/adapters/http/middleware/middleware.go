@@ -75,6 +75,10 @@ func globalConfigurationAuthStatus(r *http.Request) int {
 			return http.StatusOK
 		}
 	}
+	if _, authenticatedTenant := auth.TenantFromContext(r.Context()); authenticatedTenant {
+		// An authenticated tenant is not automatically a global configuration administrator.
+		return http.StatusForbidden
+	}
 	expected := os.Getenv(trustedProxyTokenEnv)
 	if expected == "" {
 		return http.StatusServiceUnavailable
