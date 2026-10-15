@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -25,12 +26,17 @@ func NewDomainServiceRepository(querier Querier) *DomainServiceRepository {
 
 // SaveDomain inserts or updates a tenant domain.
 func (r *DomainServiceRepository) SaveDomain(ctx context.Context, item *domain.TenantDomain) error {
-	_, err := r.querier.Exec(ctx, `
-		INSERT INTO tenant_domains (tenant_id, domain_id, name, event_types, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+	deployments, err := json.Marshal(item.Deployments)
+	if err != nil {
+		return fmt.Errorf("encode domain service deployments: %w", err)
+	}
+	_, err = r.querier.Exec(ctx, `
+		INSERT INTO tenant_domains (tenant_id, domain_id, name, event_types, deployments, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (tenant_id, domain_id) DO UPDATE SET
-			name = EXCLUDED.name, event_types = EXCLUDED.event_types, updated_at = EXCLUDED.updated_at
-	`, item.TenantID, item.ID, item.Name, item.EventTypes, item.CreatedAt, item.UpdatedAt)
+			name = EXCLUDED.name, event_types = EXCLUDED.event_types,
+			deployments = EXCLUDED.deployments, updated_at = EXCLUDED.updated_at
+	`, item.TenantID, item.ID, item.Name, item.EventTypes, deployments, item.CreatedAt, item.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return fmt.Errorf("%w: tenant domain name already exists", domain.ErrDomainServiceConflict)
@@ -43,15 +49,21 @@ func (r *DomainServiceRepository) SaveDomain(ctx context.Context, item *domain.T
 // GetDomain retrieves a tenant domain by ID.
 func (r *DomainServiceRepository) GetDomain(ctx context.Context, tenantID, domainID string) (*domain.TenantDomain, error) {
 	item := &domain.TenantDomain{}
+	var deployments []byte
 	err := r.querier.QueryRow(ctx, `
-		SELECT domain_id, tenant_id, name, event_types, created_at, updated_at
+		SELECT domain_id, tenant_id, name, event_types, deployments, created_at, updated_at
 		FROM tenant_domains WHERE tenant_id = $1 AND domain_id = $2
-	`, tenantID, domainID).Scan(&item.ID, &item.TenantID, &item.Name, &item.EventTypes, &item.CreatedAt, &item.UpdatedAt)
+	`, tenantID, domainID).Scan(&item.ID, &item.TenantID, &item.Name, &item.EventTypes, &deployments, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get tenant domain: %w", err)
+	}
+	if len(deployments) > 0 {
+		if err := json.Unmarshal(deployments, &item.Deployments); err != nil {
+			return nil, fmt.Errorf("decode domain service deployments: %w", err)
+		}
 	}
 	return item, nil
 }
@@ -59,7 +71,7 @@ func (r *DomainServiceRepository) GetDomain(ctx context.Context, tenantID, domai
 // ListDomains returns all domains for a tenant.
 func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID string) ([]*domain.TenantDomain, error) {
 	rows, err := r.querier.Query(ctx, `
-		SELECT domain_id, tenant_id, name, event_types, created_at, updated_at
+		SELECT domain_id, tenant_id, name, event_types, deployments, created_at, updated_at
 		FROM tenant_domains WHERE tenant_id = $1 ORDER BY name
 	`, tenantID)
 	if err != nil {
@@ -70,8 +82,14 @@ func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID stri
 	items := make([]*domain.TenantDomain, 0)
 	for rows.Next() {
 		item := &domain.TenantDomain{}
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EventTypes, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		var deployments []byte
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EventTypes, &deployments, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan tenant domain: %w", err)
+		}
+		if len(deployments) > 0 {
+			if err := json.Unmarshal(deployments, &item.Deployments); err != nil {
+				return nil, fmt.Errorf("decode domain service deployments: %w", err)
+			}
 		}
 		items = append(items, item)
 	}
