@@ -10,9 +10,9 @@ func TestEventEnvelopeSerializesIdentityAndExtensibleFieldsInsideMeta(t *testing
 	event := EventEnvelope{
 		ID: "evt-1", Type: "orders.created", TenantID: "merchant-42",
 		PartitionKey: "order-1007", OccurredAt: time.Date(2026, 10, 15, 7, 30, 0, 0, time.UTC),
-		Data: json.RawMessage(`{"order_id":"order-1007"}`),
+		Data:    json.RawMessage(`{"order_id":"order-1007"}`),
 		Headers: map[string]string{"traceparent": "trace"},
-		Meta: map[string]any{"region": "ap-south-1", "source_system": "checkout-api"},
+		Meta:    map[string]any{"region": "ap-south-1", "source_system": "checkout-api"},
 	}
 	raw, err := json.Marshal(event)
 	if err != nil {
