@@ -132,6 +132,11 @@ type EventDoc struct {
 	ScheduledAt  *time.Time        `bson:"scheduled_at,omitempty"`
 	Data         []byte            `bson:"data"`
 	Headers      map[string]string `bson:"headers,omitempty"`
+	Meta         map[string]any    `bson:"meta,omitempty"`
+	Contract     *domain.ContractRef `bson:"contract,omitempty"`
+	MessageKind  string            `bson:"message_kind,omitempty"`
+	CorrelationID string           `bson:"correlation_id,omitempty"`
+	CausationID  string            `bson:"causation_id,omitempty"`
 	Processed    bool              `bson:"processed"`
 	ExecutionID  string            `bson:"execution_id,omitempty"`
 	ProcessedAt  *time.Time        `bson:"processed_at,omitempty"`
@@ -149,6 +154,11 @@ func EventDocFromDomain(event *domain.EventEnvelope) *EventDoc {
 		OccurredAt:   event.OccurredAt,
 		Data:         append([]byte(nil), event.Data...),
 		Headers:      event.Headers,
+		Meta:         rawMetadataToBSON(event.Meta),
+		Contract:     event.Contract,
+		MessageKind:  event.MessageKind,
+		CorrelationID: event.CorrelationID,
+		CausationID:  event.CausationID,
 		Processed:    false,
 		CreatedAt:    time.Now().UTC(),
 	}
@@ -170,5 +180,29 @@ func (d *EventDoc) ToDomain() *domain.EventEnvelope {
 		OccurredAt:   d.OccurredAt,
 		Data:         data,
 		Headers:      d.Headers,
+		Meta:         bsonMetadataToRaw(d.Meta),
+		Contract:     d.Contract,
+		MessageKind:  d.MessageKind,
+		CorrelationID: d.CorrelationID,
+		CausationID:  d.CausationID,
 	}
+}
+
+func rawMetadataToBSON(meta map[string]json.RawMessage) map[string]any {
+	if len(meta) == 0 { return nil }
+	result := make(map[string]any, len(meta))
+	for key, raw := range meta {
+		var value any
+		if json.Unmarshal(raw, &value) == nil { result[key] = value }
+	}
+	return result
+}
+
+func bsonMetadataToRaw(meta map[string]any) map[string]json.RawMessage {
+	if len(meta) == 0 { return nil }
+	result := make(map[string]json.RawMessage, len(meta))
+	for key, value := range meta {
+		if raw, err := json.Marshal(value); err == nil { result[key] = raw }
+	}
+	return result
 }
