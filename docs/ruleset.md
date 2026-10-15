@@ -12,7 +12,7 @@ A **ruleset** is an immutable, versioned collection of rules. A Service referenc
 
 To change rule behavior, publish a new revision and update the Service assignment to that revision with a higher Service revision. Never mutate a published revision in place.
 
-A ruleset definition is configuration. It must not contain `tenant_id` or `partition_key`. Runtime events carry those fields, and the worker uses them for event identity, deduplication, and partition ordering.
+A ruleset definition is configuration. It must not contain `tenant_id` or `partition_key`. Runtime events carry those values as `meta.tenant_id` and `meta.partition_key`; the worker uses them for event identity, deduplication, and partition ordering. The extensible `meta` object can carry additional producer context without changing the ruleset schema.
 
 ## Example
 
