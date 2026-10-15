@@ -54,7 +54,7 @@ type EventMetadata struct {
 	RequestedRulesetID string                     `json:"requested_ruleset_id,omitempty"`
 	TargetServiceID    string                     `json:"flow.service_id,omitempty"`
 	DeploymentRevision int64                      `json:"flow.deployment_revision,omitempty"`
-	SchemaVersion      int                        `json:"schema_version,omitempty"`
+	SchemaVersion      int                        `json:"-"`
 	Traceparent        string                     `json:"traceparent,omitempty"`
 	Headers            map[string]string          `json:"headers,omitempty"`
 	Extra              map[string]json.RawMessage `json:"-"`
@@ -77,6 +77,9 @@ func (m EventMetadata) MarshalJSON() ([]byte, error) {
 	if err != nil { return nil, err }
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(encoded, &fields); err != nil { return nil, err }
+	if m.SchemaVersion > 0 {
+		fields["schema_version"], _ = json.Marshal(m.SchemaVersion)
+	}
 	for key, value := range m.Extra {
 		if _, known := fields[key]; !known { fields[key] = append(json.RawMessage(nil), value...) }
 	}
@@ -89,7 +92,14 @@ func (m *EventMetadata) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &known); err != nil { return err }
 	var all map[string]json.RawMessage
 	if err := json.Unmarshal(data, &all); err != nil { return err }
-	for _, key := range []string{"tenant_id","partition_key","workflow_id","message_kind","correlation_id","causation_id","batch_id","hop","requested_ruleset_id","flow.service_id","flow.deployment_revision","schema_version","traceparent","headers"} {
+	if raw, exists := all["schema_version"]; exists {
+		var version int
+		if err := json.Unmarshal(raw, &version); err == nil && version > 0 {
+			known.SchemaVersion = version
+			delete(all, "schema_version")
+		}
+	}
+	for _, key := range []string{"tenant_id","partition_key","workflow_id","message_kind","correlation_id","causation_id","batch_id","hop","requested_ruleset_id","flow.service_id","flow.deployment_revision","traceparent","headers"} {
 		delete(all, key)
 	}
 	*m = EventMetadata(known)
