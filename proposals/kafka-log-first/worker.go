@@ -149,11 +149,6 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, deploymentID string, deplo
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(refs) == 0 {
-		// Keep policy explicit: no active ruleset means no subscriber fan-out.
-		return nil, nil, nil
-	}
-
 	now := time.Now
 	if e.Now != nil {
 		now = e.Now
@@ -197,7 +192,8 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, deploymentID string, deplo
 		})
 	}
 
-	// Subscriber fan-out occurs once per input event, outside the per-ruleset loop.
+	// Subscriber fan-out occurs once per input event, even when this deployment has
+	// no assigned rulesets. It is a separate routing stage, never nested inside rule evaluation.
 	// The router must generate deterministic IDs and tenant-filter every subscription.
 	if e.Router != nil {
 		subscriptionEffects, err := e.Router.Route(ctx, env, env.ID)
