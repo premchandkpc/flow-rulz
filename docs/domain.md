@@ -40,7 +40,7 @@ Changing ruleset assignments or the worker profile requires a higher Service rev
 
 ## Runtime routing
 
-The event supplies `tenant_id` and `partition_key`. The worker uses the combined value as the stable ordering/sharding key. These fields are not copied into Domain configuration.
+The event supplies `meta.tenant_id` and `meta.partition_key`. The worker uses the combined values as the stable ordering/sharding key. The entire `meta` object is runtime context and is never copied into Domain configuration.
 
 The intended routing flow is:
 
