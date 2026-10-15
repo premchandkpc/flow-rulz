@@ -134,11 +134,12 @@ func (r *DomainServiceRepository) SaveService(ctx context.Context, item *domain.
 
 func (r *DomainServiceRepository) saveService(ctx context.Context, item *domain.DomainService) error {
 	_, err := r.querier.Exec(ctx, `
-		INSERT INTO tenant_domain_services (tenant_id, service_id, name, endpoint_url, active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO tenant_domain_services (tenant_id, service_id, name, endpoint_url, event_types, active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (tenant_id, service_id) DO UPDATE SET
-			name = EXCLUDED.name, endpoint_url = EXCLUDED.endpoint_url, active = EXCLUDED.active, updated_at = EXCLUDED.updated_at
-	`, item.TenantID, item.ID, item.Name, item.EndpointURL, item.Active, item.CreatedAt, item.UpdatedAt)
+			name = EXCLUDED.name, endpoint_url = EXCLUDED.endpoint_url, event_types = EXCLUDED.event_types,
+			active = EXCLUDED.active, updated_at = EXCLUDED.updated_at
+	`, item.TenantID, item.ID, item.Name, item.EndpointURL, item.EventTypes, item.Active, item.CreatedAt, item.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return fmt.Errorf("%w: tenant service name already exists", domain.ErrDomainServiceConflict)
@@ -163,9 +164,9 @@ func (r *DomainServiceRepository) saveService(ctx context.Context, item *domain.
 func (r *DomainServiceRepository) GetService(ctx context.Context, tenantID, serviceID string) (*domain.DomainService, error) {
 	item := &domain.DomainService{}
 	err := r.querier.QueryRow(ctx, `
-		SELECT service_id, tenant_id, name, endpoint_url, active, created_at, updated_at
+		SELECT service_id, tenant_id, name, endpoint_url, event_types, active, created_at, updated_at
 		FROM tenant_domain_services WHERE tenant_id = $1 AND service_id = $2
-	`, tenantID, serviceID).Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.Active, &item.CreatedAt, &item.UpdatedAt)
+	`, tenantID, serviceID).Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.EventTypes, &item.Active, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -182,7 +183,7 @@ func (r *DomainServiceRepository) GetService(ctx context.Context, tenantID, serv
 // ListServices returns all services for a tenant.
 func (r *DomainServiceRepository) ListServices(ctx context.Context, tenantID string) ([]*domain.DomainService, error) {
 	rows, err := r.querier.Query(ctx, `
-		SELECT service_id, tenant_id, name, endpoint_url, active, created_at, updated_at
+		SELECT service_id, tenant_id, name, endpoint_url, event_types, active, created_at, updated_at
 		FROM tenant_domain_services WHERE tenant_id = $1 ORDER BY name
 	`, tenantID)
 	if err != nil {
@@ -193,7 +194,7 @@ func (r *DomainServiceRepository) ListServices(ctx context.Context, tenantID str
 	items := make([]*domain.DomainService, 0)
 	for rows.Next() {
 		item := &domain.DomainService{}
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.EventTypes, &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan tenant service: %w", err)
 		}
 		items = append(items, item)
@@ -225,32 +226,40 @@ func (r *DomainServiceRepository) DeleteService(ctx context.Context, tenantID, s
 // ListSubscribersForEvent returns services subscribed to an event type.
 func (r *DomainServiceRepository) ListSubscribersForEvent(ctx context.Context, tenantID, eventType string) ([]*domain.DomainService, error) {
 	rows, err := r.querier.Query(ctx, `
-		SELECT DISTINCT s.service_id, s.tenant_id, s.name, s.endpoint_url, s.active, s.created_at, s.updated_at
+		SELECT DISTINCT s.service_id, s.tenant_id, s.name, s.endpoint_url, s.event_types, s.active, s.created_at, s.updated_at
 		FROM tenant_domain_services s
-		JOIN tenant_domain_subscriptions sub ON sub.tenant_id = s.tenant_id AND sub.service_id = s.service_id
-		JOIN tenant_domains d ON d.tenant_id = sub.tenant_id AND d.domain_id = sub.domain_id
-		WHERE s.tenant_id = $1 AND s.active = TRUE AND d.event_types @> ARRAY[$2]::text[]
+		WHERE s.tenant_id IN ($1, $3) AND s.active = TRUE
+		  AND (
+			s.event_types @> ARRAY[$2]::text[]
+			OR EXISTS (
+				SELECT 1
+				FROM tenant_domain_subscriptions sub
+				JOIN tenant_domains d ON d.tenant_id = sub.tenant_id AND d.domain_id = sub.domain_id
+				WHERE sub.tenant_id = s.tenant_id AND sub.service_id = s.service_id
+				  AND d.event_types @> ARRAY[$2]::text[]
+			)
+		  )
 		ORDER BY s.service_id
 		LIMIT 101
-	`, tenantID, eventType)
+	`, tenantID, eventType, domain.DomainConfigurationScope)
 	if err != nil {
-		return nil, fmt.Errorf("list services subscribed to event: %w", err)
+		return nil, fmt.Errorf("list subscriptions for event: %w", err)
 	}
 	defer rows.Close()
 
 	items := make([]*domain.DomainService, 0)
 	for rows.Next() {
 		item := &domain.DomainService{}
-		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan event subscriber: %w", err)
+		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.EventTypes, &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan event subscription: %w", err)
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate event subscribers: %w", err)
+		return nil, fmt.Errorf("iterate event subscriptions: %w", err)
 	}
 	if len(items) > 100 {
-		return nil, fmt.Errorf("event %q exceeds maximum of 100 tenant subscribers", eventType)
+		return nil, fmt.Errorf("event %q exceeds maximum of 100 subscriptions", eventType)
 	}
 	return items, nil
 }
