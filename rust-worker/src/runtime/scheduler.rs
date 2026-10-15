@@ -72,6 +72,7 @@ fn decode_scheduled_event(row: &PgRow) -> Result<(EventEnvelope, i32)> {
         message_kind: None,
         correlation_id: None,
         causation_id: None,
+        meta: Default::default(),
     };
     Ok((event, retry_count))
 }
