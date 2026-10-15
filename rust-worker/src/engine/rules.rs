@@ -415,6 +415,7 @@ mod tests {
             revision: 1,
             content_hash: "contract-hash".into(),
             match_mode: match_mode.into(),
+            input_contract: None,
             compiled,
         }
     }
