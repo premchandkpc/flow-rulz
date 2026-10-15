@@ -30,13 +30,34 @@ The HTTP API is a control-plane service. It creates and validates configuration 
 
 NATS delivery is at-least-once. JetStream is the durable append-only message log; PostgreSQL is the durable transactional state store for inbox deduplication, executions, and outbox delivery state. Runtime caches are disposable accelerators and must be rebuildable from durable stores. The inbox prevents duplicate event execution when storage constraints and transaction semantics hold. External effects are effectively-once only when the destination honors the idempotency key. Do not claim exactly-once delivery.
 
-## Tenant domains and receiving services
+## Domain configuration and service deployments
 
-Tenant-owned event domains and receiver registrations are managed through the `/v1/domains` and `/v1/services` management APIs. The management API remains HTTP; application messages between producers, workers, and receivers use NATS JetStream. A domain groups event type names. Its `deployments` list separately declares execution Services, each with an explicit worker identity, revision, and immutable ruleset-revision assignments. This is not the same as `/v1/services`, which remains the subscriber/receiver registry: a subscriber can register interest in one or more domains without becoming an execution deployment. After a successful active-ruleset execution, the separate generic subscription router resolves active tenant-scoped subscribers matching the event type and adds one stable `service_event` delivery intent per subscriber to the same transaction's outbox. In the current NATS/PostgreSQL runtime, events without an active ruleset do not trigger subscriber delivery. Rule evaluation does not query subscribers or implement subscriber-specific business behavior.
+Domain configuration is managed through the `/v1/domains` API. A Domain contains named execution Services, and each Service declares its assigned ruleset revisions and optional worker profile. The public domain payload contains `name` and `services[]`; it does not configure tenant identity, event types, or partition keys. Those values arrive on each event. The worker uses the event's tenant identity and partition key for runtime routing, deduplication, and ordering.
 
-FlowRulz assigns each service a stable, tenant-isolated `nats_subject` such as `services.<tenant-hash>.<service-hash>`. Receivers create a durable JetStream consumer for their exact subject on the configured `NATS_STREAM`; subjects are unique per service so one receiver cannot steal another receiver's fan-out copy. Command effects publish to `commands.<destination>.<name>`, where `destination` is a single lowercase subject token and `name` is a dot-separated set of lowercase tokens. Generic `emit` effects publish to `effects.<topic>`.
+Example:
 
-Each declared effect delivery is a JSON effect envelope containing the stable outbox `id`, `idempotency_key`, `tenant_id`, `execution_id`, `destination`, `name`, `effect_type`, and original JSON `payload`. Receivers must deduplicate by `idempotency_key` (or stable effect ID), commit their own state before ACKing, and assume at-least-once delivery. Transient publish errors leave the outbox eligible for retry; a successful broker publish does not prove that the receiver completed its business operation. HTTP callback URLs are not the delivery path. Hashed subjects provide routing separation, not authorization: configure NATS credentials and subject permissions so each receiver can consume only its assigned subject and publish only approved response subjects. Never share an unrestricted broker credential with tenant-owned receivers.
+```json
+{
+  "name": "orders",
+  "services": [
+    {
+      "service_id": "orders-worker",
+      "name": "orders-worker",
+      "revision": 3,
+      "active": true,
+      "rulesets": [
+        { "ruleset_id": "order-created", "revision": 7 },
+        { "ruleset_id": "payment-requested", "revision": 2 }
+      ],
+      "worker_profile": { "min_replicas": 1, "max_replicas": 4, "concurrency": 8 }
+    }
+  ]
+}
+```
+
+Generic subscriber fan-out remains a separate routing stage, independent of rule evaluation and execution Service deployments. Receiver registrations use `/v1/subscriptions`; they are not the execution Services nested inside a Domain. The router creates stable delivery intents in the same transaction as the event execution. Delivery is at-least-once, so receivers must deduplicate using the effect's idempotency key. HTTP callback URLs are not the delivery path.
+
+The management API does not accept tenant identity as configuration. Runtime event envelopes still carry `tenant_id` and `partition_key`; these are event-level identity and ordering fields, not Domain fields. Configure broker credentials and subject permissions separately; hashed subjects are routing identifiers, not authorization.
 
 ## Run locally
 
