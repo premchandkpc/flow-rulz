@@ -343,7 +343,7 @@ func setupTestUseCase(t *testing.T) (*svcevents.Service, *mockInbox, *mockExecut
 			Executions:     executions,
 			Outbox:         outbox,
 			ShardLeases:    newMockShardLease(),
-			DomainServices: noSubscribers{},
+			Subscribers:    noSubscribers{},
 			Bindings:       newMockBinding(),
 		}, nil
 	}
