@@ -62,9 +62,9 @@ type BatchMember struct {
 type BatchData struct {
 	BatchID    string        `json:"batch_id"`
 	RuleSet    string        `json:"rule_set"`
-	WindowFrom   time.Time     `json:"window_from"`
-	WindowTo     time.Time     `json:"window_to"`
-	Events       []BatchMember `json:"events"`
+	WindowFrom time.Time     `json:"window_from"`
+	WindowTo   time.Time     `json:"window_to"`
+	Events     []BatchMember `json:"events"`
 }
 
 // BatchRuleSet maps an event rule set onto the rule set that evaluates batches.
