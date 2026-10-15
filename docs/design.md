@@ -77,7 +77,7 @@ COMMIT
 
 | Type | Package | Fields | Purpose |
 |------|---------|--------|---------|
-| EventEnvelope | domain | ID, Type, TenantID, PartitionKey, OccurredAt, Data, Headers | Inbound event |
+| EventEnvelope | domain | ID, Type, TenantID, PartitionKey, OccurredAt, Data, Headers, Meta | Inbound event |
 | RuleRevision | domain | TenantScope, RuleID, Revision, Source, Compiled, Hash, InputContract | Compiled rules + metadata |
 | CompiledRule | domain | ID, Priority, When, Then, Name, Description, Tags | Single rule |
 | Predicate | domain | Path, Op, Value, All, Any, Not | Leaf or composite condition |

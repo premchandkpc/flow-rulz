@@ -30,6 +30,7 @@ type EventEnvelope struct {
 	CorrelationID string            `json:"correlation_id,omitempty"`
 	CausationID   string            `json:"causation_id,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
+	Meta          map[string]any    `json:"meta,omitempty"`
 }
 
 // VirtualShard provides the virtual shard.

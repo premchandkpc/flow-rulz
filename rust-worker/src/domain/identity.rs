@@ -1,6 +1,14 @@
 use sha2::{Digest, Sha256};
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct EventIdentity { pub tenant_id: String, pub event_id: String, pub partition_key: String }
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EventIdentity {
+    pub tenant_id: String,
+    pub event_id: String,
+    pub partition_key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<BTreeMap<String, serde_json::Value>>,
+}
 pub fn deterministic_id(namespace: &str, parts: &[&str]) -> String {
  let mut h = Sha256::new(); field(&mut h, namespace.as_bytes());
  for part in parts { field(&mut h, part.as_bytes()); }

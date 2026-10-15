@@ -17,10 +17,11 @@ type Envelope struct {
 	OccurredAt   time.Time         `json:"occurred_at"`
 	Data         json.RawMessage   `json:"data"`
 	Headers      map[string]string `json:"headers,omitempty"`
+	Meta         map[string]any    `json:"meta,omitempty"`
 }
 
 // NewEnvelope creates a new envelope with a generated ID and current timestamp
-func NewEnvelope(eventType, tenantID, partitionKey string, payload any) (*Envelope, error) {
+func NewEnvelope(eventType, tenantID, partitionKey string, payload any, meta map[string]any) (*Envelope, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -32,6 +33,7 @@ func NewEnvelope(eventType, tenantID, partitionKey string, payload any) (*Envelo
 		PartitionKey: partitionKey,
 		OccurredAt:   time.Now().UTC(),
 		Data:         data,
+		Meta:         meta,
 	}, nil
 }
 

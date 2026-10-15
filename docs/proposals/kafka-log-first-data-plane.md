@@ -92,6 +92,12 @@ Use a schema registry or a checked-in schema compatibility pipeline. Every envel
     "batch_id": null,
     "hop": 0,
     "requested_ruleset_id": null
+  },
+  "meta": {
+    "tenant_id": "tenant-123",
+    "partition_key": "order-42",
+    "custom_field": "custom_value",
+    "source": "api-gateway"
   }
 }
 ```

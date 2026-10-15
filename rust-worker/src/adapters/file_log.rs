@@ -1187,6 +1187,7 @@ mod tests {
                 tenant_id: tenant_id.to_string(),
                 event_id: event_id.to_string(),
                 partition_key: partition_key.to_string(),
+                meta: None,
             },
             rule_revisions: Vec::new(),
             outcome: ExecutionOutcome::Completed,

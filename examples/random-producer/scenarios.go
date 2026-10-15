@@ -126,6 +126,12 @@ func newScenarioEvent(scenario Scenario, tenantID, clientID string, sequence int
 			"scenario":  string(scenario),
 			"client_id": clientID,
 		},
+		Meta: map[string]any{
+			"tenant_id":     tenantID,
+			"partition_key": partitionKey,
+			"client_id":     clientID,
+			"scenario":      string(scenario),
+		},
 	}, nil
 }
 
