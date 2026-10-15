@@ -39,6 +39,7 @@ type envelopeWire struct {
 	Meta       map[string]json.RawMessage `json:"meta"`
 }
 
+// MarshalJSON serializes the envelope with runtime metadata nested under meta.
 func (e Envelope) MarshalJSON() ([]byte, error) {
 	meta := make(map[string]json.RawMessage, len(e.Meta)+4)
 	for key, value := range e.Meta {
@@ -60,6 +61,7 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 	return json.Marshal(envelopeWire{ID:e.ID, Type:e.Type, OccurredAt:e.OccurredAt, Data:e.Data, Contract:e.Contract, Meta:meta})
 }
 
+// UnmarshalJSON decodes the envelope and preserves unknown metadata fields.
 func (e *Envelope) UnmarshalJSON(data []byte) error {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(data, &top); err != nil { return err }
