@@ -96,30 +96,21 @@ func (r mappedRuleRevisionStub) GetRevision(_ context.Context, tenantID, ruleset
 	return r.revisions[key], nil
 }
 
-func TestDeploymentRuleRevisionAndContractValidation(t *testing.T) {
+func TestDeploymentRuleRevisionValidation(t *testing.T) {
 	lookupError := errors.New("revision storage unavailable")
 	key := "tenant-a/orders-created/" + strconv.FormatInt(7, 10)
-	goodRevision := &domain.RuleRevision{
-		TenantScope: "tenant-a", RuleID: "orders-created", Revision: 7,
-		InputContract: &domain.ContractRef{Name: "order.created", Version: "v1", SchemaHash: "sha256:abc"},
-	}
 	tests := []struct {
 		name            string
 		revision        *domain.RuleRevision
 		lookupErr       error
-		contract        *domain.ContractRef
 		wantErr         bool
 		wantLookupError bool
 	}{
-		{name: "matching immutable revision and contract", revision: goodRevision, contract: &domain.ContractRef{Name: "order.created", Version: "v1", SchemaHash: "sha256:abc"}},
+		{name: "matching immutable revision", revision: &domain.RuleRevision{TenantScope: "tenant-a", RuleID: "orders-created", Revision: 7}},
 		{name: "revision missing", wantErr: true},
 		{name: "wrong tenant", revision: &domain.RuleRevision{TenantScope: "tenant-b", RuleID: "orders-created", Revision: 7}, wantErr: true},
 		{name: "wrong ruleset", revision: &domain.RuleRevision{TenantScope: "tenant-a", RuleID: "another-ruleset", Revision: 7}, wantErr: true},
 		{name: "wrong revision", revision: &domain.RuleRevision{TenantScope: "tenant-a", RuleID: "orders-created", Revision: 8}, wantErr: true},
-		{name: "missing required contract", revision: &domain.RuleRevision{TenantScope: "tenant-a", RuleID: "orders-created", Revision: 7}, contract: &domain.ContractRef{Name: "order.created", Version: "v1"}, wantErr: true},
-		{name: "wrong contract name", revision: goodRevision, contract: &domain.ContractRef{Name: "order.updated", Version: "v1"}, wantErr: true},
-		{name: "wrong contract version", revision: goodRevision, contract: &domain.ContractRef{Name: "order.created", Version: "v2"}, wantErr: true},
-		{name: "wrong contract hash", revision: goodRevision, contract: &domain.ContractRef{Name: "order.created", Version: "v1", SchemaHash: "sha256:other"}, wantErr: true},
 		{name: "storage lookup error", lookupErr: lookupError, wantErr: true, wantLookupError: true},
 	}
 	for _, tt := range tests {
@@ -137,7 +128,7 @@ func TestDeploymentRuleRevisionAndContractValidation(t *testing.T) {
 				Name: "orders", EventTypes: []string{"orders.created"},
 				Deployments: []domain.ServiceDeployment{{
 					ServiceID: "orders-worker", Name: "orders-worker", Revision: 1,
-					Rulesets: []domain.RulesetAssignment{{RulesetID: "orders-created", Revision: 7, Contract: tt.contract}},
+					Rulesets: []domain.RulesetAssignment{{RulesetID: "orders-created", Revision: 7}},
 				}},
 			})
 			if tt.wantErr && !errors.Is(err, ErrInvalidInput) {
