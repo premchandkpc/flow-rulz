@@ -62,7 +62,7 @@ type RuleEvaluator interface {
 	Evaluate(revision *domain.RuleRevision, event *domain.EventEnvelope, facts map[string]json.RawMessage) (*domain.Decision, error)
 }
 
-// DomainServiceUseCase manages tenant domains and their HTTP consumers.
+// DomainServiceUseCase manages global Domains and generic event subscriptions.
 type DomainServiceUseCase interface {
 	SaveDomain(ctx context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error)
 	GetDomain(ctx context.Context, tenantID, domainID string) (*domain.TenantDomain, error)
