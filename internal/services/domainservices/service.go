@@ -88,7 +88,7 @@ func (s *Service) validateAssignedRevisions(ctx context.Context, tenantID string
 		for _, assignment := range deployment.Rulesets {
 			revision, err := s.rules.GetRevision(ctx, tenantID, assignment.RulesetID, assignment.Revision)
 			if err != nil {
-				return fmt.Errorf("%w: ruleset %q revision %d is not available in this tenant: %v", ErrInvalidInput, assignment.RulesetID, assignment.Revision, err)
+				return fmt.Errorf("%w: ruleset %q revision %d is not available in this tenant: %w", ErrInvalidInput, assignment.RulesetID, assignment.Revision, err)
 			}
 			if revision == nil || revision.TenantScope != tenantID || revision.RuleID != assignment.RulesetID || revision.Revision != assignment.Revision {
 				return fmt.Errorf("%w: ruleset %q revision %d does not match the requested tenant-scoped revision", ErrInvalidInput, assignment.RulesetID, assignment.Revision)
