@@ -73,7 +73,7 @@ Do not claim that merely writing to two topics makes activation atomic.
 
 ## Versioned schemas
 
-Use a schema registry or a checked-in schema compatibility pipeline. Every envelope has `schema_version`; reject unsupported major versions to a quarantine/DLQ path. The examples below are normative field intent, not a complete JSON Schema document. Runtime event identity belongs under `meta`; configuration records contain no tenant identity.
+Use a schema registry or a checked-in schema compatibility pipeline. If a compatibility marker is required, carry `meta.schema_version`; reject unsupported versions to a quarantine/DLQ path. The stable public envelope does not put runtime metadata at the top level. The examples below are normative field intent, not a complete JSON Schema document. Runtime event identity belongs under `meta`; configuration records contain no tenant identity.
 
 ### EventEnvelope v2
 
