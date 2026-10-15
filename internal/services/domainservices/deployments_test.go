@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
-	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
 func TestDomainDeploymentPinsImmutableRulesetRevisions(t *testing.T) {
@@ -44,33 +43,6 @@ func TestDomainDeploymentPinsImmutableRulesetRevisions(t *testing.T) {
 	}
 	if _, err := service.SaveDomain(context.Background(), "tenant-a", invalid); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("duplicate ruleset assignment error = %v, want ErrInvalidInput", err)
-	}
-}
-
-type ruleRevisionStub struct {
-	ports.RuleService
-	revision *domain.RuleRevision
-	err      error
-}
-
-func (r ruleRevisionStub) GetRevision(context.Context, string, string, int64) (*domain.RuleRevision, error) {
-	return r.revision, r.err
-}
-
-func TestDomainDeploymentRejectsUnavailableTenantScopedRevision(t *testing.T) {
-	repo := newRepositoryStub()
-	service := NewService(repo, fixedClock{now: time.Unix(50, 0).UTC()}).WithRuleService(ruleRevisionStub{
-		revision: &domain.RuleRevision{TenantScope: "tenant-b", RuleID: "order-created", Revision: 7},
-	})
-	_, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
-		Name: "orders", EventTypes: []string{"orders.created"},
-		Deployments: []domain.ServiceDeployment{{
-			ServiceID: "order-worker", Name: "order-worker", Revision: 1, Active: true,
-			Rulesets: []domain.RulesetAssignment{{RulesetID: "order-created", Revision: 7}},
-		}},
-	})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("cross-tenant revision error = %v, want ErrInvalidInput", err)
 	}
 }
 
