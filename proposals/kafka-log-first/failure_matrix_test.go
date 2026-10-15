@@ -9,7 +9,6 @@ import (
 )
 
 type failingCodec struct {
-	eventErr error
 	effectErr error
 	auditErr error
 }
