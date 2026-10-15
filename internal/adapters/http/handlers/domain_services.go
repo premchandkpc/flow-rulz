@@ -186,10 +186,6 @@ func (h *DomainServiceHandler) ready(w http.ResponseWriter, r *http.Request) boo
 		responses.WriteError(w, http.StatusServiceUnavailable, "domain configuration is not configured", responses.CodeInternalError)
 		return false
 	}
-	if domain.DomainConfigurationScope == "" {
-		responses.WriteError(w, http.StatusUnauthorized, "authenticated tenant identity is required", responses.CodeTenantRequired)
-		return false
-	}
 	return true
 }
 
