@@ -18,7 +18,7 @@ type memoryLogStore struct {
 }
 
 func newMemoryLogStore() *memoryLogStore {
-	return &memoryLogStore{checkpoints: make(map[string][]LogPosition)}
+	return &memoryLogStore{checkpoints: make(map[string][]InputCheckpoint)}
 }
 
 func (s *memoryLogStore) Begin(context.Context) (LogTransaction, error) {
@@ -123,7 +123,7 @@ func (tx *memoryLogTx) Commit(context.Context) error {
 	tx.closed = true
 	tx.store.records = append(tx.store.records, tx.records...)
 	if tx.group != "" {
-		tx.store.checkpoints[tx.group] = append([]LogPosition(nil), tx.positions...)
+		tx.store.checkpoints[tx.group] = append([]InputCheckpoint(nil), tx.positions...)
 	}
 	return nil
 }
