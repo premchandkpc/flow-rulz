@@ -34,6 +34,7 @@ type EventEnvelope struct {
 	Metadata      EventMetadata   `json:"-"`
 }
 
+// EventContract identifies the immutable payload contract used by an event.
 type EventContract struct {
 	Name      string `json:"name"`
 	Version   string `json:"version"`
@@ -70,6 +71,7 @@ type eventEnvelopeWire struct {
 	Meta       EventMetadata   `json:"meta"`
 }
 
+// MarshalJSON writes known and extension metadata into one extensible JSON object.
 func (m EventMetadata) MarshalJSON() ([]byte, error) {
 	encoded, err := json.Marshal(eventMetadataAlias(m))
 	if err != nil { return nil, err }
@@ -81,6 +83,7 @@ func (m EventMetadata) MarshalJSON() ([]byte, error) {
 	return json.Marshal(fields)
 }
 
+// UnmarshalJSON decodes known metadata and retains all unknown keys in Extra.
 func (m *EventMetadata) UnmarshalJSON(data []byte) error {
 	var known eventMetadataAlias
 	if err := json.Unmarshal(data, &known); err != nil { return err }
@@ -94,6 +97,7 @@ func (m *EventMetadata) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON serializes the stable envelope and nests runtime metadata under meta.
 func (e EventEnvelope) MarshalJSON() ([]byte, error) {
 	meta := e.Metadata
 	if e.TenantID != "" { meta.TenantID = e.TenantID }
@@ -102,6 +106,7 @@ func (e EventEnvelope) MarshalJSON() ([]byte, error) {
 	return json.Marshal(eventEnvelopeWire{ID:e.ID, Type:e.EventType, OccurredAt:e.OccurredAt, Data:e.Payload, Contract:e.Contract, Meta:meta})
 }
 
+// UnmarshalJSON reads the stable envelope and rejects top-level runtime metadata.
 func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(data, &top); err != nil { return err }
