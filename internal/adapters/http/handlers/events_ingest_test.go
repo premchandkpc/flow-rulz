@@ -125,35 +125,51 @@ func TestEventIngestionRequiresPartitionKeyInMeta(t *testing.T) {
 	if publisher.calls != 0 { t.Fatalf("publish calls = %d, want 0", publisher.calls) }
 }
 
-func TestEventIngestionLegacyTopLevelMetadataIsNormalizedIntoMeta(t *testing.T) {
+func TestEventIngestionRejectsLegacyTopLevelMetadata(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	publisher := &capturePublisher{}
 	handler := NewEventIngestionHandler(publisher, 32)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 	server := middleware.TenantExtractor(mux)
-	body, err := json.Marshal(struct {
-		ID string `json:"id"`
-		Type string `json:"type"`
-		TenantID string `json:"tenant_id"`
-		PartitionKey string `json:"partition_key"`
-		OccurredAt time.Time `json:"occurred_at"`
-		Data json.RawMessage `json:"data"`
-	}{ID:"evt-legacy", Type:"order.created", TenantID:"tenant-a", PartitionKey:"order-legacy", OccurredAt:time.Now().UTC(), Data:json.RawMessage(`{}`)})
-	if err != nil { t.Fatal(err) }
+	body := []byte(`{
+		"id":"evt-legacy",
+		"type":"order.created",
+		"tenant_id":"tenant-a",
+		"partition_key":"order-legacy",
+		"occurred_at":"2026-10-15T07:30:00Z",
+		"data":{}
+	}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/events/order.created", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Tenant-ID", "tenant-a")
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusAccepted { t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String()) }
-	var published map[string]json.RawMessage
-	if err := json.Unmarshal(publisher.payload, &published); err != nil { t.Fatal(err) }
-	if _, ok := published["tenant_id"]; ok { t.Fatal("legacy top-level tenant_id must be normalized") }
-	var meta map[string]json.RawMessage
-	if err := json.Unmarshal(published["meta"], &meta); err != nil { t.Fatal(err) }
-	var tenant, partition string
-	_ = json.Unmarshal(meta["tenant_id"], &tenant)
-	_ = json.Unmarshal(meta["partition_key"], &partition)
-	if tenant != "tenant-a" || partition != "order-legacy" { t.Fatalf("normalized meta = %#v", meta) }
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if publisher.calls != 0 {
+		t.Fatalf("publish calls = %d, want 0", publisher.calls)
+	}
+}
+
+func TestEventIngestionRequiresTenantInsideMeta(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	publisher := &capturePublisher{}
+	handler := NewEventIngestionHandler(publisher, 32)
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	server := middleware.TenantExtractor(mux)
+	body := []byte(`{"id":"evt-1","type":"order.created","occurred_at":"2026-10-15T07:30:00Z","data":{},"meta":{"partition_key":"order-1"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/events/order.created", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Tenant-ID", "tenant-a")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if publisher.calls != 0 {
+		t.Fatalf("publish calls = %d, want 0", publisher.calls)
+	}
 }
