@@ -65,7 +65,7 @@ func TestRuleEvaluatorRejectsEventForDifferentServiceDeployment(t *testing.T) {
 	event := EventEnvelope{
 		SchemaVersion: 1, ID: "event-1", TenantID: "tenant-1",
 		EventType: "orders.created", PartitionKey: "order-1",
-		Metadata: EventMetadata{TargetServiceID: "tenant-a/domain-a/service-b", DeploymentRevision: 2},
+		Metadata: EventMetadata{TargetServiceID: "domain-a/service-b", DeploymentRevision: 2},
 	}
 
 	if _, _, err := evaluator.Evaluate(context.Background(), "domain-a/service-a", 2, event); err == nil {
