@@ -33,7 +33,6 @@ type EventTxRepos struct {
 	Executions     ExecutionRepository
 	Outbox         OutboxWriter
 	ShardLeases    ShardLeaseRepository
-	DomainServices DomainServiceRepository
 	Bindings       BindingRepository
 }
 
