@@ -112,7 +112,7 @@ func (e EventEnvelope) MarshalJSON() ([]byte, error) {
 	meta := e.Metadata
 	if e.TenantID != "" { meta.TenantID = e.TenantID }
 	if e.PartitionKey != "" { meta.PartitionKey = e.PartitionKey }
-	if e.SchemaVersion > 0 { meta.SchemaVersion = e.SchemaVersion }
+	if e.SchemaVersion > 0 && meta.Extra["schema_version"] == nil { meta.SchemaVersion = e.SchemaVersion }
 	return json.Marshal(eventEnvelopeWire{ID:e.ID, Type:e.EventType, OccurredAt:e.OccurredAt, Data:e.Payload, Contract:e.Contract, Meta:meta})
 }
 
