@@ -29,6 +29,12 @@ func (h *DomainServiceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/domains/{domainID}", h.GetDomain)
 	mux.HandleFunc("PUT /v1/domains/{domainID}", h.UpdateDomain)
 	mux.HandleFunc("DELETE /v1/domains/{domainID}", h.DeleteDomain)
+	// Generic event subscribers remain separate from execution services and ruleset evaluation.
+	mux.HandleFunc("GET /v1/subscriptions", h.ListServices)
+	mux.HandleFunc("POST /v1/subscriptions", h.CreateService)
+	mux.HandleFunc("GET /v1/subscriptions/{serviceID}", h.GetService)
+	mux.HandleFunc("PUT /v1/subscriptions/{serviceID}", h.UpdateService)
+	mux.HandleFunc("DELETE /v1/subscriptions/{serviceID}", h.DeleteService)
 }
 
 // ListDomains handles GET /v1/domains requests.
@@ -104,7 +110,7 @@ func (h *DomainServiceHandler) DeleteDomain(w http.ResponseWriter, r *http.Reque
 	responses.WriteNoContent(w)
 }
 
-// ListServices is retained for internal compatibility but is not exposed as a public route.
+// ListServices lists generic event subscriptions, independently from execution services.
 func (h *DomainServiceHandler) ListServices(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w, r) {
 		return
@@ -114,10 +120,10 @@ func (h *DomainServiceHandler) ListServices(w http.ResponseWriter, r *http.Reque
 		writeDomainServiceError(w, err)
 		return
 	}
-	responses.WriteOK(w, map[string]any{"services": items, "total": len(items)})
+	responses.WriteOK(w, map[string]any{"subscriptions": items, "total": len(items)})
 }
 
-// CreateService is retained for internal compatibility but is not exposed as a public route.
+// CreateService creates a generic event subscription, independently from execution services.
 func (h *DomainServiceHandler) CreateService(w http.ResponseWriter, r *http.Request) {
 	var item domain.DomainService
 	if !h.decode(w, r, &item) {
@@ -134,7 +140,7 @@ func (h *DomainServiceHandler) CreateService(w http.ResponseWriter, r *http.Requ
 	responses.WriteCreated(w, saved)
 }
 
-// GetService is retained for internal compatibility but is not exposed as a public route.
+// GetService reads a generic event subscription.
 func (h *DomainServiceHandler) GetService(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w, r) {
 		return
@@ -147,7 +153,7 @@ func (h *DomainServiceHandler) GetService(w http.ResponseWriter, r *http.Request
 	responses.WriteOK(w, item)
 }
 
-// UpdateService is retained for internal compatibility but is not exposed as a public route.
+// UpdateService updates a generic event subscription.
 func (h *DomainServiceHandler) UpdateService(w http.ResponseWriter, r *http.Request) {
 	var item domain.DomainService
 	if !h.decode(w, r, &item) {
@@ -165,7 +171,7 @@ func (h *DomainServiceHandler) UpdateService(w http.ResponseWriter, r *http.Requ
 	responses.WriteOK(w, saved)
 }
 
-// DeleteService is retained for internal compatibility but is not exposed as a public route.
+// DeleteService removes a generic event subscription.
 func (h *DomainServiceHandler) DeleteService(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w, r) {
 		return
