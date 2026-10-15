@@ -63,7 +63,7 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 func (e *Envelope) UnmarshalJSON(data []byte) error {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(data, &top); err != nil { return err }
-	allowed := map[string]bool{"id":true, "type":true, "occurred_at":true, "data":true, "meta":true}
+	allowed := map[string]bool{"id":true, "type":true, "occurred_at":true, "data":true, "contract":true, "meta":true}
 	for key := range top {
 		if !allowed[key] { return fmt.Errorf("unknown event envelope field %q; put runtime metadata inside meta", key) }
 	}
