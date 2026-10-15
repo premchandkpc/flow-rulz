@@ -82,6 +82,46 @@ func normalizeAndValidateDomain(item *domain.TenantDomain, tenantID string) erro
 			return fmt.Errorf("%w: invalid event type %q", ErrInvalidInput, eventType)
 		}
 	}
+	if err := validateDeployments(item.Deployments); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateDeployments(deployments []domain.DomainServiceDeployment) error {
+	serviceIDs := make(map[string]struct{}, len(deployments))
+	serviceNames := make(map[string]struct{}, len(deployments))
+	for _, deployment := range deployments {
+		if !namePattern.MatchString(deployment.ServiceID) || !namePattern.MatchString(deployment.Name) || deployment.Revision <= 0 {
+			return fmt.Errorf("%w: deployment service_id/name and positive revision are required", ErrInvalidInput)
+		}
+		if _, exists := serviceIDs[deployment.ServiceID]; exists {
+			return fmt.Errorf("%w: duplicate deployment service_id %q", ErrInvalidInput, deployment.ServiceID)
+		}
+		if _, exists := serviceNames[deployment.Name]; exists {
+			return fmt.Errorf("%w: duplicate deployment name %q", ErrInvalidInput, deployment.Name)
+		}
+		serviceIDs[deployment.ServiceID] = struct{}{}
+		serviceNames[deployment.Name] = struct{}{}
+		if len(deployment.Rulesets) == 0 || len(deployment.Rulesets) > 500 {
+			return fmt.Errorf("%w: deployment %q must assign 1-500 ruleset revisions", ErrInvalidInput, deployment.ServiceID)
+		}
+		seenRulesets := make(map[string]struct{}, len(deployment.Rulesets))
+		for _, assignment := range deployment.Rulesets {
+			if !namePattern.MatchString(assignment.RulesetID) || assignment.Revision <= 0 {
+				return fmt.Errorf("%w: deployment %q contains an invalid ruleset assignment", ErrInvalidInput, deployment.ServiceID)
+			}
+			if _, exists := seenRulesets[assignment.RulesetID]; exists {
+				return fmt.Errorf("%w: deployment %q assigns ruleset %q more than once", ErrInvalidInput, deployment.ServiceID, assignment.RulesetID)
+			}
+			seenRulesets[assignment.RulesetID] = struct{}{}
+		}
+		profile := deployment.WorkerProfile
+		if profile.MinReplicas < 0 || profile.MaxReplicas < 0 || profile.Concurrency < 0 ||
+			(profile.MaxReplicas > 0 && profile.MinReplicas > profile.MaxReplicas) {
+			return fmt.Errorf("%w: deployment %q has an invalid worker_profile", ErrInvalidInput, deployment.ServiceID)
+		}
+	}
 	return nil
 }
 
