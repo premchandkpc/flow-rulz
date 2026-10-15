@@ -1,6 +1,6 @@
 # HTTP API
 
-The API has two distinct responsibilities: global control-plane configuration and runtime/event operations. A Domain configuration request must not include event identity fields.
+The API exposes control-plane configuration and runtime event ingress. Configuration defines only Domain -> Service -> ruleset assignments. Tenant identity and partition keys are runtime event metadata, not configuration fields.
 
 ## Domain configuration
 
@@ -33,7 +33,13 @@ Example request:
 }
 ```
 
-There is no `tenant_id`, `partition_key`, or `event_types` property in this request. The decoder rejects unknown fields and rejects client-supplied `id`, `created_at`, and `updated_at`. See the [request schema](../contracts/schemas/domain.schema.json) and [response schema](../contracts/schemas/domain-response.schema.json).
+A Domain request does not accept `tenant_id`, `partition_key`, or event payload fields. The API rejects unknown configuration fields. See the [Domain request schema](../contracts/schemas/domain.schema.json), [response schema](../contracts/schemas/domain-response.schema.json), and [sample Domain](../data/examples/domain.json).
+
+## Runtime event envelope
+
+The event API accepts an event with stable top-level identity and business payload plus an extensible `meta` object. Put `tenant_id`, `partition_key`, `workflow_id`, `correlation_id`, `causation_id`, `headers`, trace context, and producer-specific metadata inside `meta`. Unknown `meta` fields are preserved. Ingress validates `meta.tenant_id` against the authenticated producer identity.
+
+See [event.md](event.md), the [event schema](../contracts/schemas/event-envelope.schema.json), and [event sample](../data/examples/event.json).
 
 ## Ruleset and contract APIs
 
@@ -43,10 +49,4 @@ There is no `tenant_id`, `partition_key`, or `event_types` property in this requ
 - `DELETE /v1/rules/{ruleSet}/revisions/{revision}`: deactivate the ruleset.
 - `POST /v1/contracts`, `GET /v1/contracts`, `GET /v1/contracts/{name}/{version}`: manage/read immutable contract definitions.
 
-Rule and Domain configuration use the global configuration scope. Runtime event identity does not select the configuration namespace.
-
-## Runtime events
-
-The event envelope contains `tenant_id` and `partition_key`. Those values are data on each event, not query parameters for Domain configuration. The authenticated ingress path may still enforce producer authorization; authentication is not a reason to copy tenant identity into Domain configuration.
-
-See [event.md](event.md), [domain.md](domain.md), and [the sample files](../data/examples/).
+Ruleset and Domain configuration use the global configuration scope. Runtime event identity does not select the configuration namespace.
