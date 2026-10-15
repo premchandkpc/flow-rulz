@@ -162,3 +162,36 @@ func TestWorkerRejectsMisroutedEventBeforeEvaluation(t *testing.T) {
 	if len(store.records) != 0 { t.Fatalf("records committed for misrouted event: %#v", store.records) }
 	if _, ok := store.checkpoints["orders-workers"]; ok { t.Fatal("checkpoint advanced for misrouted event") }
 }
+
+type failingScheduleCodec struct { err error }
+func (c failingScheduleCodec) EncodeEvent(EventEnvelope) ([]byte, error) { return nil, c.err }
+
+func TestSchedulerDoesNotCommitWhenEncodingOrAppendingFails(t *testing.T) {
+	dueAt := time.Unix(300, 0).UTC()
+	due := DueSchedule{
+		Key: []byte("tenant-a:schedule-1"),
+		Record: ScheduleRecord{
+			SchemaVersion: 1, TenantID: "tenant-a", ScheduleID: "schedule-1", Revision: 1,
+			DueAt: dueAt, Event: EventEnvelope{EventType: "timer.fired", PartitionKey: "order-1"},
+		},
+		Occurrence: OccurrenceID("schedule-1", 1, dueAt),
+		InputPosition: InputCheckpoint{Stream: "flow.schedules", Partition: "0", NextSequence: 2},
+	}
+	encodeErr := errors.New("encode failed")
+	store := newMemoryLogStore()
+	scheduler := Scheduler{Store: store, Codec: failingScheduleCodec{err: encodeErr}, EventsTopic: "flow.events", SchedulesTopic: "flow.schedules", GroupID: "scheduler"}
+	if err := scheduler.FireDue(context.Background(), due); !errors.Is(err, encodeErr) {
+		t.Fatalf("FireDue() error = %v, want encoding error", err)
+	}
+	if len(store.records) != 0 { t.Fatal("records committed after encode failure") }
+
+	appendErr := errors.New("append failed")
+	store = newMemoryLogStore()
+	store.appendErr = appendErr
+	scheduler = Scheduler{Store: store, Codec: jsonCodec{}, EventsTopic: "flow.events", SchedulesTopic: "flow.schedules", GroupID: "scheduler"}
+	if err := scheduler.FireDue(context.Background(), due); !errors.Is(err, appendErr) {
+		t.Fatalf("FireDue() error = %v, want append error", err)
+	}
+	if len(store.records) != 0 { t.Fatal("records committed after append failure") }
+	if _, ok := store.checkpoints["scheduler"]; ok { t.Fatal("scheduler checkpoint advanced after append failure") }
+}
