@@ -54,6 +54,9 @@ func (h *DomainServiceHandler) CreateDomain(w http.ResponseWriter, r *http.Reque
 	if !h.decode(w, r, &item) {
 		return
 	}
+	if !h.validateDomainServices(w, &item) {
+		return
+	}
 	if !h.ready(w, r) {
 		return
 	}
@@ -88,6 +91,9 @@ func (h *DomainServiceHandler) UpdateDomain(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	item.ID = r.PathValue("domainID")
+	if !h.validateDomainServices(w, &item) {
+		return
+	}
 	saved, err := h.service.SaveDomain(r.Context(), domain.DomainConfigurationScope, &item)
 	if err != nil {
 		writeDomainServiceError(w, err)
@@ -184,6 +190,14 @@ func (h *DomainServiceHandler) DeleteService(w http.ResponseWriter, r *http.Requ
 func (h *DomainServiceHandler) ready(w http.ResponseWriter, r *http.Request) bool {
 	if h.service == nil {
 		responses.WriteError(w, http.StatusServiceUnavailable, "domain configuration is not configured", responses.CodeInternalError)
+		return false
+	}
+	return true
+}
+
+func (h *DomainServiceHandler) validateDomainServices(w http.ResponseWriter, item *domain.TenantDomain) bool {
+	if len(item.Deployments) == 0 || len(item.Deployments) > 100 {
+		responses.WriteError(w, http.StatusBadRequest, "a Domain must contain between 1 and 100 Services", responses.CodeValidationFailed)
 		return false
 	}
 	return true
