@@ -214,7 +214,6 @@ mod tests {
             input_contract: Some(rules::ContractRef {
                 name: "OrderEvent".into(),
                 version: "1".into(),
-                schema_hash: Some("schema-hash".into()),
             }),
             compiled: vec![],
         };
