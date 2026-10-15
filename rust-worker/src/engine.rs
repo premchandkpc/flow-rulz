@@ -317,7 +317,7 @@ mod tests {
             id: "e".into(), event_type: "orders.created".into(), tenant_id: "tenant-a".into(),
             partition_key: "p".into(), workflow_id: None, occurred_at: Utc::now(),
             data: json!({}), headers: Default::default(), contract: None, message_kind: None,
-            correlation_id: None, causation_id: None,
+            correlation_id: None, causation_id: None, meta: Default::default(),
         };
         assert!(validate_contract_support(&revision, &event).is_err());
     }
@@ -377,8 +377,7 @@ mod tests {
         let input = json!({
             "id": "event-1",
             "type": "orders.created",
-            "tenant_id": "tenant-a",
-            "partition_key": "order-1",
+            "meta": {"tenant_id": "tenant-a", "partition_key": "order-1", "region": "ap-south-1"},
             "occurred_at": "2026-10-14T00:00:00Z",
             "data": {"amount": 12},
             "contract": {"name": "orders.created", "version": "1", "schema_hash": "schema-hash"},
@@ -397,6 +396,11 @@ mod tests {
         assert_eq!(encoded["correlation_id"], "correlation-1");
         assert_eq!(encoded["causation_id"], "causation-1");
         assert_eq!(encoded["headers"]["source"], "test");
+        assert_eq!(encoded["meta"]["tenant_id"], "tenant-a");
+        assert_eq!(encoded["meta"]["partition_key"], "order-1");
+        assert_eq!(encoded["meta"]["region"], "ap-south-1");
+        assert!(encoded.get("tenant_id").is_none());
+        assert!(encoded.get("partition_key").is_none());
     }
 
 }
