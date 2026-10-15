@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"unicode"
@@ -70,6 +71,9 @@ func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.
 	if err := s.initializeDomainIdentity(ctx, tenantID, item); err != nil {
 		return nil, err
 	}
+	if err := s.validateDeploymentRevisionChanges(ctx, tenantID, item); err != nil {
+		return nil, err
+	}
 	if err := s.persistDomain(ctx, item); err != nil {
 		return nil, err
 	}
@@ -95,6 +99,36 @@ func (s *Service) validateAssignedRevisions(ctx context.Context, tenantID string
 					return fmt.Errorf("%w: deployment contract does not match ruleset %q revision %d", ErrInvalidInput, assignment.RulesetID, assignment.Revision)
 				}
 			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) validateDeploymentRevisionChanges(ctx context.Context, tenantID string, item *domain.TenantDomain) error {
+	existing, err := s.repository.GetDomain(ctx, tenantID, item.ID)
+	if err != nil {
+		return fmt.Errorf("load existing domain deployment revisions: %w", err)
+	}
+	if existing == nil {
+		return nil
+	}
+	previous := make(map[string]domain.ServiceDeployment, len(existing.Deployments))
+	for _, deployment := range existing.Deployments {
+		previous[deployment.ServiceID] = deployment
+	}
+	for _, deployment := range item.Deployments {
+		old, found := previous[deployment.ServiceID]
+		if !found {
+			continue
+		}
+		if deployment.Revision < old.Revision {
+			return fmt.Errorf("%w: deployment %q revision cannot move backwards from %d to %d", ErrInvalidInput, deployment.ServiceID, old.Revision, deployment.Revision)
+		}
+		old.Revision = 0
+		current := deployment
+		current.Revision = 0
+		if !reflect.DeepEqual(old, current) && deployment.Revision <= previous[deployment.ServiceID].Revision {
+			return fmt.Errorf("%w: changing deployment %q assignments or worker profile requires a higher revision", ErrInvalidInput, deployment.ServiceID)
 		}
 	}
 	return nil
