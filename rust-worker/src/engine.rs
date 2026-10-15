@@ -61,7 +61,7 @@ impl Serialize for EventEnvelope {
             meta.insert("headers".into(), serde_json::to_value(&self.headers).map_err(serde::ser::Error::custom)?);
         }
         EventEnvelopeWire {
-            id: self.id.clone(), event_type: self.event_type.clone(), occurred_at: self.occurred_at.clone(),
+            id: self.id.clone(), event_type: self.event_type.clone(), occurred_at: self.occurred_at,
             data: self.data.clone(), contract: self.contract.clone(), meta,
         }.serialize(serializer)
     }
