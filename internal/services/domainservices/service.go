@@ -277,6 +277,9 @@ func normalizeAndValidateService(item *domain.DomainService, tenantID string) er
 	item.EndpointURL = strings.TrimSpace(item.EndpointURL)
 	item.DomainIDs = uniqueTrimmed(item.DomainIDs)
 	item.EventTypes = uniqueTrimmed(item.EventTypes)
+	if item.EventTypes == nil {
+		item.EventTypes = []string{}
+	}
 	if !validTenantID(tenantID) || !namePattern.MatchString(item.Name) || len(item.DomainIDs) > maxDomainsPerService {
 		return fmt.Errorf("%w: a valid subscription name and at most %d legacy domain_ids are allowed", ErrInvalidInput, maxDomainsPerService)
 	}
