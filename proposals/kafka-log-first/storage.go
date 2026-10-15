@@ -18,7 +18,7 @@ var (
 )
 
 // LogRecord is the backend-neutral unit persisted in the durable log.
-// ID must remain stable across retries. PartitionKey defines the ordering lane.
+// ID must remain stable across retries. Adapters deduplicate identical IDs within a tenant and kind; reusing an ID with different content must return ErrIdempotencyConflict. PartitionKey defines the ordering lane.
 type LogRecord struct {
 	ID          string
 	TenantID    string
@@ -35,6 +35,13 @@ type LogPosition struct {
 	Stream    string
 	Partition string
 	Sequence  int64
+}
+
+// LogEntry couples a record with its durable position so callers can replay
+// without reconstructing offsets from record contents or list indexes.
+type LogEntry struct {
+	Position LogPosition
+	Record   LogRecord
 }
 
 // LogTransaction atomically appends outputs and records input progress.
@@ -54,7 +61,7 @@ type LogTransaction interface {
 type LogStore interface {
 	Begin(context.Context) (LogTransaction, error)
 	Append(context.Context, LogRecord) (LogPosition, error)
-	ReadFrom(context.Context, string, string, int64, int) ([]LogRecord, error)
+	ReadFrom(context.Context, string, string, int64, int) ([]LogEntry, error)
 	Health(context.Context) error
 	Close() error
 }
