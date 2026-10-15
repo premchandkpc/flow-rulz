@@ -1,8 +1,13 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/responses"
 	"github.com/flowrulz/flow-rulz/internal/domain"
@@ -51,7 +56,7 @@ func (h *DomainServiceHandler) ListDomains(w http.ResponseWriter, r *http.Reques
 // CreateDomain handles POST /v1/domains requests.
 func (h *DomainServiceHandler) CreateDomain(w http.ResponseWriter, r *http.Request) {
 	var item domain.TenantDomain
-	if !h.decode(w, r, &item) {
+	if !decodeStrictDomainRequest(w, r, &item) {
 		return
 	}
 	if !h.validateDomainServices(w, &item) {
@@ -84,7 +89,7 @@ func (h *DomainServiceHandler) GetDomain(w http.ResponseWriter, r *http.Request)
 // UpdateDomain handles PUT /v1/domains/{domainID} requests.
 func (h *DomainServiceHandler) UpdateDomain(w http.ResponseWriter, r *http.Request) {
 	var item domain.TenantDomain
-	if !h.decode(w, r, &item) {
+	if !decodeStrictDomainRequest(w, r, &item) {
 		return
 	}
 	if !h.ready(w, r) {
@@ -190,6 +195,46 @@ func (h *DomainServiceHandler) DeleteService(w http.ResponseWriter, r *http.Requ
 func (h *DomainServiceHandler) ready(w http.ResponseWriter, r *http.Request) bool {
 	if h.service == nil {
 		responses.WriteError(w, http.StatusServiceUnavailable, "domain configuration is not configured", responses.CodeInternalError)
+		return false
+	}
+	return true
+}
+
+func decodeStrictDomainRequest(w http.ResponseWriter, r *http.Request, item *domain.TenantDomain) bool {
+	data, err := readRequestBody(r)
+	if err == nil {
+		if isYAMLContentType(r.Header.Get(headerContentType)) {
+			decoder := yaml.NewDecoder(bytes.NewReader(data))
+			decoder.KnownFields(true)
+			err = decoder.Decode(item)
+			if err == nil {
+				var extra any
+				if decodeErr := decoder.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
+					if decodeErr == nil {
+						err = errors.New("multiple YAML documents are not supported")
+					} else {
+						err = decodeErr
+					}
+				}
+			}
+		} else {
+			decoder := json.NewDecoder(bytes.NewReader(data))
+			decoder.DisallowUnknownFields()
+			err = decoder.Decode(item)
+			if err == nil {
+				var extra any
+				if decodeErr := decoder.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
+					if decodeErr == nil {
+						err = errors.New("multiple JSON values are not supported")
+					} else {
+						err = decodeErr
+					}
+				}
+			}
+		}
+	}
+	if err != nil {
+		responses.WriteError(w, http.StatusBadRequest, "invalid Domain request: "+err.Error(), responses.CodeInvalidJSON)
 		return false
 	}
 	return true
