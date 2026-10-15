@@ -1,15 +1,15 @@
-# Data examples
+# Sample data
 
-These files are small, human-readable fixtures for understanding the configuration/runtime boundary. They are examples, not production secrets or generated state.
+These fixtures explain the core FlowRulz concepts and are intended to be read alongside the documentation.
 
-- `examples/domain.json`: global Domain create/update request.
-- `examples/domain-response.json`: server-generated Domain ID and timestamps with nested Services/ruleset revisions.
+- `examples/domain.json`: Domain containing Services and their pinned ruleset revisions.
+- `examples/domain-response.json`: server-generated Domain ID and timestamps.
 - `examples/ruleset.json`: immutable ruleset revision.
-- `examples/contract.json`: event payload contract definition.
-- `examples/event.json`: runtime event with event-supplied tenant identity and partition key.
-- `examples/worker-config.json`: worker deployment/runtime settings.
+- `examples/ruleset-order-notification.json`, `ruleset-payment-notification.json`, and `ruleset-payment-risk.json`: additional ruleset examples.
+- `examples/contract.json` and `contract-payment-authorized.json`: versioned payload contracts.
+- `examples/event.json`: event envelope with extensible `meta`, including `tenant_id` and `partition_key`, plus the business payload in `data`.
+- `examples/worker-config.json`: illustrative worker settings.
 
-Configuration examples intentionally omit `tenant_id` and `partition_key`. Only event data carries those values.
+Domain configuration contains only Domain and Service/ruleset assignments. Runtime identity, partitioning, tracing, and producer context belong to each event's `meta` object. Unknown `meta` fields are allowed and must be preserved; unknown top-level envelope fields are not.
 
-
-The domain deployment examples under [domains/](../domains/README.md) also contain a `domain.json` file per sample application. These files show how multiple rulesets are assigned to named Services. Keep runtime identity (`tenant_id` and `partition_key`) exclusively in event envelopes.
+See [the documentation index](../docs/README.md), [event schema](../contracts/schemas/event-envelope.schema.json), and [Domain schema](../contracts/schemas/domain.schema.json).
