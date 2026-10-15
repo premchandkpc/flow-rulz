@@ -6,7 +6,7 @@ type Settings = { apiBase: string; tenant: string; token: string; workerMetrics:
 type WorkerSnapshot = { url: string; name: string; online: boolean; checkedAt: number; inFlight: number | null; activeKeys: number | null; shards: number | null; executions: Array<{ ruleSet: string; status: string; count: number }> ; error?: string };
 type NavKey = "overview" | "simulations" | "catalog" | "api" | "codegen" | "workers" | "rules" | "logs";
 type SimulationScenario = "all" | "ecommerce" | "banking" | "food-delivery";
-type TenantDomain = { id: string; name: string; event_types: string[] };
+type DomainConfig = { id: string; name: string; services?: Array<{ service_id: string; name: string; rulesets: Array<{ ruleset_id: string; revision: number }> }> };
 type DomainService = { id: string; name: string; nats_subject: string; domain_ids: string[]; active: boolean };
 const SOURCE_RULE_BY_SCENARIO: Record<Exclude<SimulationScenario, "all">, string> = {
   ecommerce: "order.created",
@@ -85,10 +85,10 @@ const ROUTES = [
   { method: "POST", path: "/v1/workflows/definitions", description: "Create a workflow definition (platform admin scope required)" },
   { method: "GET", path: "/v1/workflows/{workflowID}", description: "Read a workflow instance" },
   { method: "GET", path: "/v1/events/{eventID}/trace", description: "Trace event executions and emitted events" },
-  { method: "GET", path: "/v1/domains", description: "List tenant event domains" },
-  { method: "POST", path: "/v1/domains", description: "Create a tenant event domain" },
-  { method: "GET", path: "/v1/services", description: "List tenant event-consuming services" },
-  { method: "POST", path: "/v1/services", description: "Create a service and domain subscriptions" },
+  { method: "GET", path: "/v1/domains", description: "List Domains and their Services/Rulesets" },
+  { method: "POST", path: "/v1/domains", description: "Create a Domain with nested Services and Rulesets" },
+  { method: "GET", path: "/v1/subscriptions", description: "List generic event subscriptions" },
+  { method: "POST", path: "/v1/subscriptions", description: "Create a generic event subscription" },
   { method: "GET", path: "/v1/batches", description: "List batch status" },
   { method: "GET", path: "/v1/batches/{batchID}", description: "Read batch status" },
   { method: "GET", path: "/v1/quarantine", description: "List quarantined work" },
@@ -158,11 +158,11 @@ function RuleStudio({ settings, activeRules, contracts: allContracts, onChanged 
   const [busy, setBusy] = useState(false);
 
   const domain = domains.find(d => d.name === domainName);
-  const eventTypes: string[] = useMemo(() => domain?.event_types ?? [], [domain]);
-  const contracts = useMemo(() => allContracts.filter(c => eventTypes.includes(c.name)), [allContracts, eventTypes]);
+  const assignedRulesets: string[] = useMemo(() => (domain?.services ?? []).flatMap((service: any) => service.rulesets ?? []).map((rule: any) => rule.ruleset_id), [domain]);
+  const contracts = useMemo(() => allContracts, [allContracts]);
   const activeIds = new Set(activeRules.map(r => r.rule_set || r.rule_id));
-  const domainRules = activeRules.filter(r => eventTypes.includes(r.rule_set || r.rule_id));
-  const unruled = eventTypes.filter(t => !activeIds.has(t));
+  const domainRules = activeRules.filter(r => assignedRulesets.includes(r.rule_set || r.rule_id));
+  const unruled = assignedRulesets.filter(id => !activeIds.has(id));
 
   useEffect(() => {
     apiRequest(settings, "/v1/domains").then(r => { const list = asArray(r); setDomains(list); setDomainName(prev => prev || list[0]?.name || ""); }).catch(() => setDomains([]));
@@ -224,7 +224,7 @@ function RuleStudio({ settings, activeRules, contracts: allContracts, onChanged 
   const startNew = (eventType: string) => {
     const contract = contracts.find(c => c.name === eventType);
     setRevisions([]); setCheck(null); setRuleSet(eventType);
-    setSource(JSON.stringify({ rule_set: eventType, revision: 1, mode: "all_matches", rules: [{ id: "first_rule", name: "First rule", priority: 100, when: { path: `$.${Object.keys(contract?.fields ?? { id: 1 })[0]}`, op: "exists" }, then: [{ emit_event: { type: eventTypes.find(t => t !== eventType) ?? eventType, partition_key_policy: "inherit", data: {} } }] }] }, null, 2));
+    setSource(JSON.stringify({ rule_set: eventType, revision: 1, mode: "all_matches", rules: [{ id: "first_rule", name: "First rule", priority: 100, when: { path: `$.${Object.keys(contract?.fields ?? { id: 1 })[0]}`, op: "exists" }, then: [{ emit_event: { type: eventType, partition_key_policy: "inherit", data: {} } }] }] }, null, 2));
     setSample(JSON.stringify(sampleForContract(contract), null, 2));
   };
 
@@ -253,7 +253,7 @@ function RuleStudio({ settings, activeRules, contracts: allContracts, onChanged 
 
   const stale = check !== null && checkedKey !== checkKey;
   const jsonProblem = source.trim() && !sourceDoc ? "The editor holds JSON. Fix the syntax before checking." : "";
-  const outOfDomain = !!sourceDoc?.rule_set && !eventTypes.includes(sourceDoc.rule_set);
+  const outOfDomain = !!sourceDoc?.rule_set && !assignedRulesets.includes(sourceDoc.rule_set);
   const mismatch = !!ruleSet && !!sourceDoc?.rule_set && sourceDoc.rule_set !== ruleSet;
   const canDeploy = !!check?.valid && !stale && !busy && !jsonProblem && !outOfDomain && !mismatch && !!ruleSet;
   const pathWarnings = useMemo(() => {
@@ -265,34 +265,34 @@ function RuleStudio({ settings, activeRules, contracts: allContracts, onChanged 
     const visit = (p: any) => { if (!p || !contract) return; if (p.path) { const top = String(p.path).replace(/^\$\./, "").split(".")[0]; if (!known.has(top)) warnings.push(`${p.path} is not a field of contract ${contract.name} ${contract.version}`); } (p.all ?? p.any ?? []).forEach(visit); if (p.not) visit(p.not); };
     sourceDoc.rules.forEach((r: any) => {
       visit(r.when);
-      (r.then ?? []).forEach((act: any) => { const t = act.emit_event?.type ?? act.emit?.type; if (t && !eventTypes.includes(t)) warnings.push(`${r.id} emits ${t}, which is not an event type of the ${domainName} domain`); });
+      (r.then ?? []).forEach((act: any) => { const t = act.emit_event?.type ?? act.emit?.type;  });
     });
     return [...new Set(warnings)];
-  }, [sourceDoc, ruleSet, contracts, eventTypes, domainName]);
+  }, [sourceDoc, ruleSet, contracts]);
 
   return <section className="page-content rule-studio">
     <div className="page-intro"><h2>Rule studio</h2><p>Rules belong to a domain. Pick a domain, open one of its rule sets, check it against sample event data, then activate it as a new revision. Nothing is saved until you activate.</p></div>
     <div className="studio-domains" role="tablist" aria-label="Domain">
-      {domains.map(d => { const n = activeRules.filter(r => (d.event_types ?? []).includes(r.rule_set || r.rule_id)).length; return <button key={d.id} role="tab" aria-selected={d.name === domainName} className={d.name === domainName ? "active" : ""} onClick={() => setDomainName(d.name)}><strong>{d.name}</strong><small>{n} rule sets · {(d.event_types ?? []).length} event types</small></button>; })}
+      {domains.map(d => { const ids = (d.services ?? []).flatMap((s: any) => (s.rulesets ?? []).map((r: any) => r.ruleset_id)); const n = activeRules.filter(r => ids.includes(r.rule_set || r.rule_id)).length; return <button key={d.id} role="tab" aria-selected={d.name === domainName} className={d.name === domainName ? "active" : ""} onClick={() => setDomainName(d.name)}><strong>{d.name}</strong><small>{(d.services ?? []).length} services · {ids.length} assigned rule sets</small></button>; })}
       {domains.length === 0 && <p className="studio-muted">No domains yet. Save an example domain from the Domain catalog.</p>}
     </div>
     {message && <div className={`notice ${message.tone === "error" ? "notice-error" : ""}`} role="status">{message.text}</div>}
     <div className="studio-grid">
       <aside className="panel studio-list">
         <div className="panel-heading"><div><h3>{domainName || "Domain"} rule sets</h3><p>{domainRules.length} active</p></div></div>
-        {domainRules.length === 0 ? <Empty title="No active rule sets" detail="Add one for an event type below."/> :
+        {domainRules.length === 0 ? <Empty title="No active rule sets" detail="Assign a ruleset to a Service in the Domain configuration first."/> :
           <ul className="studio-rules">{domainRules.map(item => { const id = item.rule_set || item.rule_id; return <li key={id} className={ruleSet === id ? "selected" : ""}>
             <button className="studio-rule-open" onClick={() => void openRevision(id, item.revision, false)}><strong>{id}</strong><small>revision {item.revision}</small></button>
             <button className="text-button danger-text" onClick={() => void deactivate(id, item.revision)}>Deactivate</button>
           </li>; })}</ul>}
-        {unruled.length > 0 && <><h4 className="studio-sub">Event types without rules</h4><ul className="studio-rules">{unruled.map(t => <li key={t}><span className="studio-event">{t}</span><button className="text-button" onClick={() => startNew(t)}>+ Add rules</button></li>)}</ul></>}
+        {unruled.length > 0 && <><h4 className="studio-sub">Assigned rule sets not active</h4><ul className="studio-rules">{unruled.map(t => <li key={t}><span className="studio-event">{t}</span><button className="text-button" onClick={() => startNew(t)}>+ Add rules</button></li>)}</ul></>}
         {revisions.length > 0 && <><h4 className="studio-sub">Revisions of {ruleSet}</h4><ul className="studio-rules">{revisions.map(r => <li key={r.revision}><button className="studio-rule-open" onClick={() => void openRevision(ruleSet, r.revision, false)}><strong>Revision {r.revision}</strong><small>{r.match_mode} · {(r.compiled ?? []).length} rules</small></button><button className="text-button" onClick={() => void openRevision(ruleSet, r.revision, true)}>Edit as new</button></li>)}</ul></>}
       </aside>
       <section className="panel studio-editor">
         <div className="panel-heading"><div><h3>{ruleSet || sourceDoc?.rule_set || "New rule set"}</h3><p>Revision {sourceDoc?.revision ?? "—"} · {sourceDoc?.mode ?? "first_match"}</p></div>
           <div className="studio-actions"><button className="text-button" onClick={format} disabled={!sourceDoc}>Format</button><button className="button" onClick={() => void runCheck()} disabled={checking}>{checking ? "Checking…" : "Check"}</button><button className="button primary" onClick={() => void deploy()} disabled={!canDeploy} title={canDeploy ? "" : "Check the rule successfully first"}>{busy ? "Activating…" : "Activate revision"}</button></div></div>
-        <label>Event type ({domainName})<select value={ruleSet} onChange={e => e.target.value ? startNew(e.target.value) : setRuleSet("")}><option value="">Select an event type…</option>{eventTypes.map(t => <option key={t} value={t}>{t}</option>)}</select></label>
-        {outOfDomain && <div className="notice notice-error">{sourceDoc?.rule_set} is not an event type of the {domainName} domain.</div>}
+        <label>Assigned rule set ({domainName})<select value={ruleSet} onChange={e => e.target.value ? startNew(e.target.value) : setRuleSet("")}><option value="">Select an assigned rule set…</option>{assignedRulesets.map(id => <option key={id} value={id}>{id}</option>)}</select></label>
+        {outOfDomain && <div className="notice notice-error">{sourceDoc?.rule_set} is not assigned to a Service in the {domainName} Domain.</div>}
         {mismatch && !outOfDomain && <div className="notice notice-error">The source says rule_set {sourceDoc?.rule_set}, but {ruleSet} is selected.</div>}
         <label>Rule source (JSON)<textarea className="code-editor rule-editor" value={source} onChange={e => setSource(e.target.value)} spellCheck={false}/></label>
         {jsonProblem && <div className="notice notice-error">{jsonProblem}</div>}
@@ -336,7 +336,7 @@ function RuleFlowMap({ settings, scenario, startRuleSet, events, running }: { se
         const [domainsResponse, activeResponse, servicesResponse] = await Promise.all([
           apiRequest(settings, "/v1/domains"),
           apiRequest(settings, "/v1/rules/active"),
-          apiRequest(settings, "/v1/services"),
+          apiRequest(settings, "/v1/subscriptions"),
         ]);
         const domainRows = asArray(domainsResponse);
         const serviceRows = asArray(servicesResponse) as DomainService[];
@@ -523,7 +523,7 @@ export default function App() {
   const [simulationLogs, setSimulationLogs] = useState<SimulationLogEntry[]>([]);
   const [simulationLogsBusy, setSimulationLogsBusy] = useState(false);
   const [simulationLogsError, setSimulationLogsError] = useState("");
-  const [tenantDomains, setTenantDomains] = useState<TenantDomain[]>([]);
+  const [tenantDomains, setTenantDomains] = useState<DomainConfig[]>([]);
   const [storedContracts, setStoredContracts] = useState<any[]>([]);
   const [storedRules, setStoredRules] = useState<any[]>([]);
   const [catalogBusy, setCatalogBusy] = useState("");
@@ -540,7 +540,7 @@ export default function App() {
 
   const saveSettings = (next: Settings) => { setSettings(next); localStorage.setItem("flowrulz-console-settings", JSON.stringify(next)); setSettingsOpen(false); setHealth("checking"); };
   const loadDomainServices = useCallback(async () => {
-    try { setTenantDomains(asArray(await apiRequest(settings, "/v1/domains")) as TenantDomain[]); } catch { /* domains are optional context */ }
+    try { setTenantDomains(asArray(await apiRequest(settings, "/v1/domains")) as DomainConfig[]); } catch { /* domains are optional context */ }
   }, [settings]);
   useEffect(() => {
   }, [nav, loadDomainServices]);
@@ -1222,9 +1222,9 @@ export default function App() {
           const contracts = asArray(contractsResp);
 
           // Build rule set nodes for this domain
-          const domainEventTypes = domain.event_types || [];
+          const domainRuleSetIDs = (domain.services ?? []).flatMap((s: any) => (s.rulesets ?? []).map((r: any) => r.ruleset_id));
           const ruleSets = activeRules
-            .filter((r: any) => domainEventTypes.includes(r.rule_set || r.rule_id))
+            .filter((r: any) => domainRuleSetIDs.includes(r.rule_set || r.rule_id))
             .map((r: any) => ({ name: r.rule_set || r.rule_id, revision: r.revision }));
 
           // For each rule set, get its revision details and contracts
@@ -1506,7 +1506,7 @@ export default function App() {
         <div className="welcome-row"><div><div className="eyebrow">SYSTEM SNAPSHOT</div><h2>Runtime at a glance</h2><p>Rules, workers, and contract generation in one place.</p></div><div className="updated">Last refreshed <strong>{lastRefresh?.toLocaleTimeString() || "—"}</strong></div></div>
         <div className="metric-grid"><MetricCard label="API status" value={health === "online" ? "Online" : health === "offline" ? "Offline" : "Checking"} hint={dependencies ? Object.entries(dependencies).map(([k, v]) => `${k} ${v.status}`).join(" · ") : `${normalizeBase(settings.apiBase)} · dependency state unknown`} icon="⌘"/><MetricCard label="Active rules" value={ruleCount} hint="From the tenant-scoped rules API" icon="◎"/><MetricCard label="Workers online" value={workers.length ? `${onlineWorkers}/${workers.length}` : "Not configured"} hint="Worker Prometheus endpoints" icon="▦"/><MetricCard label="Rule executions" value={workers.length ? executionTotal.toLocaleString() : "—"} hint="Cumulative counters from configured workers" icon="↗"/></div>
         <div className="content-grid"><section className="panel"><div className="panel-heading"><div><h3>Worker fleet</h3><p>Process-level telemetry, refreshed every 10 seconds</p></div><button className="text-button" onClick={() => setNav("workers")}>View workers ↗</button></div>{workers.length === 0 ? <Empty title="No worker endpoints configured" detail="Open Settings and add one private /metrics URL per worker process. The UI does not invent worker health."/> : <div className="worker-list">{workers.slice(0,4).map(worker => <div className="worker-row" key={worker.url}><div className="worker-symbol">▦</div><div className="worker-main"><strong>{worker.name}</strong><small>{worker.url}</small></div><Status value={worker.online ? "Online" : "Unreachable"}/><div className="worker-stat"><strong>{worker.inFlight ?? "—"}</strong><small>in flight</small></div><div className="worker-stat"><strong>{worker.shards ?? "—"}</strong><small>shards owned</small></div></div>)}</div>}</section>
-        <section className="panel"><div className="panel-heading"><div><h3>Active rule sets</h3><p>Current activation state from the API</p></div><button className="text-button" onClick={() => setNav("rules")}>Manage ↗</button></div>{activeRules.length === 0 ? <Empty title="No active rules returned" detail={health === "online" ? "No active rules were found for this tenant." : "Connect to the API to load active rules."}/> : <div className="rule-mini-list">{activeRules.slice(0,6).map((rule,i) => <div className="rule-mini" key={rule.rule_id || rule.rule_set || rule.id || i}><div className="rule-symbol">R</div><div className="rule-main"><strong>{rule.rule_id || rule.rule_set || rule.ruleSet || rule.id || `Rule set ${i+1}`}</strong><small>{tenantDomains.find(d => (d.event_types ?? []).includes(rule.rule_set || rule.rule_id))?.name ?? "no domain"} · revision {rule.revision ?? rule.active_revision ?? "—"}</small></div><Status value={rule.status || "Active"}/></div>)}</div>}</section></div>
+        <section className="panel"><div className="panel-heading"><div><h3>Active rule sets</h3><p>Current activation state from the API</p></div><button className="text-button" onClick={() => setNav("rules")}>Manage ↗</button></div>{activeRules.length === 0 ? <Empty title="No active rules returned" detail={health === "online" ? "No active rules were found for this tenant." : "Connect to the API to load active rules."}/> : <div className="rule-mini-list">{activeRules.slice(0,6).map((rule,i) => <div className="rule-mini" key={rule.rule_id || rule.rule_set || rule.id || i}><div className="rule-symbol">R</div><div className="rule-main"><strong>{rule.rule_id || rule.rule_set || rule.ruleSet || rule.id || `Rule set ${i+1}`}</strong><small>{tenantDomains.find(d => (d.services ?? []).some(s => (s.rulesets ?? []).some(r => r.ruleset_id === (rule.rule_set || rule.rule_id))))?.name ?? "no domain"} · revision {rule.revision ?? rule.active_revision ?? "—"}</small></div><Status value={rule.status || "Active"}/></div>)}</div>}</section></div>
         <section className="panel"><div className="panel-heading"><div><h3>Quick actions</h3><p>Jump directly to a common operation</p></div></div><div className="quick-grid"><button onClick={() => setNav("api")}><span>⌘</span><strong>Explore API</strong><small>Inspect routes and send requests</small><b>→</b></button><button onClick={() => setNav("codegen")}><span>⟐</span><strong>Generate a client</strong><small>Go, Java, Protobuf, JSON Schema</small><b>→</b></button><button onClick={() => setNav("rules")}><span>◎</span><strong>Deploy a rule</strong><small>Validate and activate a revision</small><b>→</b></button><button onClick={() => setNav("logs")}><span>≋</span><strong>Inspect logs</strong><small>Query your configured Loki source</small><b>→</b></button></div></section>
       </section>}
       {nav === "simulations" && <section className="page-content simulation-page">
