@@ -12,7 +12,7 @@ import (
 
 type memoryLogStore struct {
 	records     []LogRecord
-	checkpoints map[string][]LogPosition
+	checkpoints map[string][]InputCheckpoint
 	beginErr    error
 	commitErr   error
 }
@@ -77,7 +77,7 @@ type memoryLogTx struct {
 	store     *memoryLogStore
 	records   []LogRecord
 	group     string
-	positions []LogPosition
+	positions []InputCheckpoint
 	closed    bool
 }
 
@@ -100,7 +100,7 @@ func (tx *memoryLogTx) Append(_ context.Context, record LogRecord) error {
 	return nil
 }
 
-func (tx *memoryLogTx) CommitInputPosition(_ context.Context, group string, positions []LogPosition) error {
+func (tx *memoryLogTx) CommitInputPosition(_ context.Context, group string, positions []InputCheckpoint) error {
 	if tx.closed {
 		return errors.New("transaction is closed")
 	}
@@ -108,7 +108,7 @@ func (tx *memoryLogTx) CommitInputPosition(_ context.Context, group string, posi
 		return errors.New("consumer group is required")
 	}
 	tx.group = group
-	tx.positions = append([]LogPosition(nil), positions...)
+	tx.positions = append([]InputCheckpoint(nil), positions...)
 	return nil
 }
 
@@ -190,7 +190,7 @@ func TestWorkerCommitsOutputsAndInputPositionsTogether(t *testing.T) {
 	if len(store.records) != 2 {
 		t.Fatalf("expected effect + audit records, got %d", len(store.records))
 	}
-	wantPositions := []LogPosition{{Stream: "flow.events", Partition: "2", Sequence: 11}}
+	wantPositions := []InputCheckpoint{{Stream: "flow.events", Partition: "2", NextSequence: 11}}
 	if got := store.checkpoints["worker-group"]; !reflect.DeepEqual(got, wantPositions) {
 		t.Fatalf("checkpoint = %#v, want %#v", got, wantPositions)
 	}
@@ -249,7 +249,7 @@ func TestSchedulerWritesEventAndTombstoneInOneTransaction(t *testing.T) {
 			Event: EventEnvelope{EventType: "timer.fired", PartitionKey: "order-1"},
 		},
 		Occurrence: OccurrenceID("schedule-1", 2, time.Unix(100, 0).UTC()),
-		InputPosition: LogPosition{Stream: "flow.schedules", Partition: "0", Sequence: 7},
+		InputPosition: InputCheckpoint{Stream: "flow.schedules", Partition: "0", NextSequence: 7},
 	}
 	if err := scheduler.FireDue(context.Background(), due); err != nil {
 		t.Fatalf("FireDue() error = %v", err)
@@ -263,7 +263,7 @@ func TestSchedulerWritesEventAndTombstoneInOneTransaction(t *testing.T) {
 	if store.records[1].Kind != "flow.schedules" || store.records[1].Value != nil {
 		t.Fatalf("expected schedule tombstone, got %#v", store.records[1])
 	}
-	wantPositions := []LogPosition{{Stream: "flow.schedules", Partition: "0", Sequence: 7}}
+	wantPositions := []InputCheckpoint{{Stream: "flow.schedules", Partition: "0", NextSequence: 7}}
 	if got := store.checkpoints["scheduler-group"]; !reflect.DeepEqual(got, wantPositions) {
 		t.Fatalf("scheduler checkpoint = %#v, want %#v", got, wantPositions)
 	}
@@ -280,7 +280,7 @@ func TestSchedulerDoesNotPublishPartialTransaction(t *testing.T) {
 			Event: EventEnvelope{EventType: "timer.fired", PartitionKey: "key"},
 		},
 		Occurrence: "schedule:1",
-		InputPosition: LogPosition{Stream: "flow.schedules", Partition: "0", Sequence: 1},
+		InputPosition: InputCheckpoint{Stream: "flow.schedules", Partition: "0", NextSequence: 1},
 	}
 	if err := scheduler.FireDue(context.Background(), due); err == nil {
 		t.Fatal("expected commit error")
