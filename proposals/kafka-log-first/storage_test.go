@@ -290,9 +290,10 @@ func TestSchedulerDoesNotPublishPartialTransaction(t *testing.T) {
 		Key: []byte("tenant:schedule"),
 		Record: ScheduleRecord{
 			SchemaVersion: 1, TenantID: "tenant", ScheduleID: "schedule", Revision: 1,
+			DueAt: time.Unix(200, 0).UTC(),
 			Event: EventEnvelope{EventType: "timer.fired", PartitionKey: "key"},
 		},
-		Occurrence: "schedule:1",
+		Occurrence: OccurrenceID("schedule", 1, time.Unix(200, 0).UTC()),
 		InputPosition: InputCheckpoint{Stream: "flow.schedules", Partition: "0", NextSequence: 1},
 	}
 	if err := scheduler.FireDue(context.Background(), due); err == nil {
