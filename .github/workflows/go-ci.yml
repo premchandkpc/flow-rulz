@@ -47,6 +47,9 @@ jobs:
             python -m json.tool "$sample" > /dev/null
           done
 
+          echo "Validating event metadata contract"
+          jq -e 'type == "object" and (has("tenant_id") | not) and (has("partition_key") | not) and (.meta | type == "object") and (.meta.tenant_id | type == "string" and length > 0) and (.meta.partition_key | type == "string" and length > 0)' data/examples/event.json > /dev/null
+
           echo "Validating Domain configuration JSON"
           domain_configs=()
           while IFS= read -r config; do
