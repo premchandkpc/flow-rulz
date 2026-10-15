@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -210,11 +211,22 @@ func (w *Worker) validateServiceDeployment(env *domain.EventEnvelope) error {
 	if serviceID == "" || revision <= 0 {
 		return errors.New("worker service deployment identity is incomplete")
 	}
-	if env.Headers == nil || env.Headers["flow.service_id"] != serviceID {
+	var targetServiceID string
+	if err := json.Unmarshal(env.Meta["flow.service_id"], &targetServiceID); err != nil || targetServiceID != serviceID {
 		return fmt.Errorf("event target service does not match worker deployment %q", serviceID)
 	}
-	targetRevision, err := strconv.ParseInt(env.Headers["flow.deployment_revision"], 10, 64)
-	if err != nil || targetRevision != revision {
+	rawRevision := env.Meta["flow.deployment_revision"]
+	var targetRevision int64
+	if err := json.Unmarshal(rawRevision, &targetRevision); err != nil {
+		var revisionText string
+		if textErr := json.Unmarshal(rawRevision, &revisionText); textErr != nil {
+			return fmt.Errorf("event target deployment revision is missing or invalid")
+		}
+		parsed, parseErr := strconv.ParseInt(revisionText, 10, 64)
+		if parseErr != nil { return fmt.Errorf("event target deployment revision is invalid") }
+		targetRevision = parsed
+	}
+	if targetRevision != revision {
 		return fmt.Errorf("event target deployment revision does not match worker revision %d", revision)
 	}
 	return nil
