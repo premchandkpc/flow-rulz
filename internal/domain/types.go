@@ -64,7 +64,9 @@ func (e EventEnvelope) MarshalJSON() ([]byte, error) {
 	setMetaString(meta, "causation_id", e.CausationID)
 	if len(e.Headers) > 0 {
 		value, err := json.Marshal(e.Headers)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		meta["headers"] = value
 	}
 	return json.Marshal(eventEnvelopeWire{
@@ -77,7 +79,9 @@ func (e EventEnvelope) MarshalJSON() ([]byte, error) {
 // only for backward compatibility with messages already published before v1.
 func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
 	var wire eventEnvelopeWire
-	if err := json.Unmarshal(data, &wire); err != nil { return err }
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
 	e.ID, e.Type, e.OccurredAt, e.Data, e.Contract = wire.ID, wire.Type, wire.OccurredAt, wire.Data, wire.Contract
 	e.Meta = cloneEventMeta(wire.Meta)
 	e.TenantID = metaString(e.Meta, "tenant_id")
@@ -87,26 +91,46 @@ func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
 	e.CorrelationID = metaString(e.Meta, "correlation_id")
 	e.CausationID = metaString(e.Meta, "causation_id")
 	if raw := e.Meta["headers"]; len(raw) > 0 {
-		if err := json.Unmarshal(raw, &e.Headers); err != nil { return fmt.Errorf("meta.headers: %w", err) }
+		if err := json.Unmarshal(raw, &e.Headers); err != nil {
+			return fmt.Errorf("meta.headers: %w", err)
+		}
 	}
-	if e.TenantID == "" { e.TenantID = wire.TenantID }
-	if e.PartitionKey == "" { e.PartitionKey = wire.PartitionKey }
-	if e.WorkflowID == "" { e.WorkflowID = wire.WorkflowID }
-	if e.MessageKind == "" { e.MessageKind = wire.MessageKind }
-	if e.CorrelationID == "" { e.CorrelationID = wire.CorrelationID }
-	if e.CausationID == "" { e.CausationID = wire.CausationID }
-	if e.Headers == nil { e.Headers = wire.Headers }
+	if e.TenantID == "" {
+		e.TenantID = wire.TenantID
+	}
+	if e.PartitionKey == "" {
+		e.PartitionKey = wire.PartitionKey
+	}
+	if e.WorkflowID == "" {
+		e.WorkflowID = wire.WorkflowID
+	}
+	if e.MessageKind == "" {
+		e.MessageKind = wire.MessageKind
+	}
+	if e.CorrelationID == "" {
+		e.CorrelationID = wire.CorrelationID
+	}
+	if e.CausationID == "" {
+		e.CausationID = wire.CausationID
+	}
+	if e.Headers == nil {
+		e.Headers = wire.Headers
+	}
 	return nil
 }
 
 func cloneEventMeta(input map[string]json.RawMessage) map[string]json.RawMessage {
 	out := make(map[string]json.RawMessage, len(input)+8)
-	for key, value := range input { out[key] = append(json.RawMessage(nil), value...) }
+	for key, value := range input {
+		out[key] = append(json.RawMessage(nil), value...)
+	}
 	return out
 }
 
 func setMetaString(meta map[string]json.RawMessage, key, value string) {
-	if value == "" { return }
+	if value == "" {
+		return
+	}
 	encoded, _ := json.Marshal(value)
 	meta[key] = encoded
 }
