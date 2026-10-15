@@ -386,6 +386,7 @@ mod tests {
             message_kind: None,
             correlation_id: None,
             causation_id: None,
+            meta: Default::default(),
         }
     }
 
