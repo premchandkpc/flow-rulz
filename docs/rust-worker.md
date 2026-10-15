@@ -35,6 +35,7 @@ docker compose up -d worker
 - `src/runtime/scheduler.rs`: scheduled-event claiming and publication.
 - `src/engine.rs`: event-processing transaction orchestration and stable event/shard contracts.
 - `src/engine/persistence.rs`: inbox, active revision, execution and outbox persistence.
+- `src/engine/subscriber_router.rs`: transaction-scoped subscription matching and stable service-delivery intent construction.
 - `src/engine/rules.rs`: compiled rule model, predicate evaluation, templates and action construction.
 - `src/engine/lease.rs`: PostgreSQL shard lease acquisition, renewal and release.
 
