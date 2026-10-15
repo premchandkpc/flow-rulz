@@ -36,6 +36,7 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 		"name":"orders",
 		"tenant_id":"attacker-controlled",
 		"event_types":["not.configuration"],
+		"partition_key":"must-come-from-event",
 		"services":[{
 			"service_id":"order-worker",
 			"name":"order-worker",
@@ -80,6 +81,9 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	}
 	if _, exists := response["event_types"]; exists {
 		t.Fatal("domain API must not expose event_types configuration")
+	}
+	if _, exists := response["partition_key"]; exists {
+		t.Fatal("domain API must not expose partition_key configuration")
 	}
 	if _, exists := response["services"]; !exists {
 		t.Fatal("domain API response must expose nested services")
