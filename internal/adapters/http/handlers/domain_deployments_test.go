@@ -98,7 +98,7 @@ func TestCreateDomainDoesNotRequireTenantConfiguration(t *testing.T) {
 	handler := NewDomainServiceHandler(service)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
-	req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(`{"name":"orders","services":[]}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(`{"name":"orders","services":[{"service_id":"orders-worker","name":"orders-worker","revision":1,"active":true,"rulesets":[{"ruleset_id":"orders-created","revision":1}]}]}`))
 	res := httptest.NewRecorder()
 	mux.ServeHTTP(res, req)
 	if res.Code != http.StatusCreated {
