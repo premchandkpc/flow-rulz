@@ -9,7 +9,7 @@ A **contract** defines the payload shape for a named message version. Its identi
 - A ruleset may pin an input contract identity and hash.
 - An event declares the contract it conforms to.
 - Validate the event payload against the registered contract before rule evaluation.
-- Contract configuration is global configuration and does not contain `tenant_id` or `partition_key`.
+- Contract configuration is global configuration and does not contain `tenant_id` or `partition_key`. Runtime event identity is provided under `event.meta`.
 
 ## Contract document
 
