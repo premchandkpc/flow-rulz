@@ -194,18 +194,18 @@ func (d *EventDoc) ToDomain() *domain.EventEnvelope {
 	}
 
 	return &domain.EventEnvelope{
-		ID:           d.EventID,
-		Type:         d.Type,
-		TenantID:     d.TenantID,
-		PartitionKey: d.PartitionKey,
-		WorkflowID:   d.WorkflowID,
-		OccurredAt:   d.OccurredAt,
-		Data:         data,
-		Headers:      d.Headers,
-		Meta:         meta,
-		MessageKind: metaStringFromMap(meta, "message_kind"),
+		ID:            d.EventID,
+		Type:          d.Type,
+		TenantID:      d.TenantID,
+		PartitionKey:  d.PartitionKey,
+		WorkflowID:    d.WorkflowID,
+		OccurredAt:    d.OccurredAt,
+		Data:          data,
+		Headers:       d.Headers,
+		Meta:          meta,
+		MessageKind:   metaStringFromMap(meta, "message_kind"),
 		CorrelationID: metaStringFromMap(meta, "correlation_id"),
-		CausationID: metaStringFromMap(meta, "causation_id"),
+		CausationID:   metaStringFromMap(meta, "causation_id"),
 	}
 }
 
