@@ -14,7 +14,7 @@ func TestDomainDeploymentPinsImmutableRulesetRevisions(t *testing.T) {
 	item, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
 		Name: "orders",
 		EventTypes: []string{"orders.created"},
-		Deployments: []domain.DomainServiceDeployment{{
+		Deployments: []domain.ServiceDeployment{{
 			ServiceID: "order-evaluator",
 			Name: "order-evaluator",
 			Revision: 1,
@@ -33,7 +33,7 @@ func TestDomainDeploymentPinsImmutableRulesetRevisions(t *testing.T) {
 	invalid := &domain.TenantDomain{
 		Name: "billing",
 		EventTypes: []string{"billing.created"},
-		Deployments: []domain.DomainServiceDeployment{{
+		Deployments: []domain.ServiceDeployment{{
 			ServiceID: "billing-worker", Name: "billing-worker", Revision: 1, Active: true,
 			Rulesets: []domain.RulesetAssignment{
 				{RulesetID: "invoice", Revision: 2},
