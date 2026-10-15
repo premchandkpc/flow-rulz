@@ -12,7 +12,17 @@ pub(super) struct RuleRevision {
     pub(super) revision: i64,
     pub(super) content_hash: String,
     pub(super) match_mode: String,
+    #[serde(default)]
+    pub(super) input_contract: Option<ContractRef>,
     pub(super) compiled: Vec<Rule>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct ContractRef {
+    pub(super) name: String,
+    pub(super) version: String,
+    #[serde(default)]
+    pub(super) schema_hash: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
