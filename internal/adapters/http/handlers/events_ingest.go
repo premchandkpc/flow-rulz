@@ -42,8 +42,7 @@ func (h *EventIngestionHandler) RegisterRoutes(mux *http.ServeMux) {
 type eventIngestionRequest struct {
 	ID            string              `json:"id"`
 	Type          string              `json:"type"`
-	TenantID      string              `json:"tenant_id"`
-	PartitionKey  string              `json:"partition_key"`
+	Meta          map[string]any     `json:"meta"`
 	WorkflowID    string              `json:"workflow_id,omitempty"`
 	OccurredAt    time.Time           `json:"occurred_at"`
 	Data          []byte              `json:"data"`
@@ -152,8 +151,18 @@ func validateEventIngestionRequest(
 		responses.WriteError(w, http.StatusUnauthorized, messageTenantRequired, responses.CodeTenantRequired)
 		return false
 	}
-	if request.TenantID != "" && request.TenantID != tenantID {
-		responses.WriteError(w, http.StatusForbidden, "tenant_id does not match request tenant", responses.CodeForbidden)
+	metaTenantID, ok := request.Meta["tenant_id"].(string)
+	if !ok || strings.TrimSpace(metaTenantID) == "" {
+		responses.WriteError(w, http.StatusBadRequest, "meta.tenant_id is required", responses.CodeValidationFailed)
+		return false
+	}
+	if metaTenantID != tenantID {
+		responses.WriteError(w, http.StatusForbidden, "meta.tenant_id does not match authenticated tenant", responses.CodeForbidden)
+		return false
+	}
+	partitionKey, ok := request.Meta["partition_key"].(string)
+	if !ok || strings.TrimSpace(partitionKey) == "" {
+		responses.WriteError(w, http.StatusBadRequest, "meta.partition_key is required", responses.CodeValidationFailed)
 		return false
 	}
 	if len(request.Data) == 0 || !json.Valid(request.Data) {
@@ -171,9 +180,10 @@ func buildEventEnvelope(
 	headers := buildEventHeaders(request)
 	return &domain.EventEnvelope{
 		ID: strings.TrimSpace(request.ID), Type: eventType, TenantID: tenantID,
-		PartitionKey: strings.TrimSpace(request.PartitionKey), WorkflowID: request.WorkflowID,
+		PartitionKey: strings.TrimSpace(request.Meta["partition_key"].(string)), WorkflowID: request.WorkflowID,
 		OccurredAt: request.OccurredAt, Data: json.RawMessage(request.Data), Headers: headers,
 		Contract: request.Contract, MessageKind: request.MessageKind, CorrelationID: request.CorrelationID, CausationID: request.CausationID,
+		Meta: request.Meta,
 	}
 }
 
