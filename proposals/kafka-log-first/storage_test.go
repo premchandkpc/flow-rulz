@@ -14,6 +14,8 @@ type memoryLogStore struct {
 	records     []LogRecord
 	checkpoints map[string][]InputCheckpoint
 	beginErr    error
+	appendErr   error
+	positionErr error
 	commitErr   error
 }
 
@@ -91,6 +93,9 @@ func (tx *memoryLogTx) Append(_ context.Context, record LogRecord) error {
 	if tx.closed {
 		return errors.New("transaction is closed")
 	}
+	if tx.store.appendErr != nil {
+		return tx.store.appendErr
+	}
 	if record.ID == "" || record.TenantID == "" || record.Kind == "" {
 		return errors.New("record identity, tenant, and kind are required")
 	}
@@ -110,7 +115,10 @@ func (tx *memoryLogTx) CommitInputPosition(_ context.Context, group string, posi
 	if tx.closed {
 		return errors.New("transaction is closed")
 	}
-	if group == "" {
+	if tx.store.positionErr != nil {
+		return tx.store.positionErr
+	}
+	if group == ""
 		return errors.New("consumer group is required")
 	}
 	tx.group = group
