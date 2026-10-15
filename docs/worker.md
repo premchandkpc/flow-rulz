@@ -12,6 +12,8 @@ Each worker pool belongs to one configured Domain/Service deployment:
 
 The deployment identity is configuration. `tenant_id` and `partition_key` are read from each event and are never worker environment settings.
 
+**Current implementation note:** the Domain API stores Service assignments, but a complete deployment controller that continuously projects those assignments into both Go and Rust worker pools is not yet present. The current Rust runtime still reads its `RULESETS` list from environment configuration. Until that controller is implemented, deployment automation must keep worker settings aligned with the Domain revision; do not claim that workers dynamically reload the Domain API.
+
 ## Processing guarantees
 
 1. Validate event envelope and immutable contract reference.
