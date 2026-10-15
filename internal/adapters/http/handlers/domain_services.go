@@ -34,9 +34,9 @@ func (h *DomainServiceHandler) RegisterRoutes(mux *http.ServeMux) {
 	// Generic event subscribers remain separate from execution services and ruleset evaluation.
 	mux.HandleFunc("GET /v1/subscriptions", h.ListServices)
 	mux.HandleFunc("POST /v1/subscriptions", h.CreateService)
-	mux.HandleFunc("GET /v1/subscriptions/{serviceID}", h.GetService)
-	mux.HandleFunc("PUT /v1/subscriptions/{serviceID}", h.UpdateService)
-	mux.HandleFunc("DELETE /v1/subscriptions/{serviceID}", h.DeleteService)
+	mux.HandleFunc("GET /v1/subscriptions/{subscriptionID}", h.GetService)
+	mux.HandleFunc("PUT /v1/subscriptions/{subscriptionID}", h.UpdateService)
+	mux.HandleFunc("DELETE /v1/subscriptions/{subscriptionID}", h.DeleteService)
 }
 
 // ListDomains handles GET /v1/domains requests.
@@ -153,7 +153,7 @@ func (h *DomainServiceHandler) GetService(w http.ResponseWriter, r *http.Request
 	if !h.ready(w, r) {
 		return
 	}
-	item, err := h.service.GetService(r.Context(), domain.DomainConfigurationScope, r.PathValue("serviceID"))
+	item, err := h.service.GetService(r.Context(), domain.DomainConfigurationScope, r.PathValue("subscriptionID"))
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -170,7 +170,7 @@ func (h *DomainServiceHandler) UpdateService(w http.ResponseWriter, r *http.Requ
 	if !h.ready(w, r) {
 		return
 	}
-	item.ID = r.PathValue("serviceID")
+	item.ID = r.PathValue("subscriptionID")
 	saved, err := h.service.SaveService(r.Context(), domain.DomainConfigurationScope, item)
 	if err != nil {
 		writeDomainServiceError(w, err)
@@ -184,7 +184,7 @@ func (h *DomainServiceHandler) DeleteService(w http.ResponseWriter, r *http.Requ
 	if !h.ready(w, r) {
 		return
 	}
-	if err := h.service.DeleteService(r.Context(), domain.DomainConfigurationScope, r.PathValue("serviceID")); err != nil {
+	if err := h.service.DeleteService(r.Context(), domain.DomainConfigurationScope, r.PathValue("subscriptionID")); err != nil {
 		writeDomainServiceError(w, err)
 		return
 	}
