@@ -3,7 +3,6 @@ package events
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -359,36 +358,6 @@ func (s *Service) persistExecutionAndOutboxForRuleset(ctx context.Context, repos
 			EffectType:  ef.EffectType,
 			Status:      domain.OutboxStatusPending,
 			Attempts:    0,
-			MaxAttempts: 5,
-			AvailableAt: now,
-			CreatedAt:   now,
-			UpdatedAt:   now,
-		})
-	}
-	if repos.DomainServices == nil {
-		return nil, fmt.Errorf("tenant domain service repository is not configured")
-	}
-	subscribers, err := repos.DomainServices.ListSubscribersForEvent(ctx, envelope.TenantID, envelope.Type)
-	if err != nil {
-		return nil, fmt.Errorf("get tenant domain subscribers: %w", err)
-	}
-	if len(subscribers) > 100 {
-		return nil, fmt.Errorf("event %q exceeds the 100-service fan-out limit", envelope.Type)
-	}
-	eventPayload, err := json.Marshal(envelope)
-	if err != nil {
-		return nil, fmt.Errorf("marshal subscribed event: %w", err)
-	}
-	for _, subscriber := range subscribers {
-		outboxEffects = append(outboxEffects, domain.OutboxEffect{
-			ID:          domain.ComputeEffectID(envelope.TenantID, envelope.ID, "service-subscription", 1, subscriber.ID, 0),
-			ExecutionID: executionID,
-			TenantID:    envelope.TenantID,
-			Destination: subscriber.ID,
-			Name:        envelope.Type,
-			Payload:     eventPayload,
-			EffectType:  domain.EffectTypeServiceEvent,
-			Status:      domain.OutboxStatusPending,
 			MaxAttempts: 5,
 			AvailableAt: now,
 			CreatedAt:   now,
