@@ -54,7 +54,10 @@ type activationStub struct {
 	active bool
 }
 
-func (r activationStub) Get(context.Context, string, string) (*domain.RuleActivation, error) {
+func (r activationStub) Get(_ context.Context, scope, _ string) (*domain.RuleActivation, error) {
+	if scope != domain.DomainConfigurationScope {
+		return nil, errors.New("ruleset activation must use global configuration scope")
+	}
 	if !r.active {
 		return nil, nil
 	}
@@ -63,8 +66,11 @@ func (r activationStub) Get(context.Context, string, string) (*domain.RuleActiva
 
 type ruleRepositoryStub struct{ ports.RuleRepository }
 
-func (ruleRepositoryStub) Get(_ context.Context, tenantScope, ruleSet string, revision int64) (*domain.RuleRevision, error) {
-	return &domain.RuleRevision{TenantScope: tenantScope, RuleID: ruleSet, Revision: revision}, nil
+func (ruleRepositoryStub) Get(_ context.Context, configurationScope, ruleSet string, revision int64) (*domain.RuleRevision, error) {
+	if configurationScope != domain.DomainConfigurationScope {
+		return nil, errors.New("ruleset revision must use global configuration scope")
+	}
+	return &domain.RuleRevision{TenantScope: configurationScope, RuleID: ruleSet, Revision: revision}, nil
 }
 
 func (ruleRepositoryStub) GetActive(context.Context, string, string) (*domain.RuleRevision, error) {
