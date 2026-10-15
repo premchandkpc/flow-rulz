@@ -4,7 +4,7 @@ FlowRulz is intentionally evolving as **one deployable application with clear in
 
 ## Current baseline
 
-- `EventEnvelope` has an ID, tenant, type, partition key, and payload.
+- `EventEnvelope` has stable top-level `id`, `type`, `occurred_at`, optional `contract`, and `data`; runtime identity and extensible routing/tracing context live under `meta` (`meta.tenant_id`, `meta.partition_key`, and future fields).
 - `event.type` selects the active immutable rule revision.
 - Inbox deduplication, execution, and durable outbox effects commit in one SQL transaction.
 - A broker fetch batch retrieves up to ten deliveries, but each delivery is evaluated, acknowledged, or retried independently.
