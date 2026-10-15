@@ -26,7 +26,7 @@ func NewDomainServiceRepository(q Querier) *DomainServiceRepository {
 // SaveDomain provides the corresponding repository operation.
 func (r *DomainServiceRepository) SaveDomain(ctx context.Context, item *domain.TenantDomain) error {
 	doc := tenantDomainDoc{
-		ID: item.ID, TenantID: item.TenantID, Name: item.Name, EventTypes: item.EventTypes,
+		ID: item.ID, TenantID: item.TenantID, Name: item.Name, EventTypes: item.EventTypes, Deployments: item.Deployments,
 		CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
 	}
 	_, err := r.querier.Collection(collectionTenantDomains).UpdateOne(ctx,
@@ -209,13 +209,14 @@ type tenantDomainDoc struct {
 	ID         string    `bson:"domain_id"`
 	TenantID   string    `bson:"tenant_id"`
 	Name       string    `bson:"name"`
-	EventTypes []string  `bson:"event_types"`
-	CreatedAt  time.Time `bson:"created_at"`
+	EventTypes  []string                    `bson:"event_types"`
+	Deployments []domain.DomainServiceDeployment `bson:"deployments,omitempty"`
+	CreatedAt   time.Time                   `bson:"created_at"`
 	UpdatedAt  time.Time `bson:"updated_at"`
 }
 
 func (d tenantDomainDoc) toDomain() *domain.TenantDomain {
-	return &domain.TenantDomain{ID: d.ID, TenantID: d.TenantID, Name: d.Name, EventTypes: d.EventTypes, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt}
+	return &domain.TenantDomain{ID: d.ID, TenantID: d.TenantID, Name: d.Name, EventTypes: d.EventTypes, Deployments: d.Deployments, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt}
 }
 
 type domainServiceDoc struct {
