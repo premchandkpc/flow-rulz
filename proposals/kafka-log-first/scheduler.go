@@ -23,7 +23,7 @@ type DueSchedule struct {
 	Key            []byte
 	Record         ScheduleRecord
 	Occurrence     string
-	InputPosition  LogPosition
+	InputPosition  InputCheckpoint
 }
 
 // OccurrenceID must be deterministic for a schedule revision and due occurrence.
@@ -55,7 +55,7 @@ func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
 	if due.Record.ScheduleID == "" || due.Record.TenantID == "" || due.Occurrence == "" {
 		return errors.New("schedule identity and deterministic occurrence are required")
 	}
-	if due.InputPosition.Stream == "" || due.InputPosition.Partition == "" || due.InputPosition.Sequence < 0 {
+	if due.InputPosition.Stream == "" || due.InputPosition.Partition == "" || due.InputPosition.NextSequence < 0 {
 		return errors.New("consumed input position is required")
 	}
 	if due.Record.SchemaVersion != 1 {
