@@ -93,12 +93,6 @@ func (s *Service) validateAssignedRevisions(ctx context.Context, tenantID string
 			if revision == nil || revision.TenantScope != tenantID || revision.RuleID != assignment.RulesetID || revision.Revision != assignment.Revision {
 				return fmt.Errorf("%w: ruleset %q revision %d does not match the requested tenant-scoped revision", ErrInvalidInput, assignment.RulesetID, assignment.Revision)
 			}
-			if assignment.Contract != nil {
-				if revision.InputContract == nil || revision.InputContract.Name != assignment.Contract.Name || revision.InputContract.Version != assignment.Contract.Version ||
-					(assignment.Contract.SchemaHash != "" && revision.InputContract.SchemaHash != assignment.Contract.SchemaHash) {
-					return fmt.Errorf("%w: deployment contract does not match ruleset %q revision %d", ErrInvalidInput, assignment.RulesetID, assignment.Revision)
-				}
-			}
 		}
 	}
 	return nil
