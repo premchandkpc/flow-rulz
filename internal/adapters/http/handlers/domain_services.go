@@ -7,12 +7,11 @@ import (
 	"io"
 	"net/http"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/flowrulz/flow-rulz/internal/adapters/http/responses"
 	"github.com/flowrulz/flow-rulz/internal/domain"
 	"github.com/flowrulz/flow-rulz/internal/ports"
 	"github.com/flowrulz/flow-rulz/internal/services/domainservices"
+	"gopkg.in/yaml.v3"
 )
 
 // DomainServiceHandler exposes domain configuration. Services and rulesets are nested under each domain.
