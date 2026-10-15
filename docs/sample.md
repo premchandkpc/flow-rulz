@@ -6,7 +6,7 @@ Use the JSON files in [data/examples](../data/examples/) in this order:
 2. **[ruleset.json](../data/examples/ruleset.json)** defines a versioned ruleset that consumes that contract.
 3. **[domain.json](../data/examples/domain.json)** assigns multiple rulesets to a Service inside a Domain.
 4. **[event.json](../data/examples/event.json)** is a runtime event. It carries `tenant_id` and `partition_key`; neither appears in Domain or ruleset configuration.
-5. **[worker-config.json](../data/examples/worker-config.json)** shows deployment identity and runtime connection settings. It does not configure a tenant or partition key.
+5. **[worker-config.json](../data/examples/worker-config.json)** shows deployment identity, mirrored ruleset assignments, and runtime connection settings. It does not configure a tenant or partition key.
 
 ## Mental model
 
