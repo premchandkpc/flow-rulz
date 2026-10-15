@@ -124,6 +124,8 @@ func TestEventEnvelopeRejectsUnknownTopLevelAndInvalidMetaIdentityTypes(t *testi
 		`{"id":"evt-1","type":"orders.created","occurred_at":"2026-10-15T07:30:00Z","data":{},"unexpected":true}`,
 		`{"id":"evt-1","type":"orders.created","occurred_at":"2026-10-15T07:30:00Z","data":{},"meta":{"tenant_id":42,"partition_key":"order-1"}}`,
 		`{"id":"evt-1","type":"orders.created","occurred_at":"2026-10-15T07:30:00Z","data":{},"meta":{"tenant_id":"tenant-a","partition_key":false}}`,
+		`{"id":"evt-1","type":"orders.created","occurred_at":"2026-10-15T07:30:00Z","data":{},"meta":{"tenant_id":"tenant-a"}}`,
+		`{"id":"evt-1","type":"orders.created","occurred_at":"2026-10-15T07:30:00Z","data":{},"meta":{"tenant_id":" ","partition_key":"order-1"}}`,
 	}
 	for i, payload := range tests {
 		t.Run(string(rune('a'+i)), func(t *testing.T) {
