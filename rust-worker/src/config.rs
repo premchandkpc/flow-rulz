@@ -9,6 +9,8 @@ pub(crate) struct Config {
     pub(crate) durable: String,
     pub(crate) database_url: String,
     pub(crate) worker_id: String,
+    pub(crate) service_id: Option<String>,
+    pub(crate) deployment_revision: Option<i64>,
     pub(crate) num_shards: u32,
     pub(crate) worker_replicas: u32,
     pub(crate) lease_ttl: Duration,
@@ -28,6 +30,8 @@ struct ConnectionSettings {
     durable: String,
     database_url: String,
     worker_id: String,
+    service_id: Option<String>,
+    deployment_revision: Option<i64>,
 }
 
 struct LeaseSettings {
@@ -59,6 +63,8 @@ impl Config {
             durable: connection.durable,
             database_url: connection.database_url,
             worker_id: connection.worker_id,
+            service_id: connection.service_id,
+            deployment_revision: connection.deployment_revision,
             num_shards: leases.num_shards,
             worker_replicas: leases.worker_replicas,
             lease_ttl: leases.lease_ttl,
@@ -92,6 +98,10 @@ fn load_connection_settings() -> Result<ConnectionSettings> {
         worker_id: env::var("WORKER_ID").unwrap_or_else(|_| {
             format!("rust-{}", env::var("HOSTNAME").unwrap_or_else(|_| "worker".into()))
         }),
+        service_id: optional_env("FLOW_SERVICE_ID"),
+        deployment_revision: optional_env("FLOW_DEPLOYMENT_REVISION")
+            .map(|value| value.parse::<i64>().map_err(|error| anyhow::anyhow!("FLOW_DEPLOYMENT_REVISION must be a positive integer: {error}")))
+            .transpose()?,
     })
 }
 
@@ -133,6 +143,11 @@ fn validate_config(config: &Config) -> Result<()> {
     }
 
     validate_rulesets(&config.rulesets)?;
+    match (&config.service_id, config.deployment_revision) {
+        (Some(service_id), Some(revision)) if !service_id.trim().is_empty() && revision > 0 => {}
+        (None, None) => {}
+        _ => bail!("FLOW_SERVICE_ID and positive FLOW_DEPLOYMENT_REVISION must be configured together"),
+    }
     validate_lease_settings(config)?;
     validate_delivery_settings(config)
 }
@@ -183,4 +198,8 @@ fn parse_u64(name: &str, default: u64) -> Result<u64> {
 fn parse_u32(name: &str, default: u32) -> Result<u32> {
     let value = parse_u64(name, u64::from(default))?;
     u32::try_from(value).map_err(|_| anyhow::anyhow!("{name} exceeds u32"))
+}
+
+fn optional_env(name: &str) -> Option<String> {
+    env::var(name).ok().map(|value| value.trim().to_owned()).filter(|value| !value.is_empty())
 }
