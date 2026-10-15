@@ -60,10 +60,8 @@ type BatchMember struct {
 
 // BatchData is the JSON payload of a synthesized batch event.
 type BatchData struct {
-	BatchID      string        `json:"batch_id"`
-	TenantID     string        `json:"tenant_id"`
-	PartitionKey string        `json:"partition_key"`
-	RuleSet      string        `json:"rule_set"`
+	BatchID    string        `json:"batch_id"`
+	RuleSet    string        `json:"rule_set"`
 	WindowFrom   time.Time     `json:"window_from"`
 	WindowTo     time.Time     `json:"window_to"`
 	Events       []BatchMember `json:"events"`
