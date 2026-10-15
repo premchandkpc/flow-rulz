@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// ScheduleRecord is the versioned durable representation of a scheduled event.
 type ScheduleRecord struct {
 	SchemaVersion int           `json:"schema_version"`
 	TenantID      string        `json:"tenant_id"`
@@ -19,6 +20,7 @@ type ScheduleRecord struct {
 	Status        string        `json:"status"`
 }
 
+// DueSchedule carries a due schedule and the input checkpoint to advance atomically.
 type DueSchedule struct {
 	Key            []byte
 	Record         ScheduleRecord
@@ -32,10 +34,12 @@ func OccurrenceID(scheduleID string, revision int64, dueAt time.Time) string {
 	return scheduleID + ":" + dueAt.UTC().Format(time.RFC3339Nano) + ":" + strconv.FormatInt(revision, 10)
 }
 
+// ScheduleCodec serializes a scheduled event into the backend-neutral envelope.
 type ScheduleCodec interface {
 	EncodeEvent(EventEnvelope) ([]byte, error)
 }
 
+// Scheduler atomically emits due events, removes schedules, and advances checkpoints.
 type Scheduler struct {
 	Store          LogStore
 	Codec          ScheduleCodec
@@ -81,7 +85,9 @@ func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
 	committed := false
 	defer func() {
 		if !committed {
-			_ = tx.Abort(context.Background())
+			abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = tx.Abort(abortCtx)
 		}
 	}()
 
