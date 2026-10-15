@@ -147,3 +147,18 @@ func TestSchedulerRejectsInvalidDueScheduleBeforeOpeningTransaction(t *testing.T
 		if _,ok:=store.checkpoints["scheduler"];ok{t.Fatal("scheduler checkpoint advanced")}
 	})}
 }
+
+func TestWorkerRejectsMisroutedEventBeforeEvaluation(t *testing.T) {
+	batch := workerTestBatch(t)
+	var event EventEnvelope
+	if err := json.Unmarshal(batch.Records[0].Value, &event); err != nil { t.Fatal(err) }
+	event.Metadata.TargetServiceID = "domain/billing"
+	batch.Records[0].Value, _ = json.Marshal(event)
+	store := newMemoryLogStore()
+	worker := workerTest(t, store, fixedEvaluator{effects: []Effect{validWorkerEffect()}}, jsonCodec{})
+	if err := worker.ProcessBatch(context.Background(), batch); err == nil {
+		t.Fatal("expected mismatched service deployment to be rejected")
+	}
+	if len(store.records) != 0 { t.Fatalf("records committed for misrouted event: %#v", store.records) }
+	if _, ok := store.checkpoints["orders-workers"]; ok { t.Fatal("checkpoint advanced for misrouted event") }
+}
