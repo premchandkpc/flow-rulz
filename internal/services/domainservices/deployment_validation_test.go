@@ -30,7 +30,9 @@ func TestValidateDeploymentShapeRejectsInvalidAssignments(t *testing.T) {
 		{name: "negative min replicas", edit: func(d *domain.ServiceDeployment) { d.WorkerProfile.MinReplicas = -1 }},
 		{name: "negative max replicas", edit: func(d *domain.ServiceDeployment) { d.WorkerProfile.MaxReplicas = -1 }},
 		{name: "negative concurrency", edit: func(d *domain.ServiceDeployment) { d.WorkerProfile.Concurrency = -1 }},
-		{name: "min exceeds max", edit: func(d *domain.ServiceDeployment) { d.WorkerProfile = domain.WorkerProfile{MinReplicas: 4, MaxReplicas: 2} }},
+		{name: "min exceeds max", edit: func(d *domain.ServiceDeployment) {
+			d.WorkerProfile = domain.WorkerProfile{MinReplicas: 4, MaxReplicas: 2}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -121,15 +123,19 @@ func TestDeploymentRevisionCannotMoveBackwards(t *testing.T) {
 
 type assignedRulesetLookupStub struct {
 	ports.RuleService
-	scope string
+	scope    string
 	revision *domain.RuleRevision
-	err error
+	err      error
 }
 
 func (s *assignedRulesetLookupStub) GetRevision(_ context.Context, scope, rulesetID string, revision int64) (*domain.RuleRevision, error) {
 	s.scope = scope
-	if s.err != nil { return nil, s.err }
-	if s.revision == nil { return nil, nil }
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.revision == nil {
+		return nil, nil
+	}
 	copy := *s.revision
 	return &copy, nil
 }
@@ -137,10 +143,10 @@ func (s *assignedRulesetLookupStub) GetRevision(_ context.Context, scope, rulese
 func TestDomainServiceAssignmentRequiresGlobalImmutableRulesetRevision(t *testing.T) {
 	lookupErr := errors.New("ruleset registry unavailable")
 	tests := []struct {
-		name string
-		revision *domain.RuleRevision
+		name      string
+		revision  *domain.RuleRevision
 		lookupErr error
-		wantErr bool
+		wantErr   bool
 	}{
 		{name: "valid global revision", revision: &domain.RuleRevision{TenantScope: domain.DomainConfigurationScope, RuleID: "orders-created", Revision: 7}},
 		{name: "missing revision", wantErr: true},

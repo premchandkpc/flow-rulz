@@ -20,14 +20,14 @@ func TestContractBindingsAllowOneContractToFanOutToMultipleRulesets(t *testing.T
 
 func TestContractBindingRequiresExactVersionAndSchemaHash(t *testing.T) {
 	binding := ContractBinding{
-		ContractName: "orders.created",
+		ContractName:    "orders.created",
 		ContractVersion: "v1",
-		ContractHash: "sha256:abc",
-		RuleSet: "orders-created",
+		ContractHash:    "sha256:abc",
+		RuleSet:         "orders-created",
 	}
 	tests := []struct {
 		name string
-		ref ContractRef
+		ref  ContractRef
 	}{
 		{name: "different contract", ref: ContractRef{Name: "orders.updated", Version: "v1", SchemaHash: "sha256:abc"}},
 		{name: "different version", ref: ContractRef{Name: "orders.created", Version: "v2", SchemaHash: "sha256:abc"}},

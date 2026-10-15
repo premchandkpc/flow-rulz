@@ -144,8 +144,8 @@ type ServiceDeployment struct {
 
 // RulesetAssignment pins a deployment to one immutable ruleset revision.
 type RulesetAssignment struct {
-	RulesetID string       `json:"ruleset_id"`
-	Revision  int64        `json:"revision"`
+	RulesetID string `json:"ruleset_id"`
+	Revision  int64  `json:"revision"`
 }
 
 // WorkerProfile contains service-level worker scaling and concurrency hints.

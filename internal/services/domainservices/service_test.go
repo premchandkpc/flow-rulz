@@ -167,7 +167,7 @@ func TestSaveSubscriptionUsesEventTypeFiltersWithoutTenantConfig(t *testing.T) {
 	repo := newRepositoryStub()
 	service := NewService(repo, fixedClock{now: time.Unix(80, 0).UTC()})
 	item, err := service.SaveService(context.Background(), domain.DomainConfigurationScope, &domain.DomainService{
-		Name: "audit-consumer",
+		Name:       "audit-consumer",
 		EventTypes: []string{" orders.created ", "orders.created", "payments.completed"},
 	})
 	if err != nil {
@@ -187,7 +187,7 @@ func TestSaveSubscriptionUsesEventTypeFiltersWithoutTenantConfig(t *testing.T) {
 func TestSaveSubscriptionRejectsInvalidEventType(t *testing.T) {
 	service := NewService(newRepositoryStub(), fixedClock{now: time.Unix(81, 0).UTC()})
 	_, err := service.SaveService(context.Background(), domain.DomainConfigurationScope, &domain.DomainService{
-		Name: "audit-consumer",
+		Name:       "audit-consumer",
 		EventTypes: []string{"Invalid Event Type"},
 	})
 	if !errors.Is(err, ErrInvalidInput) {

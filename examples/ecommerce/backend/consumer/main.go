@@ -11,11 +11,11 @@ import (
 
 	flowrulz "github.com/flowrulz/flow-rulz-sdk/go/flowrulz"
 
-	ordercreated "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/order_created"
-	paymentcompleted "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/payment_completed"
 	fraudresult "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/fraud_result"
 	fraudreview "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/fraud_review"
 	orderconfirmed "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/order_confirmed"
+	ordercreated "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/order_created"
+	paymentcompleted "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/payment_completed"
 	shipmentrequested "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/shipment_requested"
 )
 

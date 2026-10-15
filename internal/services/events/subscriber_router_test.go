@@ -12,7 +12,7 @@ import (
 type globalSubscriberRepositoryStub struct {
 	ports.SubscriberRepository
 	items []*domain.DomainService
-	err error
+	err   error
 }
 
 func (s globalSubscriberRepositoryStub) ListSubscribersForEvent(context.Context, string, string) ([]*domain.DomainService, error) {

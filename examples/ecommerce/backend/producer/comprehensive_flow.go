@@ -9,10 +9,10 @@ import (
 
 	flowrulz "github.com/flowrulz/flow-rulz-sdk/go/flowrulz"
 
-	ordercreated "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/order_created"
-	paymentcompleted "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/payment_completed"
 	fraudresult "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/fraud_result"
 	fraudreview "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/fraud_review"
+	ordercreated "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/order_created"
+	paymentcompleted "github.com/flowrulz/flow-rulz-domains/ecommerce/builds/go/payment_completed"
 )
 
 func main() {
@@ -85,11 +85,11 @@ func run() error {
 
 	// 3. Simulate fraud check result (passed)
 	fraud := fraudresult.Result{
-		CheckId:   "check-001",
-		OrderId:   "order-001",
-		Passed:    true,
-		RiskScore: 0.15,
-		Flags:     []string{},
+		CheckId:    "check-001",
+		OrderId:    "order-001",
+		Passed:     true,
+		RiskScore:  0.15,
+		Flags:      []string{},
 		ReviewedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -314,12 +314,12 @@ func sendEvent(ctx context.Context, client *flowrulz.Client, ruleSet, partitionK
 
 	// Create envelope manually (simplified)
 	env := &flowrulz.Envelope{
-		ID:            fmt.Sprintf("evt-%s-%d", ruleSet, time.Now().UnixNano()),
-		Type:          ruleSet,
-		TenantID:      client.Config().TenantID,
-		PartitionKey:  partitionKey,
-		OccurredAt:    time.Now().UTC(),
-		Data:          data,
+		ID:           fmt.Sprintf("evt-%s-%d", ruleSet, time.Now().UnixNano()),
+		Type:         ruleSet,
+		TenantID:     client.Config().TenantID,
+		PartitionKey: partitionKey,
+		OccurredAt:   time.Now().UTC(),
+		Data:         data,
 	}
 
 	return transport.Send(ctx, env)
@@ -336,11 +336,11 @@ func createOrder(orderId, customerId string, amount int) map[string]interface{} 
 			{"product_id": "prod-" + orderId, "quantity": 1, "unit_price": amount},
 		},
 		"shipping_address": map[string]interface{}{
-			"street":     "123 Batch St",
-			"city":       "Batch City",
-			"state":      "CA",
+			"street":      "123 Batch St",
+			"city":        "Batch City",
+			"state":       "CA",
 			"postal_code": "94102",
-			"country":    "US",
+			"country":     "US",
 		},
 		"created_at": time.Now().UTC().Format(time.RFC3339),
 	}

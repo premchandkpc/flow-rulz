@@ -15,9 +15,9 @@ var (
 	// ErrUnsupportedSchema indicates an envelope version this worker cannot process.
 	ErrUnsupportedSchema = errors.New("unsupported event schema")
 	// ErrHopLimit indicates an event exceeded the configured hop limit.
-	ErrHopLimit           = errors.New("event hop limit reached")
+	ErrHopLimit = errors.New("event hop limit reached")
 	// ErrMissingRuleset indicates the pinned active ruleset revision is unavailable.
-	ErrMissingRuleset     = errors.New("active ruleset revision is unavailable")
+	ErrMissingRuleset = errors.New("active ruleset revision is unavailable")
 )
 
 // EventEnvelope is the versioned, tenant-scoped event consumed by the worker.
@@ -34,13 +34,13 @@ type EventEnvelope struct {
 
 // EventMetadata carries correlation and event-chain metadata.
 type EventMetadata struct {
-	CorrelationID       string `json:"correlation_id,omitempty"`
-	CausationID         string `json:"causation_id,omitempty"`
-	BatchID             string `json:"batch_id,omitempty"`
-	Hop                 int    `json:"hop"`
-	RequestedRulesetID  string `json:"requested_ruleset_id,omitempty"`
-	TargetServiceID     string `json:"target_service_id,omitempty"`
-	DeploymentRevision  int64  `json:"deployment_revision,omitempty"`
+	CorrelationID      string `json:"correlation_id,omitempty"`
+	CausationID        string `json:"causation_id,omitempty"`
+	BatchID            string `json:"batch_id,omitempty"`
+	Hop                int    `json:"hop"`
+	RequestedRulesetID string `json:"requested_ruleset_id,omitempty"`
+	TargetServiceID    string `json:"target_service_id,omitempty"`
+	DeploymentRevision int64  `json:"deployment_revision,omitempty"`
 }
 
 // Record is an input record with its source stream position.
@@ -117,10 +117,10 @@ type Evaluator interface {
 
 // RuleEvaluator resolves pinned rulesets and delegates subscriber fan-out.
 type RuleEvaluator struct {
-	Resolver           Resolver
-	Router    SubscriberRouter
-	MaxHop    int
-	Now       func() time.Time
+	Resolver Resolver
+	Router   SubscriberRouter
+	MaxHop   int
+	Now      func() time.Time
 }
 
 // Evaluate is pure with respect to external side effects: it builds outputs in
@@ -131,7 +131,7 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, deploymentID string, deplo
 	}
 	if deploymentID == "" || deploymentRevision <= 0 {
 		return nil, nil, errors.New("worker service deployment identity and revision are required")
-}
+	}
 	if env.SchemaVersion != 1 {
 		return nil, nil, ErrUnsupportedSchema
 	}
@@ -231,12 +231,12 @@ type Worker struct {
 	DeploymentID       string
 	DeploymentRevision int64
 	GroupID            string
-	InputTopic    string
-	EffectsTopic  string
-	AuditTopic    string
-	Store         LogStore
-	Evaluator     Evaluator
-	Codec         Codec
+	InputTopic         string
+	EffectsTopic       string
+	AuditTopic         string
+	Store              LogStore
+	Evaluator          Evaluator
+	Codec              Codec
 }
 
 // Batch contains input records and the next offsets to checkpoint atomically.

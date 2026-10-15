@@ -29,7 +29,7 @@ var (
 )
 
 const (
-	maxDomainsPerService   = 25
+	maxDomainsPerService = 25
 )
 
 // Service manages domain configuration and service ruleset assignments.

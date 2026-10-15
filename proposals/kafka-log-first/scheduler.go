@@ -22,10 +22,10 @@ type ScheduleRecord struct {
 
 // DueSchedule carries a due schedule and the input checkpoint to advance atomically.
 type DueSchedule struct {
-	Key            []byte
-	Record         ScheduleRecord
-	Occurrence     string
-	InputPosition  InputCheckpoint
+	Key           []byte
+	Record        ScheduleRecord
+	Occurrence    string
+	InputPosition InputCheckpoint
 }
 
 // OccurrenceID must be deterministic for a schedule revision and due occurrence.
@@ -45,7 +45,7 @@ type Scheduler struct {
 	Codec          ScheduleCodec
 	EventsTopic    string
 	SchedulesTopic string
-	GroupID         string
+	GroupID        string
 }
 
 // FireDue atomically publishes the due event and tombstones the compacted schedule
@@ -116,4 +116,3 @@ func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
 	committed = true
 	return nil
 }
-

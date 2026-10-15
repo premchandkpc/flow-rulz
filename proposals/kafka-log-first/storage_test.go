@@ -67,7 +67,7 @@ func (s *memoryLogStore) ReadFrom(_ context.Context, stream, partition string, f
 		if sequence >= from {
 			result = append(result, LogEntry{
 				Position: LogPosition{Stream: stream, Partition: partition, Sequence: sequence},
-				Record: record,
+				Record:   record,
 			})
 			if limit > 0 && len(result) >= limit {
 				break
@@ -79,7 +79,7 @@ func (s *memoryLogStore) ReadFrom(_ context.Context, stream, partition string, f
 }
 
 func (s *memoryLogStore) Health(context.Context) error { return nil }
-func (s *memoryLogStore) Close() error                { return nil }
+func (s *memoryLogStore) Close() error                 { return nil }
 
 type memoryLogTx struct {
 	store     *memoryLogStore
@@ -186,7 +186,7 @@ func TestWorkerCommitsOutputsAndInputPositionsTogether(t *testing.T) {
 		DeploymentID: "tenant-a/tenant-a/domain-a/service-a", DeploymentRevision: 3,
 		GroupID: "worker-group", AuditTopic: "flow.audit", Store: store,
 		Evaluator: fixedEvaluator{effects: []Effect{effect}, audits: []ExecutionAudit{audit}},
-		Codec: jsonCodec{},
+		Codec:     jsonCodec{},
 	}
 	input, err := json.Marshal(EventEnvelope{
 		SchemaVersion: 1, ID: "event-1", TenantID: "tenant-1",
@@ -269,7 +269,7 @@ func TestSchedulerWritesEventAndTombstoneInOneTransaction(t *testing.T) {
 			DueAt: time.Unix(100, 0).UTC(),
 			Event: EventEnvelope{EventType: "timer.fired", PartitionKey: "order-1"},
 		},
-		Occurrence: OccurrenceID("schedule-1", 2, time.Unix(100, 0).UTC()),
+		Occurrence:    OccurrenceID("schedule-1", 2, time.Unix(100, 0).UTC()),
 		InputPosition: InputCheckpoint{Stream: "flow.schedules", Partition: "0", NextSequence: 7},
 	}
 	if err := scheduler.FireDue(context.Background(), due); err != nil {
@@ -301,7 +301,7 @@ func TestSchedulerDoesNotPublishPartialTransaction(t *testing.T) {
 			DueAt: time.Unix(200, 0).UTC(),
 			Event: EventEnvelope{EventType: "timer.fired", PartitionKey: "key"},
 		},
-		Occurrence: OccurrenceID("schedule", 1, time.Unix(200, 0).UTC()),
+		Occurrence:    OccurrenceID("schedule", 1, time.Unix(200, 0).UTC()),
 		InputPosition: InputCheckpoint{Stream: "flow.schedules", Partition: "0", NextSequence: 1},
 	}
 	if err := scheduler.FireDue(context.Background(), due); err == nil {

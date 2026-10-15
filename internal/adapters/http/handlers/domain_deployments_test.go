@@ -14,9 +14,9 @@ import (
 
 type deploymentCaptureUseCase struct {
 	ports.DomainServiceUseCase
-	called   bool
-	scope string
-	item     *domain.TenantDomain
+	called bool
+	scope  string
+	item   *domain.TenantDomain
 }
 
 func (s *deploymentCaptureUseCase) SaveDomain(_ context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
@@ -139,8 +139,8 @@ func TestCreateDomainRejectsMalformedDeploymentJSON(t *testing.T) {
 type subscriptionCaptureUseCase struct {
 	ports.DomainServiceUseCase
 	called bool
-	scope string
-	item *domain.DomainService
+	scope  string
+	item   *domain.DomainService
 }
 
 func (s *subscriptionCaptureUseCase) SaveService(_ context.Context, scope string, item *domain.DomainService) (*domain.DomainService, error) {
@@ -211,7 +211,6 @@ func TestCreateSubscriptionRejectsTenantConfiguration(t *testing.T) {
 	}
 }
 
-
 func TestCreateDomainRejectsRuntimeIdentityFields(t *testing.T) {
 	for _, field := range []string{"tenant_id", "partition_key", "event_types"} {
 		t.Run(field, func(t *testing.T) {
@@ -250,6 +249,8 @@ func TestCreateDomainRejectsServerManagedFields(t *testing.T) {
 		if res.Code != http.StatusBadRequest {
 			t.Fatalf("body %s: status = %d, want bad request", body, res.Code)
 		}
-		if service.called { t.Fatalf("SaveDomain called for server-managed input: %s", body) }
+		if service.called {
+			t.Fatalf("SaveDomain called for server-managed input: %s", body)
+		}
 	}
 }

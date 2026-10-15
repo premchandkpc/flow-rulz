@@ -12,11 +12,11 @@ import (
 
 var (
 	// ErrLogUnavailable indicates the selected log adapter cannot currently serve requests.
-	ErrLogUnavailable       = errors.New("log storage unavailable")
+	ErrLogUnavailable = errors.New("log storage unavailable")
 	// ErrPositionUnavailable indicates a requested replay position is no longer available.
-	ErrPositionUnavailable  = errors.New("log position unavailable")
+	ErrPositionUnavailable = errors.New("log position unavailable")
 	// ErrAmbiguousCommit indicates the caller must resolve a commit using idempotent retry or status lookup.
-	ErrAmbiguousCommit      = errors.New("log transaction outcome is ambiguous")
+	ErrAmbiguousCommit = errors.New("log transaction outcome is ambiguous")
 	// ErrIdempotencyConflict indicates a stable record ID was reused with different content.
 	ErrIdempotencyConflict = errors.New("record id reused with different content")
 )
@@ -24,13 +24,13 @@ var (
 // LogRecord is the backend-neutral unit persisted in the durable log.
 // ID must remain stable across retries. Adapters deduplicate identical IDs within a tenant and kind; reusing an ID with different content must return ErrIdempotencyConflict. PartitionKey defines the ordering lane.
 type LogRecord struct {
-	ID          string
-	TenantID    string
+	ID           string
+	TenantID     string
 	PartitionKey string
-	Kind        string
-	Key         []byte
-	Value       []byte
-	OccurredAt  time.Time
+	Kind         string
+	Key          []byte
+	Value        []byte
+	OccurredAt   time.Time
 }
 
 // LogPosition identifies an existing durable log entry. The backend interprets

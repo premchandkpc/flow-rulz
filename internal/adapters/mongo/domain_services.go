@@ -162,8 +162,8 @@ func (r *DomainServiceRepository) ListSubscribersForEvent(ctx context.Context, t
 	// Also read tenant-scoped legacy subscriptions during migration.
 	cursor, err := r.querier.Collection(collectionDomainServices).Find(ctx,
 		bson.M{
-			"tenant_id": bson.M{"$in": []string{tenantID, domain.DomainConfigurationScope}},
-			"active": true,
+			"tenant_id":   bson.M{"$in": []string{tenantID, domain.DomainConfigurationScope}},
+			"active":      true,
 			"event_types": eventType,
 		},
 		options.Find().SetLimit(101).SetSort(bson.D{{Key: "service_id", Value: 1}}))
@@ -197,7 +197,9 @@ func (r *DomainServiceRepository) ListSubscribersForEvent(ctx context.Context, t
 	defer func() { _ = domainCursor.Close(ctx) }()
 	domainIDs := make([]string, 0)
 	for domainCursor.Next(ctx) {
-		var doc struct { ID string `bson:"domain_id"` }
+		var doc struct {
+			ID string `bson:"domain_id"`
+		}
 		if err := domainCursor.Decode(&doc); err != nil {
 			return nil, fmt.Errorf("decode legacy domain: %w", err)
 		}
