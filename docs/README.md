@@ -10,6 +10,14 @@ FlowRulz is a Go event-driven rules runtime. Start with the [root README](../REA
 | [design.md](design.md) | Data model, transaction boundaries, consistency assumptions, state machines and failure handling |
 | [operations.md](operations.md) | Local deployment, process behavior, troubleshooting and operational checklist |
 | [rules.md](rules.md) | Rule JSON/YAML shape, operators, compilation, evaluation and deployment lifecycle |
+| [domain.md](domain.md) | Global Domain → Service → ruleset configuration; no event identity in configuration |
+| [ruleset.md](ruleset.md) | Immutable ruleset revisions and Service assignments |
+| [contract.md](contract.md) | Versioned payload contracts and schema hashes |
+| [event.md](event.md) | Runtime event envelope, tenant identity, partition key, and processing flow |
+| [worker.md](worker.md) | Go/Rust worker responsibilities, deployment identity, and guarantees |
+| [api.md](api.md) | HTTP API boundaries between configuration and runtime events |
+| [sample.md](sample.md) | Walkthrough of the JSON fixtures in `data/examples/` |
+| [data examples](../data/README.md) | Human-readable Domain, ruleset, contract, event, and worker samples |
 | [roadmap.md](roadmap.md) | Planned work; not a list of shipped capabilities |
 | [future-architecture.md](future-architecture.md) | Target-state proposal; keep separate from current behavior |
 | [audit/2026-10-10-audit.md](audit/2026-10-10-audit.md) | Historical audit snapshot; revalidate items against current source |
