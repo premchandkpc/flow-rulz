@@ -2,6 +2,7 @@
   "domain_id": "commerce",
   "service_id": "order-worker",
   "deployment_revision": 1,
+  "rulesets": ["order-review", "order-notification"],
   "worker_profile": {
     "min_replicas": 1,
     "max_replicas": 4,
