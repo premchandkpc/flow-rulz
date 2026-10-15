@@ -34,9 +34,6 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	handler.RegisterRoutes(mux)
 	body := `{
 		"name":"orders",
-		"tenant_id":"attacker-controlled",
-		"event_types":["not.configuration"],
-		"partition_key":"must-come-from-event",
 		"services":[{
 			"service_id":"order-worker",
 			"name":"order-worker",
@@ -90,6 +87,23 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	}
 	if _, exists := response["services"]; !exists {
 		t.Fatal("domain API response must expose nested services")
+	}
+}
+
+func TestCreateDomainRejectsTenantAndRuntimeIdentityFields(t *testing.T) {
+	service := &deploymentCaptureUseCase{}
+	handler := NewDomainServiceHandler(service)
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	body := `{"name":"orders","tenant_id":"caller","event_types":["orders.created"],"partition_key":"order-1","services":[{"service_id":"orders-worker","name":"orders-worker","revision":1,"active":true,"rulesets":[{"ruleset_id":"orders-created","revision":1}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(body))
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s; want bad request for runtime fields in config", res.Code, res.Body.String())
+	}
+	if service.called {
+		t.Fatal("SaveDomain must not be called when tenant/event identity fields are supplied")
 	}
 }
 
