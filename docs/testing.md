@@ -13,7 +13,7 @@ Use this checklist whenever changing a Domain, Service assignment, ruleset, cont
 
 ## Runtime event boundary
 
-- [ ] Event envelope carries `tenant_id` and `partition_key`.
+- [ ] Event envelope carries `meta.tenant_id` and `meta.partition_key`; unknown `meta` fields survive Go/Rust decode-encode round trips.
 - [ ] Shard identity is derived from both fields.
 - [ ] Inbox/deduplication, execution IDs, audit records, and effects retain the event's tenant identity.
 - [ ] Contract name/version/hash are validated before rule evaluation.
