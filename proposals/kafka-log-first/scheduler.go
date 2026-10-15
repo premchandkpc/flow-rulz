@@ -56,8 +56,17 @@ func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
 	if s.Store == nil || s.Codec == nil || s.EventsTopic == "" || s.SchedulesTopic == "" || s.GroupID == "" {
 		return errors.New("scheduler dependencies are not configured")
 	}
-	if due.Record.ScheduleID == "" || due.Record.TenantID == "" || due.Occurrence == "" {
-		return errors.New("schedule identity and deterministic occurrence are required")
+	if due.Record.ScheduleID == "" || due.Record.TenantID == "" || due.Record.Revision <= 0 {
+		return errors.New("schedule identity, tenant, and positive revision are required")
+	}
+	if len(due.Key) == 0 {
+		return errors.New("compacted schedule key is required")
+	}
+	if due.Record.DueAt.IsZero() || due.Record.Event.EventType == "" || due.Record.Event.PartitionKey == "" {
+		return errors.New("schedule due time, event type, and event partition key are required")
+	}
+	if due.Occurrence == "" || due.Occurrence != OccurrenceID(due.Record.ScheduleID, due.Record.Revision, due.Record.DueAt) {
+		return errors.New("occurrence must match the deterministic schedule revision and due time")
 	}
 	if due.InputPosition.Stream == "" || due.InputPosition.Partition == "" || due.InputPosition.NextSequence < 0 {
 		return errors.New("consumed input position is required")
