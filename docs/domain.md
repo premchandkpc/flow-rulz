@@ -40,7 +40,7 @@ Changing ruleset assignments or the worker profile requires a higher Service rev
 
 ## Runtime routing
 
-The event supplies `tenant_id` and `partition_key`. The worker uses the combined value as the stable ordering/sharding key. These fields are not copied into Domain configuration.
+Each event supplies `meta.tenant_id` and `meta.partition_key`. The worker uses the combined value as the stable ordering/sharding key. These fields are not copied into Domain configuration.
 
 The intended routing flow is:
 
@@ -63,4 +63,4 @@ A subscriber registration is not an execution Service. Keep receiver subscriptio
 - `PUT /v1/domains/{domainID}`: update a Domain.
 - `DELETE /v1/domains/{domainID}`: delete a Domain.
 
-The Domain API rejects unknown fields, so adding `tenant_id`, `partition_key`, or `event_types` to a configuration request is an error.
+The Domain API rejects unknown fields, so adding runtime metadata such as `meta`, `tenant_id`, `partition_key`, or `event_types` to a configuration request is an error.
