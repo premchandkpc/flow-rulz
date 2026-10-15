@@ -220,6 +220,12 @@ func cloneIngestionMeta(input map[string]json.RawMessage) map[string]json.RawMes
 func buildEventHeaders(request eventIngestionRequest) map[string]string {
 	headers := make(map[string]string, len(request.Headers)+3)
 	for key, value := range request.Headers { headers[key] = value }
+	if raw := request.Meta["headers"]; len(raw) > 0 {
+		var metaHeaders map[string]string
+		if json.Unmarshal(raw, &metaHeaders) == nil {
+			for key, value := range metaHeaders { headers[key] = value }
+		}
+	}
 	if value := eventMetaString(request.Meta, "correlation_id"); value != "" { headers["Correlation-ID"] = value } else if request.CorrelationID != "" { headers["Correlation-ID"] = request.CorrelationID }
 	if value := eventMetaString(request.Meta, "causation_id"); value != "" { headers["Causation-ID"] = value } else if request.CausationID != "" { headers["Causation-ID"] = request.CausationID }
 	if request.SchemaVersion != "" { headers["Schema-Version"] = request.SchemaVersion }
