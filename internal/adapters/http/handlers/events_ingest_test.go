@@ -44,11 +44,11 @@ func TestEventIngestionPublishesValidatedEnvelopeToShard(t *testing.T) {
 		Type         string            `json:"type"`
 		Meta         map[string]any     `json:"meta"`
 		OccurredAt   time.Time         `json:"occurred_at"`
-		Data         []byte            `json:"data"`
+		Data         json.RawMessage   `json:"data"`
 		Headers      map[string]string `json:"headers,omitempty"`
 	}{
 		ID: "evt-1", Type: "order.created", Meta: map[string]any{"tenant_id": "tenant-a", "partition_key": "order-1", "region": "ap-south-1"}, OccurredAt: time.Now().UTC(),
-		Data: []byte(`{"order_id":"order-1"}`),
+		Data: json.RawMessage(`{"order_id":"order-1"}`),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -95,9 +95,9 @@ func TestEventIngestionRejectsTenantMismatch(t *testing.T) {
 		Type         string    `json:"type"`
 		Meta         map[string]any `json:"meta"`
 		OccurredAt   time.Time `json:"occurred_at"`
-		Data         []byte    `json:"data"`
+		Data         json.RawMessage `json:"data"`
 	}{
-		ID: "evt-1", Type: "order.created", Meta: map[string]any{"tenant_id": "tenant-victim", "partition_key": "order-1"}, OccurredAt: time.Now().UTC(), Data: []byte(`{}`),
+		ID: "evt-1", Type: "order.created", Meta: map[string]any{"tenant_id": "tenant-victim", "partition_key": "order-1"}, OccurredAt: time.Now().UTC(), Data: json.RawMessage(`{}`),
 	})
 	if err != nil {
 		t.Fatal(err)
