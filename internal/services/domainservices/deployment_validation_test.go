@@ -3,6 +3,7 @@ package domainservices
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -88,7 +89,7 @@ type mappedRuleRevisionStub struct {
 }
 
 func (r mappedRuleRevisionStub) GetRevision(_ context.Context, tenantID, rulesetID string, revision int64) (*domain.RuleRevision, error) {
-	key := tenantID + "/" + rulesetID + "/" + string(rune(revision))
+	key := tenantID + "/" + rulesetID + "/" + strconv.FormatInt(revision, 10)
 	if err := r.errs[key]; err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func (r mappedRuleRevisionStub) GetRevision(_ context.Context, tenantID, ruleset
 
 func TestDeploymentRuleRevisionAndContractValidation(t *testing.T) {
 	lookupError := errors.New("revision storage unavailable")
-	key := "tenant-a/orders-created/" + string(rune(7))
+	key := "tenant-a/orders-created/" + strconv.FormatInt(7, 10)
 	goodRevision := &domain.RuleRevision{
 		TenantScope: "tenant-a", RuleID: "orders-created", Revision: 7,
 		InputContract: &domain.ContractRef{Name: "order.created", Version: "v1", SchemaHash: "sha256:abc"},
