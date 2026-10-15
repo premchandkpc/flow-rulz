@@ -66,8 +66,8 @@ rules:
 	if service.calls != 1 {
 		t.Fatalf("CompileAndActivate calls = %d, want 1", service.calls)
 	}
-	if service.tenantScope != "default" || service.ruleSet != "order.created" || service.actor != "api" {
-		t.Fatalf("unexpected call metadata: tenant=%q rule=%q actor=%q", service.tenantScope, service.ruleSet, service.actor)
+	if service.tenantScope != domain.DomainConfigurationScope || service.ruleSet != "order.created" || service.actor != "api" {
+		t.Fatalf("unexpected call metadata: scope=%q rule=%q actor=%q", service.tenantScope, service.ruleSet, service.actor)
 	}
 	var document map[string]any
 	if err := json.Unmarshal(service.source, &document); err != nil {
