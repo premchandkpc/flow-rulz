@@ -283,7 +283,7 @@ mod deployment_routing_tests {
             }),
             message_kind: None,
             correlation_id: None,
-            causation_id: None, meta: Default::default(),
+            causation_id: None,
         }
     }
 
@@ -330,8 +330,8 @@ mod deployment_routing_tests {
     fn rejects_wrong_shard_even_when_service_matches() {
         let cfg = config(Some("domain-a/orders"), Some(3));
         let env = event(HashMap::from([
-            ("flow.service_id".into(), "domain-a/orders".into()),
-            ("flow.deployment_revision".into(), "3".into()),
+            ("flow.service_id".into(), json!("domain-a/orders")),
+            ("flow.deployment_revision".into(), json!("3")),
         ]));
         let correct = env.virtual_shard(cfg.num_shards).unwrap();
         let wrong = (correct + 1) % cfg.num_shards;
