@@ -109,3 +109,59 @@ func TestCreateDomainRejectsMalformedDeploymentJSON(t *testing.T) {
 		t.Fatal("SaveDomain must not be called for malformed JSON")
 	}
 }
+
+type subscriptionCaptureUseCase struct {
+	ports.DomainServiceUseCase
+	called bool
+	scope string
+	item *domain.DomainService
+}
+
+func (s *subscriptionCaptureUseCase) SaveService(_ context.Context, scope string, item *domain.DomainService) (*domain.DomainService, error) {
+	s.called = true
+	s.scope = scope
+	cloned := *item
+	cloned.EventTypes = append([]string(nil), item.EventTypes...)
+	s.item = &cloned
+	return item, nil
+}
+
+func TestCreateSubscriptionUsesEventTypesWithoutTenantConfiguration(t *testing.T) {
+	service := &subscriptionCaptureUseCase{}
+	handler := NewDomainServiceHandler(service)
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	req := httptest.NewRequest(http.MethodPost, "/v1/subscriptions", strings.NewReader(`{"name":"audit-consumer","event_types":["orders.created","payments.completed"]}`))
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+	if res.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s; want created", res.Code, res.Body.String())
+	}
+	if !service.called || service.scope != domain.DomainConfigurationScope {
+		t.Fatalf("SaveService called=%t scope=%q", service.called, service.scope)
+	}
+	if len(service.item.EventTypes) != 2 || service.item.EventTypes[0] != "orders.created" {
+		t.Fatalf("subscription filters = %#v", service.item.EventTypes)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if _, exists := response["tenant_id"]; exists {
+		t.Fatal("subscription API must not expose tenant_id")
+	}
+}
+
+func TestLegacyStandaloneServiceRouteIsNotRegistered(t *testing.T) {
+	handler := NewDomainServiceHandler(&deploymentCaptureUseCase{})
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	_, pattern := mux.Handler(httptest.NewRequest(http.MethodGet, "/v1/services", nil))
+	if pattern != "" {
+		t.Fatalf("legacy /v1/services route pattern = %q, want no route", pattern)
+	}
+	_, pattern = mux.Handler(httptest.NewRequest(http.MethodGet, "/v1/subscriptions", nil))
+	if pattern == "" {
+		t.Fatal("/v1/subscriptions route must remain available for generic subscriber routing")
+	}
+}
