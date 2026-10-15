@@ -46,9 +46,9 @@ pub(super) async fn load_active_revision(tx: &mut Transaction<'_, Postgres>, eve
          FROM rule_revisions r JOIN rule_activations a \
          ON a.tenant_scope=r.tenant_scope AND a.rule_set=r.rule_id AND a.revision=r.revision \
          WHERE a.tenant_scope=$1 AND a.rule_set=$2"
-    ).bind(&event.tenant_id).bind(&event.event_type).fetch_optional(&mut **tx).await
+    ).bind("__domain_configuration__").bind(&event.event_type).fetch_optional(&mut **tx).await
      .context("load active rule revision")?.ok_or_else(|| anyhow!(
-        "active rule revision not found for tenant={} rule_set={}", event.tenant_id, event.event_type
+        "active rule revision not found in global configuration for rule_set={}", event.event_type
      ))?;
     Ok(RuleRevision {
         tenant_scope: row.try_get("tenant_scope")?,
