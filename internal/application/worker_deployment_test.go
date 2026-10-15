@@ -7,9 +7,9 @@ import (
 )
 
 func TestValidateServiceDeploymentRequiresExactTargetAndRevision(t *testing.T) {
-	worker := &Worker{config: WorkerConfig{ServiceID: "orders-evaluator", DeploymentRevision: 4}}
+	worker := &Worker{config: WorkerConfig{ServiceID: "tenant-a/orders-domain/orders-evaluator", DeploymentRevision: 4}}
 	event := &domain.EventEnvelope{Headers: map[string]string{
-		"flow.service_id":          "orders-evaluator",
+		"flow.service_id":          "tenant-a/orders-domain/orders-evaluator",
 		"flow.deployment_revision": "4",
 	}}
 	if err := worker.validateServiceDeployment(event); err != nil {
@@ -19,7 +19,7 @@ func TestValidateServiceDeploymentRequiresExactTargetAndRevision(t *testing.T) {
 	if err := worker.validateServiceDeployment(event); err == nil {
 		t.Fatal("expected cross-service event to be rejected")
 	}
-	event.Headers["flow.service_id"] = "orders-evaluator"
+	event.Headers["flow.service_id"] = "tenant-a/orders-domain/orders-evaluator"
 	event.Headers["flow.deployment_revision"] = "3"
 	if err := worker.validateServiceDeployment(event); err == nil {
 		t.Fatal("expected stale deployment revision to be rejected")
