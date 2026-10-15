@@ -15,7 +15,7 @@ The storage implementation is an adapter behind these ports. Start with one expl
 
 ## Service deployment boundary
 
-A Domain contains Services. Each Service declares the ruleset revisions and contract bindings assigned to its worker deployment. The ingress router routes an event to the relevant service work stream; each worker group consumes only its assigned service stream and must not load all tenant rulesets. Scaling one service changes only that service worker pool.
+A Domain contains Services. Each Service declares the immutable ruleset revisions assigned to its worker deployment. Contract-to-ruleset bindings remain independent, versioned records; the router resolves the event contract against those bindings and intersects the matching rulesets with each target service's assigned revisions. Each worker group consumes only its assigned service stream and must not load all tenant rulesets. Scaling one service changes only that service worker pool.
 
 Do not confuse a Service deployment (where rules execute) with a subscriber/receiver registration (where an emitted event is delivered). They are separate configuration concepts and must have separate IDs, lifecycle, and authorization. Subscriber fan-out remains a generic post-evaluation routing stage.
 
@@ -44,7 +44,7 @@ The current NATS JetStream + PostgreSQL runtime remains active until a separatel
 
 ## Current API and worker rollout contract
 
-- The management API represents execution deployments as `deployments` on a tenant Domain. Each entry pins a `service_id`, deployment `revision`, and immutable `ruleset_id`/revision assignments. PostgreSQL stores this as JSONB; MongoDB stores the equivalent BSON document field. The standalone contract is `contracts/schemas/service-deployment.schema.json`.
+- The management API represents execution deployments as `deployments` on a tenant Domain. Each entry pins a `service_id`, deployment `revision`, and immutable `ruleset_id`/revision assignments. Contract-to-ruleset bindings remain independent and can fan one contract out to multiple rulesets. PostgreSQL stores deployments as JSONB; MongoDB stores the equivalent BSON document field. The standalone contract is `contracts/schemas/service-deployment.schema.json`.
 - This execution-deployment model is intentionally separate from the existing `/v1/services` subscriber registry. Subscriber registrations continue to drive generic post-evaluation delivery only.
 - Go and Rust workers accept `FLOW_SERVICE_ID` plus `FLOW_DEPLOYMENT_REVISION` as a paired deployment identity. When configured, they fail closed on events whose `flow.service_id` or `flow.deployment_revision` headers do not match. `NATS_RULESETS` / `NATS_RULESETS` (Rust) must be generated from that Domain Service's pinned assignment; do not configure a service worker with every tenant ruleset.
 - The current NATS/PostgreSQL data plane does not yet dynamically publish deployment changes to worker pools. The API persists and validates assignments, while rollout tooling must currently translate the selected deployment revision into worker environment/config and routed-event headers. The Kafka router in this proposal is the future automated distribution path, not a feature claimed to exist today.
