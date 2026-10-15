@@ -194,3 +194,19 @@ func TestLegacyStandaloneServiceRouteIsNotRegistered(t *testing.T) {
 		t.Fatal("/v1/subscriptions route must remain available for generic subscriber routing")
 	}
 }
+
+func TestCreateSubscriptionRejectsTenantConfiguration(t *testing.T) {
+	service := &subscriptionCaptureUseCase{}
+	handler := NewDomainServiceHandler(service)
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+	req := httptest.NewRequest(http.MethodPost, "/v1/subscriptions", strings.NewReader(`{"name":"audit-consumer","tenant_id":"caller-controlled","event_types":["orders.created"]}`))
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s; want bad request", res.Code, res.Body.String())
+	}
+	if service.called {
+		t.Fatal("SaveService must not be called when tenant configuration is supplied")
+	}
+}
