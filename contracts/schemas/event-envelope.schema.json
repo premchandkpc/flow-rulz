@@ -121,11 +121,6 @@
           ],
           "description": "Internal deployment revision added or verified by trusted routing infrastructure."
         },
-        "schema_version": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Optional compatibility marker for the metadata contract."
-        },
         "batch_id": {
           "type": "string",
           "minLength": 1,
