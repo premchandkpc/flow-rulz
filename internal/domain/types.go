@@ -151,7 +151,7 @@ type WorkerProfile struct {
 	Concurrency int `json:"concurrency,omitempty"`
 }
 
-// DomainService is a tenant-owned NATS consumer and its domain subscriptions.
+// DomainService is a generic event subscription. It is separate from execution Services nested under a Domain.
 // nolint:revive // type name stutters with package name but is a domain concept
 // DomainService represents the domain service.
 type DomainService struct {
@@ -159,8 +159,9 @@ type DomainService struct {
 	TenantID    string    `json:"-"`
 	Name        string    `json:"name"`
 	NATSSubject string    `json:"nats_subject"`
-	EndpointURL string    `json:"endpoint_url,omitempty"` // Deprecated legacy field; never used for delivery.
-	DomainIDs   []string  `json:"domain_ids"`
+	EndpointURL string    `json:"-"` // Deprecated legacy field; never used for delivery.
+	EventTypes  []string  `json:"event_types"`
+	DomainIDs   []string  `json:"-"` // Legacy internal domain subscriptions; new subscriptions use event_types.
 	Active      bool      `json:"active"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
