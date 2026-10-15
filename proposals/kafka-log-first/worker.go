@@ -39,6 +39,8 @@ type EventMetadata struct {
 	BatchID             string `json:"batch_id,omitempty"`
 	Hop                 int    `json:"hop"`
 	RequestedRulesetID  string `json:"requested_ruleset_id,omitempty"`
+	TargetServiceID     string `json:"target_service_id,omitempty"`
+	DeploymentRevision  int64  `json:"deployment_revision,omitempty"`
 }
 
 // Record is an input record with its source stream position.
@@ -99,7 +101,7 @@ type ExecutionAudit struct {
 // Resolver reads rebuildable projections populated from compacted config topics.
 // Resolve must return a pinned immutable revision, never a mutable "latest" object.
 type Resolver interface {
-	Resolve(context.Context, EventEnvelope) ([]RulesetRef, error)
+	Resolve(context.Context, string, int64, EventEnvelope) ([]RulesetRef, error)
 	GetRevision(context.Context, RulesetRef) (CompiledRuleset, string, error)
 }
 
@@ -116,7 +118,9 @@ type Evaluator interface {
 
 // RuleEvaluator resolves pinned rulesets and delegates subscriber fan-out.
 type RuleEvaluator struct {
-	Resolver  Resolver
+	DeploymentID       string
+	DeploymentRevision int64
+	Resolver           Resolver
 	Router    SubscriberRouter
 	MaxHop    int
 	Now       func() time.Time
@@ -128,16 +132,22 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effe
 	if e == nil || e.Resolver == nil {
 		return nil, nil, errors.New("ruleset resolver is not configured")
 	}
+	if e.DeploymentID == "" || e.DeploymentRevision <= 0 {
+		return nil, nil, errors.New("worker service deployment identity and revision are required")
+}
 	if env.SchemaVersion != 1 {
 		return nil, nil, ErrUnsupportedSchema
 	}
 	if env.ID == "" || env.TenantID == "" || env.EventType == "" || env.PartitionKey == "" {
 		return nil, nil, errors.New("event id, tenant, type, and partition key are required")
 	}
+	if env.Metadata.TargetServiceID != e.DeploymentID || env.Metadata.DeploymentRevision != e.DeploymentRevision {
+		return nil, nil, errors.New("event target does not match this worker deployment")
+	}
 	if e.MaxHop > 0 && env.Metadata.Hop >= e.MaxHop {
 		return nil, nil, ErrHopLimit
 	}
-	refs, err := e.Resolver.Resolve(ctx, env)
+	refs, err := e.Resolver.Resolve(ctx, e.DeploymentID, e.DeploymentRevision, env)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -224,7 +234,10 @@ type Codec interface {
 // Worker owns no shard lease or correctness-critical key queue. Kafka consumer-group
 // assignment and stable record keys define partition ownership and per-partition order.
 type Worker struct {
-	GroupID       string
+	// DeploymentID identifies the Domain/Service worker deployment this process serves.
+	DeploymentID       string
+	DeploymentRevision int64
+	GroupID            string
 	InputTopic    string
 	EffectsTopic  string
 	AuditTopic    string
@@ -244,8 +257,8 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 	if len(batch.Records) == 0 {
 		return nil
 	}
-	if w.GroupID == "" || w.Store == nil || w.Evaluator == nil || w.Codec == nil {
-		return errors.New("worker dependencies are not configured")
+	if w.DeploymentID == "" || w.DeploymentRevision <= 0 || w.GroupID == "" || w.Store == nil || w.Evaluator == nil || w.Codec == nil {
+		return errors.New("worker deployment identity or dependencies are not configured")
 	}
 	if len(batch.Offsets) == 0 {
 		return errors.New("input offsets are required for transactional processing")
