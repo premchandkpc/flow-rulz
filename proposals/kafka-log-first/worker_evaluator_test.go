@@ -2,6 +2,7 @@ package logfirst
 
 import (
 	"context"
+	"strconv"
 	"errors"
 	"testing"
 	"time"
@@ -49,7 +50,7 @@ func evaluatorEvent() EventEnvelope {
 		SchemaVersion: 1, ID: "event-1", TenantID: "tenant-a",
 		EventType: "orders.created", PartitionKey: "order-1",
 		OccurredAt: time.Unix(100, 0).UTC(),
-		Metadata: EventMetadata{TargetServiceID: "tenant-a/domain-a/orders", DeploymentRevision: 2},
+		Metadata: EventMetadata{TargetServiceID: "domain-a/orders", DeploymentRevision: 2},
 	}
 }
 
@@ -61,8 +62,8 @@ func TestRuleEvaluatorEvaluatesPinnedRulesAndRoutesOnce(t *testing.T) {
 	evaluator := &RuleEvaluator{
 		Resolver: evaluatorResolver{
 			refs: []RulesetRef{
-				{TenantID: "tenant-a", RulesetID: "orders-created", Revision: 3},
-				{TenantID: "tenant-a", RulesetID: "orders-notify", Revision: 5},
+				{RulesetID: "orders-created", Revision: 3},
+				{RulesetID: "orders-notify", Revision: 5},
 			},
 			compiledByRuleset: map[string]CompiledRuleset{
 				"orders-created": evaluatorRuleset{effects: []Effect{{
@@ -115,16 +116,18 @@ func TestRuleEvaluatorRejectsInvalidEnvelopeAndDeployment(t *testing.T) {
 	}
 }
 
-func TestRuleEvaluatorRejectsCrossTenantOrInvalidResolverReferences(t *testing.T) {
+func TestRuleEvaluatorRejectsInvalidResolverReferences(t *testing.T) {
 	tests := []RulesetRef{
-		{TenantID: "tenant-b", RulesetID: "orders-created", Revision: 1},
-		{TenantID: "tenant-a", RulesetID: "", Revision: 1},
-		{TenantID: "tenant-a", RulesetID: "orders-created", Revision: 0},
+		{RulesetID: "", Revision: 1},
+		{RulesetID: "orders-created", Revision: 0},
+		{RulesetID: "orders-created", Revision: -1},
 	}
 	for i, ref := range tests {
-		t.Run(string(rune('a'+i)), func(t *testing.T) {
-			_, _, err := (&RuleEvaluator{Resolver: evaluatorResolver{refs: []RulesetRef{ref}}}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
-			if err == nil { t.Fatal("expected invalid resolver reference error") }
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			_, _, err := (&RuleEvaluator{Resolver: evaluatorResolver{refs: []RulesetRef{ref}}}).Evaluate(context.Background(), "domain-a/orders", 2, evaluatorEvent())
+			if err == nil {
+				t.Fatal("expected invalid resolver reference error")
+			}
 		})
 	}
 }
@@ -136,14 +139,14 @@ func TestRuleEvaluatorPropagatesResolutionFailures(t *testing.T) {
 
 	revisionErr := errors.New("immutable revision missing")
 	_, _, err = (&RuleEvaluator{Resolver: evaluatorResolver{
-		refs: []RulesetRef{{TenantID: "tenant-a", RulesetID: "orders-created", Revision: 1}},
+		refs: []RulesetRef{{RulesetID: "orders-created", Revision: 1}},
 		revisionErr: revisionErr,
 	}}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
 	if !errors.Is(err, ErrMissingRuleset) || !errors.Is(err, revisionErr) { t.Fatalf("revision error = %v", err) }
 
 	evaluationErr := errors.New("rule engine failed")
 	_, _, err = (&RuleEvaluator{Resolver: evaluatorResolver{
-		refs: []RulesetRef{{TenantID: "tenant-a", RulesetID: "orders-created", Revision: 1}},
+		refs: []RulesetRef{{RulesetID: "orders-created", Revision: 1}},
 		compiled: evaluatorRuleset{err: evaluationErr},
 	}}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
 	if !errors.Is(err, evaluationErr) { t.Fatalf("evaluation error = %v", err) }
@@ -151,7 +154,7 @@ func TestRuleEvaluatorPropagatesResolutionFailures(t *testing.T) {
 
 func TestRuleEvaluatorRejectsNilCompiledRuleset(t *testing.T) {
 	_, _, err := (&RuleEvaluator{Resolver: evaluatorResolver{
-		refs: []RulesetRef{{TenantID: "tenant-a", RulesetID: "orders-created", Revision: 1}},
+		refs: []RulesetRef{{RulesetID: "orders-created", Revision: 1}},
 	}}).Evaluate(context.Background(), "tenant-a/domain-a/orders", 2, evaluatorEvent())
 	if !errors.Is(err, ErrMissingRuleset) { t.Fatalf("error = %v, want ErrMissingRuleset", err) }
 }
