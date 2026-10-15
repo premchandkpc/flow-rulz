@@ -8,7 +8,7 @@ FlowRulz is a Go-based, event-driven rules runtime. NATS JetStream retains the d
 
 | Process | Entrypoint | Responsibility |
 |---|---|---|
-| HTTP API (control plane) | cmd/api | Rule revisions/activation, admin-scoped workflow definitions, contracts, batch/quarantine read views, tenant domains/services, read-only execution and trace views |
+| HTTP API (control plane) | cmd/api | Rule revisions/activation, admin-scoped workflow definitions, contracts, batch/quarantine read views, Domain configuration and subscriptions, read-only execution and trace views |
 | Worker | cmd/worker | NATS JetStream consumption, shard leases/fencing, per-process key serialization, event evaluation, outbox publishing |
 | Code generator | cmd/codegen | Generate Go, Java, Protobuf, and JSON Schema artifacts from a contract already registered in storage |
 | Migration CLI | cmd/migrate | Apply pending migrations; only the up command is implemented |
@@ -25,7 +25,7 @@ The HTTP API is a control-plane service. It creates and validates configuration 
 2. The worker consumes only shards for which it owns a lease. The key queue serializes work for each partition key within this worker process and can allow concurrency across keys. This alone does not guarantee end-to-end per-key ordering across redelivery, lease handoff, or concurrent outbox publishers.
 3. Inside one storage transaction, the event service validates the fencing token, checks the inbox for duplicates, resolves applicable active rulesets (including contract bindings when present), evaluates rules, and writes execution records, ruleset-declared effects, and subscriber delivery intents produced by the separate subscription router.
 4. The worker acknowledges the broker delivery only after the transaction commits.
-5. The outbox dispatcher publishes durable effects: child events return to `events.shard.N`; command effects go to `commands.<destination>.<name>`; generic effects go to `effects.<topic>`; explicit `service_event` effects and subscription-router deliveries use a tenant-scoped `services.<tenant-hash>.<service-hash>` subject. Delivery is at-least-once.
+5. The outbox dispatcher publishes durable effects: child events return to `events.shard.N`; command effects go to `commands.<destination>.<name>`; generic effects go to `effects.<topic>`; explicit `service_event` effects and subscription-router deliveries use a scope-hashed `services.<scope-hash>.<subscription-hash>` subject. Delivery is at-least-once.
 6. The scheduler claims due scheduled events and publishes them to the same event subject family.
 
 NATS delivery is at-least-once. JetStream is the durable append-only message log; PostgreSQL is the durable transactional state store for inbox deduplication, executions, and outbox delivery state. Runtime caches are disposable accelerators and must be rebuildable from durable stores. The inbox prevents duplicate event execution when storage constraints and transaction semantics hold. External effects are effectively-once only when the destination honors the idempotency key. Do not claim exactly-once delivery.
@@ -120,7 +120,7 @@ Environment variable names and local defaults are documented in .env.example. AP
 - internal/domain contains business types, validation, state transitions, IDs, and hashes.
 - internal/ports defines broker, storage, transaction, and service interfaces.
 - internal/rules contains rule compilation and deterministic evaluation.
-- internal/services contains event, effects, tenant domain/service, rules, batch, workflow, and quarantine use cases.
+- internal/services contains event, effects, Domain configuration and subscriptions, rules, batch, workflow, and quarantine use cases.
 - internal/application and internal/runtime contain worker orchestration, the per-key queue, shard leases, and the scheduler.
 - internal/adapters contains HTTP management handlers, PostgreSQL, MongoDB, NATS, Redis, fake test destinations, and NATS effect destinations.
 - internal/storage selects and wires the configured persistence backend.
