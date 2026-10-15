@@ -295,7 +295,7 @@ func normalizeAndValidateService(item *domain.DomainService, scopeID string) err
 	if item == nil {
 		return fmt.Errorf("%w: service is required", ErrInvalidInput)
 	}
-	item.TenantID = tenantID
+	item.TenantID = scopeID
 	item.Name = strings.TrimSpace(item.Name)
 	item.EndpointURL = strings.TrimSpace(item.EndpointURL)
 	item.DomainIDs = uniqueTrimmed(item.DomainIDs)
