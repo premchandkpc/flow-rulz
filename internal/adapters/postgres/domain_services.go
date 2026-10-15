@@ -43,9 +43,9 @@ func (r *DomainServiceRepository) SaveDomain(ctx context.Context, item *domain.T
 	`, item.TenantID, item.ID, item.Name, item.EventTypes, deployments, item.CreatedAt, item.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return fmt.Errorf("%w: tenant domain name already exists", domain.ErrDomainServiceConflict)
+			return fmt.Errorf("%w: domain name already exists", domain.ErrDomainServiceConflict)
 		}
-		return fmt.Errorf("save tenant domain: %w", err)
+		return fmt.Errorf("save domain: %w", err)
 	}
 	return nil
 }
@@ -62,7 +62,7 @@ func (r *DomainServiceRepository) GetDomain(ctx context.Context, tenantID, domai
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get tenant domain: %w", err)
+		return nil, fmt.Errorf("get domain: %w", err)
 	}
 	if len(deployments) > 0 {
 		if err := json.Unmarshal(deployments, &item.Deployments); err != nil {
@@ -79,7 +79,7 @@ func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID stri
 		FROM tenant_domains WHERE tenant_id = $1 ORDER BY name
 	`, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("list tenant domains: %w", err)
+		return nil, fmt.Errorf("list domains: %w", err)
 	}
 	defer rows.Close()
 
@@ -88,7 +88,7 @@ func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID stri
 		item := &domain.TenantDomain{}
 		var deployments []byte
 		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EventTypes, &deployments, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan tenant domain: %w", err)
+			return nil, fmt.Errorf("scan domain: %w", err)
 		}
 		if len(deployments) > 0 {
 			if err := json.Unmarshal(deployments, &item.Deployments); err != nil {
@@ -98,7 +98,7 @@ func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID stri
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate tenant domains: %w", err)
+		return nil, fmt.Errorf("iterate domains: %w", err)
 	}
 	return items, nil
 }
@@ -107,7 +107,7 @@ func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID stri
 func (r *DomainServiceRepository) DeleteDomain(ctx context.Context, tenantID, domainID string) error {
 	_, err := r.querier.Exec(ctx, `DELETE FROM tenant_domains WHERE tenant_id = $1 AND domain_id = $2`, tenantID, domainID)
 	if err != nil {
-		return fmt.Errorf("delete tenant domain: %w", err)
+		return fmt.Errorf("delete domain: %w", err)
 	}
 	return nil
 }
@@ -117,14 +117,14 @@ func (r *DomainServiceRepository) SaveService(ctx context.Context, item *domain.
 	if pool, ok := r.querier.(*pgxpool.Pool); ok {
 		tx, err := pool.Begin(ctx)
 		if err != nil {
-			return fmt.Errorf("begin save tenant service: %w", err)
+			return fmt.Errorf("begin save subscription: %w", err)
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
 		if err := (&DomainServiceRepository{querier: tx}).saveService(ctx, item); err != nil {
 			return err
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("commit tenant service: %w", err)
+			return fmt.Errorf("commit subscription: %w", err)
 		}
 		return nil
 	}
@@ -142,19 +142,19 @@ func (r *DomainServiceRepository) saveService(ctx context.Context, item *domain.
 	`, item.TenantID, item.ID, item.Name, item.EndpointURL, item.EventTypes, item.Active, item.CreatedAt, item.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return fmt.Errorf("%w: tenant service name already exists", domain.ErrDomainServiceConflict)
+			return fmt.Errorf("%w: subscription name already exists", domain.ErrDomainServiceConflict)
 		}
-		return fmt.Errorf("save tenant service: %w", err)
+		return fmt.Errorf("save subscription: %w", err)
 	}
 	if _, err := r.querier.Exec(ctx, `DELETE FROM tenant_domain_subscriptions WHERE tenant_id = $1 AND service_id = $2`, item.TenantID, item.ID); err != nil {
-		return fmt.Errorf("replace tenant service subscriptions: %w", err)
+		return fmt.Errorf("replace legacy subscription domain links: %w", err)
 	}
 	for _, domainID := range item.DomainIDs {
 		if _, err := r.querier.Exec(ctx, `
 			INSERT INTO tenant_domain_subscriptions (tenant_id, service_id, domain_id)
 			VALUES ($1, $2, $3)
 		`, item.TenantID, item.ID, domainID); err != nil {
-			return fmt.Errorf("save tenant service subscription %q: %w", domainID, err)
+			return fmt.Errorf("save legacy subscription domain link %q: %w", domainID, err)
 		}
 	}
 	return nil
@@ -171,7 +171,7 @@ func (r *DomainServiceRepository) GetService(ctx context.Context, tenantID, serv
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get tenant service: %w", err)
+		return nil, fmt.Errorf("get subscription: %w", err)
 	}
 	item.DomainIDs, err = r.listServiceDomains(ctx, tenantID, serviceID)
 	if err != nil {
@@ -187,7 +187,7 @@ func (r *DomainServiceRepository) ListServices(ctx context.Context, tenantID str
 		FROM tenant_domain_services WHERE tenant_id = $1 ORDER BY name
 	`, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("list tenant services: %w", err)
+		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
 	defer rows.Close()
 
@@ -195,12 +195,12 @@ func (r *DomainServiceRepository) ListServices(ctx context.Context, tenantID str
 	for rows.Next() {
 		item := &domain.DomainService{}
 		if err := rows.Scan(&item.ID, &item.TenantID, &item.Name, &item.EndpointURL, &item.EventTypes, &item.Active, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan tenant service: %w", err)
+			return nil, fmt.Errorf("scan subscription: %w", err)
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate tenant services: %w", err)
+		return nil, fmt.Errorf("iterate subscriptions: %w", err)
 	}
 	for _, item := range items {
 		item.DomainIDs, err = r.listServiceDomains(ctx, tenantID, item.ID)
@@ -218,7 +218,7 @@ func (r *DomainServiceRepository) DeleteService(ctx context.Context, tenantID, s
 		WHERE tenant_id = $1 AND service_id = $2
 	`, tenantID, serviceID, time.Now().UTC())
 	if err != nil {
-		return fmt.Errorf("deactivate tenant service: %w", err)
+		return fmt.Errorf("deactivate subscription: %w", err)
 	}
 	return nil
 }
