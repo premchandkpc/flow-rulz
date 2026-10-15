@@ -207,7 +207,7 @@ func buildEventEnvelope(
 	return &domain.EventEnvelope{
 		ID: strings.TrimSpace(request.ID), Type: eventType, TenantID: tenantID,
 		PartitionKey: strings.TrimSpace(eventMetaString(meta, "partition_key")),
-		WorkflowID: eventMetaString(meta, "workflow_id"), OccurredAt: request.OccurredAt,
+		WorkflowID:   eventMetaString(meta, "workflow_id"), OccurredAt: request.OccurredAt,
 		Data: append(json.RawMessage(nil), request.Data...), Headers: headers,
 		Contract: request.Contract, MessageKind: eventMetaString(meta, "message_kind"),
 		CorrelationID: eventMetaString(meta, "correlation_id"), CausationID: eventMetaString(meta, "causation_id"),
