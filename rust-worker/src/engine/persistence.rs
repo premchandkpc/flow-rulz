@@ -1,5 +1,5 @@
 //! Transactional persistence for event processing.
-use super::{sha256_hex, EventEnvelope};
+use super::EventEnvelope;
 use super::rules::{Effect, RuleRevision};
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::Value;
