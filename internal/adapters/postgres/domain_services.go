@@ -26,7 +26,11 @@ func NewDomainServiceRepository(querier Querier) *DomainServiceRepository {
 
 // SaveDomain inserts or updates a tenant domain.
 func (r *DomainServiceRepository) SaveDomain(ctx context.Context, item *domain.TenantDomain) error {
-	deployments, err := json.Marshal(item.Deployments)
+	deploymentItems := item.Deployments
+	if deploymentItems == nil {
+		deploymentItems = []domain.ServiceDeployment{}
+	}
+	deployments, err := json.Marshal(deploymentItems)
 	if err != nil {
 		return fmt.Errorf("encode domain service deployments: %w", err)
 	}
