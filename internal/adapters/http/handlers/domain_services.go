@@ -55,7 +55,7 @@ func (h *DomainServiceHandler) ListDomains(w http.ResponseWriter, r *http.Reques
 // CreateDomain handles POST /v1/domains requests.
 func (h *DomainServiceHandler) CreateDomain(w http.ResponseWriter, r *http.Request) {
 	var item domain.TenantDomain
-	if !decodeStrictDomainRequest(w, r, &item) {
+	if !decodeStrictRequest(w, r, &item) {
 		return
 	}
 	if !h.validateDomainServices(w, &item) {
@@ -88,7 +88,7 @@ func (h *DomainServiceHandler) GetDomain(w http.ResponseWriter, r *http.Request)
 // UpdateDomain handles PUT /v1/domains/{domainID} requests.
 func (h *DomainServiceHandler) UpdateDomain(w http.ResponseWriter, r *http.Request) {
 	var item domain.TenantDomain
-	if !decodeStrictDomainRequest(w, r, &item) {
+	if !decodeStrictRequest(w, r, &item) {
 		return
 	}
 	if !h.ready(w, r) {
@@ -133,14 +133,14 @@ func (h *DomainServiceHandler) ListServices(w http.ResponseWriter, r *http.Reque
 
 // CreateService creates a generic event subscription, independently from execution services.
 func (h *DomainServiceHandler) CreateService(w http.ResponseWriter, r *http.Request) {
-	var item domain.DomainService
-	if !h.decode(w, r, &item) {
+	item, ok := decodeSubscriptionRequest(w, r)
+	if !ok {
 		return
 	}
 	if !h.ready(w, r) {
 		return
 	}
-	saved, err := h.service.SaveService(r.Context(), domain.DomainConfigurationScope, &item)
+	saved, err := h.service.SaveService(r.Context(), domain.DomainConfigurationScope, item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -163,15 +163,15 @@ func (h *DomainServiceHandler) GetService(w http.ResponseWriter, r *http.Request
 
 // UpdateService updates a generic event subscription.
 func (h *DomainServiceHandler) UpdateService(w http.ResponseWriter, r *http.Request) {
-	var item domain.DomainService
-	if !h.decode(w, r, &item) {
+	item, ok := decodeSubscriptionRequest(w, r)
+	if !ok {
 		return
 	}
 	if !h.ready(w, r) {
 		return
 	}
 	item.ID = r.PathValue("serviceID")
-	saved, err := h.service.SaveService(r.Context(), domain.DomainConfigurationScope, &item)
+	saved, err := h.service.SaveService(r.Context(), domain.DomainConfigurationScope, item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -199,7 +199,7 @@ func (h *DomainServiceHandler) ready(w http.ResponseWriter, r *http.Request) boo
 	return true
 }
 
-func decodeStrictDomainRequest(w http.ResponseWriter, r *http.Request, item *domain.TenantDomain) bool {
+func decodeStrictRequest(w http.ResponseWriter, r *http.Request, item any) bool {
 	data, err := readRequestBody(r)
 	if err == nil {
 		if isYAMLContentType(r.Header.Get(headerContentType)) {
@@ -233,23 +233,28 @@ func decodeStrictDomainRequest(w http.ResponseWriter, r *http.Request, item *dom
 		}
 	}
 	if err != nil {
-		responses.WriteError(w, http.StatusBadRequest, "invalid Domain request: "+err.Error(), responses.CodeInvalidJSON)
+		responses.WriteError(w, http.StatusBadRequest, "invalid configuration request: "+err.Error(), responses.CodeInvalidJSON)
 		return false
 	}
 	return true
+}
+
+type subscriptionRequest struct {
+	Name       string   `json:"name"`
+	EventTypes []string `json:"event_types"`
+}
+
+func decodeSubscriptionRequest(w http.ResponseWriter, r *http.Request) (*domain.DomainService, bool) {
+	var request subscriptionRequest
+	if !decodeStrictRequest(w, r, &request) {
+		return nil, false
+	}
+	return &domain.DomainService{Name: request.Name, EventTypes: request.EventTypes}, true
 }
 
 func (h *DomainServiceHandler) validateDomainServices(w http.ResponseWriter, item *domain.TenantDomain) bool {
 	if len(item.Deployments) == 0 || len(item.Deployments) > 100 {
 		responses.WriteError(w, http.StatusBadRequest, "a Domain must contain between 1 and 100 Services", responses.CodeValidationFailed)
-		return false
-	}
-	return true
-}
-
-func (h *DomainServiceHandler) decode(w http.ResponseWriter, r *http.Request, item any) bool {
-	if err := decodeRequestBody(r, item); err != nil {
-		responses.WriteError(w, http.StatusBadRequest, "invalid request body: "+err.Error(), responses.CodeInvalidJSON)
 		return false
 	}
 	return true
