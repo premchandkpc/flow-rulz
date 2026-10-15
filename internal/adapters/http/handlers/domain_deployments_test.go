@@ -72,10 +72,13 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 		t.Fatalf("decoded deployment differs from request: %#v", deployment)
 	}
 
-	var response map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
+	var envelope struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("response is not valid JSON: %v", err)
 	}
+	response := envelope.Data
 	if _, exists := response["tenant_id"]; exists {
 		t.Fatal("domain API must not expose tenant_id")
 	}
@@ -155,10 +158,13 @@ func TestCreateSubscriptionUsesEventTypesWithoutTenantConfiguration(t *testing.T
 	if len(service.item.EventTypes) != 2 || service.item.EventTypes[0] != "orders.created" {
 		t.Fatalf("subscription filters = %#v", service.item.EventTypes)
 	}
-	var response map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
+	var envelope struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("response is not valid JSON: %v", err)
 	}
+	response := envelope.Data
 	if _, exists := response["tenant_id"]; exists {
 		t.Fatal("subscription API must not expose tenant_id")
 	}
