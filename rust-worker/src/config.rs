@@ -203,3 +203,86 @@ fn parse_u32(name: &str, default: u32) -> Result<u32> {
 fn optional_env(name: &str) -> Option<String> {
     env::var(name).ok().map(|value| value.trim().to_owned()).filter(|value| !value.is_empty())
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_config() -> Config {
+        Config {
+            nats_url: "nats://localhost:4222".into(),
+            stream: "flowrulz".into(),
+            durable: "worker".into(),
+            database_url: "postgres://localhost/flowrulz".into(),
+            worker_id: "worker-1".into(),
+            service_id: None,
+            deployment_revision: None,
+            num_shards: 16,
+            worker_replicas: 1,
+            lease_ttl: Duration::from_secs(30),
+            lease_renew_interval: Duration::from_secs(5),
+            ack_wait: Duration::from_secs(30),
+            retry_delay: Duration::from_secs(5),
+            fetch_batch_size: 10,
+            rulesets: vec!["orders-created".into()],
+            effect_poll_interval: Duration::from_secs(5),
+            scheduler_poll_interval: Duration::from_secs(5),
+            scheduler_batch_size: 10,
+        }
+    }
+
+    #[test]
+    fn accepts_legacy_and_pinned_deployment_configurations() {
+        assert!(validate_config(&valid_config()).is_ok());
+        let mut config = valid_config();
+        config.service_id = Some("domain-a/orders".into());
+        config.deployment_revision = Some(3);
+        assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn rejects_incomplete_or_invalid_deployment_identity() {
+        let cases = [
+            ("service without revision", Some("domain-a/orders"), None),
+            ("revision without service", None, Some(3)),
+            ("blank service", Some("  "), Some(3)),
+            ("zero revision", Some("domain-a/orders"), Some(0)),
+            ("negative revision", Some("domain-a/orders"), Some(-1)),
+        ];
+        for (name, service, revision) in cases {
+            let mut config = valid_config();
+            config.service_id = service.map(str::to_owned);
+            config.deployment_revision = revision;
+            assert!(validate_config(&config).is_err(), "case {name} should fail");
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_or_oversized_ruleset_assignments() {
+        let mut config = valid_config();
+        config.rulesets = vec!["orders-created".into(), "orders-created".into()];
+        assert!(validate_config(&config).is_err());
+        config.rulesets = vec!["x".repeat(129)];
+        assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_lease_and_delivery_settings() {
+        let mut config = valid_config();
+        config.num_shards = 0;
+        assert!(validate_config(&config).is_err());
+
+        config = valid_config();
+        config.lease_renew_interval = Duration::from_secs(11);
+        assert!(validate_config(&config).is_err());
+
+        config = valid_config();
+        config.fetch_batch_size = 0;
+        assert!(validate_config(&config).is_err());
+
+        config = valid_config();
+        config.scheduler_batch_size = 0;
+        assert!(validate_config(&config).is_err());
+    }
+}
