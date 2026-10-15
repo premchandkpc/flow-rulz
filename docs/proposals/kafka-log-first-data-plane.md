@@ -14,7 +14,7 @@ This removes PostgreSQL from the worker hot path, but it does **not** make state
 - Rule evaluation is pure and domain-agnostic. Workers understand event envelopes, immutable rule revisions, contracts, and generic effects, not service-specific business behavior.
 - **A Domain contains Services; each Service is a deployment boundary that declares which rulesets/revisions its worker pool runs.** A worker is configured for one service deployment and loads only that deployment's assigned rules. It must not load every tenant ruleset and decide at runtime which service owns it.
 - Keep execution-service deployment separate from subscriber/receiver registration. A service deployment owns ruleset assignments and worker capacity; a subscriber registration expresses interest in delivered events. Do not overload one registry record to mean both.
-- Subscriber fan-out remains a generic routing stage. It emits one deterministic effect per active tenant-scoped subscriber; it is not folded into rule evaluation.
+- Subscriber fan-out remains a generic routing stage. It emits one deterministic effect per active subscriber matching the event type; it is not folded into rule evaluation.
 - Same-key ordering is provided by a stable Kafka key and partition assignment. A hot key is still limited to one partition's throughput.
 - Kafka transactions make input-offset commits and Kafka output records atomic within Kafka. They do not include receiver databases, HTTP calls, or ClickHouse writes.
 - External receivers use idempotency keys and process deliveries at least once.
@@ -24,7 +24,7 @@ This removes PostgreSQL from the worker hot path, but it does **not** make state
 
 | Deployable | Role | Correctness-critical state |
 |---|---|---|
-| `flowrulz --role=api` | Validate and publish contracts, rule revisions, activation records, tenant/service config, and schedule commands | Broker writes; disposable query projection |
+| `flowrulz --role=api` | Validate and publish contracts, rule revisions, activation records, global Domain → Service deployment config, and schedule commands | Broker writes; disposable query projection |
 | `flowrulz --role=router` (may share the worker binary) | Consume ingress events, resolve Domain → Service assignments, and publish one routed copy per target service deployment | Kafka transaction and compacted deployment projection |
 | `flowrulz --role=worker --deployment=<domain/service>` | Consume only the configured service deployment stream; load/evaluate only rules assigned to that deployment; emit generic effects and subscriber intents | Kafka transaction only; deployment-scoped rebuildable cache |
 | `flowrulz --role=scheduler` | Consume assigned schedule partitions, rebuild timer heap, publish due events and schedule tombstones transactionally | Compacted schedule topic; rebuildable heap |
@@ -50,7 +50,7 @@ Use a topic prefix configurable per environment, shown below as `flow.`. Configu
 | `flow.subscriptions` | `subscriber_id` | Receiver subscription filters, independent of execution-service deployment | Compacted |
 | `flow.schedules` | `tenant_id + ":" + schedule_id` | Schedule upsert; tombstone on cancel/fire | Compacted |
 | `flow.commands` | Destination-specific key | Generic command envelope | Time/size retention |
-| `flow.service-deliveries` | `tenant_id + ":" + service_id + ":" + event_id` | One delivery intent per matching subscriber | Time/size retention |
+| `flow.service-deliveries` | `tenant_id + ":" + subscriber_id + ":" + event_id` | One delivery intent per matching subscriber | Time/size retention |
 | `flow.audit` | `tenant_id + ":" + execution_id` | Execution, selected revision, outcomes, correlation IDs | Time/size retention; sink for long-term history |
 | `flow.retry` | Original partition key | Retry envelope, attempt, not-before timestamp | Time/size retention |
 | `flow.dlq` | Original partition key | Poison event plus failure metadata | Operational retention and replay policy |
@@ -145,7 +145,7 @@ A domain service is the deployment target for a set of rulesets. The deployment 
 }
 ```
 
-The deployment resolver validates that every referenced immutable ruleset revision exists before publishing the deployment. Contract-to-ruleset bindings remain independent, versioned control-plane records. At event routing time, resolve the event contract against active bindings, then intersect the matching rulesets with the target service deployment’s assigned immutable revisions. This preserves multi-contract fan-out without duplicating contract identity inside deployment assignments. Workers are started/configured with a stable `deployment_id` (`tenant/domain/service`) and consume only that deployment's work stream. On rollout, a new deployment revision warms its cache and reports readiness before traffic shifts; the old revision drains before it is retired. Do not let every worker subscribe to every service's rulesets.
+The deployment resolver validates that every referenced immutable ruleset revision exists before publishing the deployment. Contract-to-ruleset bindings remain independent, versioned control-plane records. At event routing time, resolve the event contract against active bindings, then intersect the matching rulesets with the target service deployment’s assigned immutable revisions. This preserves multi-contract fan-out without duplicating contract identity inside deployment assignments. Workers are started/configured with a stable `deployment_id` (`domain/service`) and consume only that deployment's work stream. On rollout, a new deployment revision warms its cache and reports readiness before traffic shifts; the old revision drains before it is retired. Do not let every worker subscribe to every service's rulesets.
 
 ### Routed event metadata
 
