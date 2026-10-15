@@ -65,3 +65,10 @@ cargo fmt --all
 cargo test --all-targets
 cargo clippy --all-targets -- -D warnings
 ```
+## Architectural boundary and contract safety
+
+The worker is a rules execution runtime, not a domain router. A committed execution may contain only effects emitted by the selected ruleset. It must not query tenant-domain subscriptions or synthesize service-delivery effects outside the ruleset.
+
+Go remains the supported runtime for contract-bound events. Rust currently fails closed when an event declares a contract or the active ruleset requires an input contract; it must not silently skip contract validation or binding-based ruleset resolution. Do not route contract-bearing production traffic to Rust until differential tests prove contract validation, binding resolution, and effect parity with Go.
+
+Leases, inbox deduplication, execution records, the transactional outbox, retries, and broker acknowledgements are infrastructure guarantees. They may affect delivery reliability, but must not add business decisions or effects.
