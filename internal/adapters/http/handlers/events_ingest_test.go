@@ -158,8 +158,7 @@ func TestEventIngestionRejectsProducerSuppliedInternalRoutingMeta(t *testing.T) 
 			server := middleware.TenantExtractor(mux)
 			meta, err := json.Marshal(map[string]any{"tenant_id":"tenant-a", "partition_key":"order-1", key:"attacker-controlled"})
 			if err != nil { t.Fatal(err) }
-			var body map[string]json.RawMessage
-			body = map[string]json.RawMessage{
+			body := map[string]json.RawMessage{
 				"id": json.RawMessage(`"evt-1"`), "type": json.RawMessage(`"order.created"`),
 				"occurred_at": json.RawMessage(`"2026-10-15T07:30:00Z"`), "data": json.RawMessage(`{}`),
 				"meta": meta,
