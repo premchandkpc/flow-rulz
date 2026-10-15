@@ -202,7 +202,34 @@ func bsonMetadataToRaw(meta map[string]any) map[string]json.RawMessage {
 	if len(meta) == 0 { return nil }
 	result := make(map[string]json.RawMessage, len(meta))
 	for key, value := range meta {
-		if raw, err := json.Marshal(value); err == nil { result[key] = raw }
+		if raw, err := json.Marshal(normalizeBSONMetadata(value)); err == nil { result[key] = raw }
 	}
 	return result
+}
+
+func normalizeBSONMetadata(value any) any {
+	switch typed := value.(type) {
+	case bson.D:
+		result := make(map[string]any, len(typed))
+		for _, element := range typed { result[element.Key] = normalizeBSONMetadata(element.Value) }
+		return result
+	case bson.M:
+		result := make(map[string]any, len(typed))
+		for key, item := range typed { result[key] = normalizeBSONMetadata(item) }
+		return result
+	case bson.A:
+		result := make([]any, len(typed))
+		for i, item := range typed { result[i] = normalizeBSONMetadata(item) }
+		return result
+	case []any:
+		result := make([]any, len(typed))
+		for i, item := range typed { result[i] = normalizeBSONMetadata(item) }
+		return result
+	case map[string]any:
+		result := make(map[string]any, len(typed))
+		for key, item := range typed { result[key] = normalizeBSONMetadata(item) }
+		return result
+	default:
+		return value
+	}
 }
