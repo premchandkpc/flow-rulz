@@ -42,9 +42,10 @@ Use a topic prefix configurable per environment, shown below as `flow.`. Configu
 | `flow.rulesets` | `tenant_id + ":" + ruleset_id + ":" + revision` | Immutable compiled/source rule revision | Compacted; retain revision history through explicit policy |
 | `flow.ruleset-activation` | `tenant_id + ":" + ruleset_id` | Active revision and optional effective-from marker | Compacted |
 | `flow.contracts` | `tenant_id + ":" + contract_id + ":" + version` | Immutable JSON Schema / contract metadata | Compacted |
+| `flow.contract-ruleset-bindings` | `tenant_id + ":" + contract_id + ":" + version + ":" + ruleset_id` | Independent contract-to-ruleset binding, activation policy, and priority; one contract may bind to multiple rulesets | Compacted |
 | `flow.domains` | `tenant_id + ":" + domain_id` | Event domain configuration | Compacted |
 | `flow.services` | `tenant_id + ":" + domain_id + ":" + service_id` | Service identity within a domain, deployment metadata, worker profile, and status | Compacted |
-| `flow.service-deployments` | `tenant_id + ":" + domain_id + ":" + service_id` | Immutable deployment revision: assigned ruleset IDs/revisions, contract bindings, concurrency/resource profile, activation generation | Compacted |
+| `flow.service-deployments` | `tenant_id + ":" + domain_id + ":" + service_id` | Immutable deployment revision: assigned ruleset IDs/revisions, concurrency/resource profile, activation generation | Compacted |
 | `flow.service-work.<service-token>` | `tenant_id + ":" + partition_key` | Routed event copy addressed to one service deployment; target service ID is part of the envelope | Time/size retention; separate topic/ACL boundary per deployed service or deployment group |
 | `flow.subscriptions` | `tenant_id + ":" + subscriber_id` | Receiver subscription filters, independent of execution-service deployment | Compacted |
 | `flow.schedules` | `tenant_id + ":" + schedule_id` | Schedule upsert; tombstone on cancel/fire | Compacted |
@@ -136,15 +137,15 @@ A domain service is the deployment target for a set of rulesets. The deployment 
   "deployment_revision": 4,
   "worker_profile": {"min_replicas": 2, "max_replicas": 8},
   "rulesets": [
-    {"ruleset_id": "orders-risk", "revision": 7, "contract_id": "orders.created", "contract_version": 2},
-    {"ruleset_id": "fraud-check", "revision": 3, "contract_id": "fraud.check_requested", "contract_version": 1}
+    {"ruleset_id": "orders-risk", "revision": 7},
+    {"ruleset_id": "fraud-check", "revision": 3}
   ],
   "status": "active",
   "updated_at": "2026-10-15T05:01:00Z"
 }
 ```
 
-The deployment resolver validates that every referenced immutable ruleset revision exists and that each contract binding is compatible before publishing the deployment. Workers are started/configured with a stable `deployment_id` (`tenant/domain/service`) and consume only that deployment's work stream. On rollout, a new deployment revision warms its cache and reports readiness before traffic shifts; the old revision drains before it is retired. Do not let every worker subscribe to every service's rulesets.
+The deployment resolver validates that every referenced immutable ruleset revision exists before publishing the deployment. Contract-to-ruleset bindings remain independent, versioned control-plane records. At event routing time, resolve the event contract against active bindings, then intersect the matching rulesets with the target service deployment’s assigned immutable revisions. This preserves multi-contract fan-out without duplicating contract identity inside deployment assignments. Workers are started/configured with a stable `deployment_id` (`tenant/domain/service`) and consume only that deployment's work stream. On rollout, a new deployment revision warms its cache and reports readiness before traffic shifts; the old revision drains before it is retired. Do not let every worker subscribe to every service's rulesets.
 
 ### Routed event metadata
 
@@ -213,7 +214,7 @@ A key's latest record represents its current schedule state; a tombstone removes
 ## Domain → Service → worker deployment routing
 
 1. A tenant owns a Domain; a Domain contains one or more Services.
-2. Each Service declares the rulesets and contract bindings that belong to that service's worker deployment. Assignments reference immutable ruleset revisions or an explicit activation policy; never rely on a global "all active rules" list.
+2. Each Service declares the immutable ruleset revisions assigned to that worker deployment. Contract-to-ruleset bindings are independent records; the router intersects active contract bindings with the target deployment’s assignments. Never rely on a global "all active rules" list.
 3. A generic ingress router resolves the domain/service mapping and writes a routed copy to that service deployment's work stream. This router is an application module/role, not necessarily another microservice. If an event is explicitly bound to multiple services, it creates one deterministic routed copy per target service.
 4. Each worker process is configured for exactly one deployment identity and consumes only that deployment's work stream. It validates the target service/deployment ID and resolves rulesets only from that deployment's manifest.
 5. Scaling a service scales only its worker group. It does not change rule ownership for other services. Deployment revisions are rolled out with readiness, traffic switch, and drain; cache contents are rebuildable from the compacted deployment/ruleset topics.
