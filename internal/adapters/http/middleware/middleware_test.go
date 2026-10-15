@@ -188,3 +188,18 @@ func TestGlobalConfigurationRoutesFailClosedWithoutControlPlaneAuth(t *testing.T
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
+
+func TestGlobalConfigurationRejectsTenantOnlyJWT(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv(trustedProxyTokenEnv, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/domains", nil)
+	claims := &auth.Claims{TenantID: "tenant-a"}
+	req = req.WithContext(auth.ContextWithClaims(req.Context(), claims))
+	rec := httptest.NewRecorder()
+	TenantExtractor(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("tenant-only JWT must not authorize global configuration")
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
