@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://flowrulz.dev/schemas/service-deployment.schema.json",
   "title": "FlowRulz Domain Service Deployment",
-  "description": "Nested execution deployment configuration for one Service within a tenant Domain. Contract-to-ruleset bindings remain independent.",
+  "description": "Nested execution deployment configuration for one Service within a Domain. Tenant identity and partition key are supplied by runtime events. Contract-to-ruleset bindings remain independent.",
   "type": "object",
   "additionalProperties": false,
   "required": ["service_id", "name", "revision", "active", "rulesets"],
