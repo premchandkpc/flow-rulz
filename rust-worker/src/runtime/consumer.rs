@@ -114,15 +114,16 @@ fn validate_message_routing(envelope: &EventEnvelope, config: &Config, shard: u3
     if let Some(expected_service_id) = &config.service_id {
         let target_service_id = envelope.meta.get("flow.service_id").and_then(|value| value.as_str())
             .ok_or_else(|| anyhow!("service deployment routing header flow.service_id is required"))?;
-        if target_service_id != expected_service_id {
+        if target_service_id != expected_service_id.as_str() {
             bail!("message targets service deployment {target_service_id}, not this worker's {expected_service_id}");
         }
         let expected_revision = config.deployment_revision
             .ok_or_else(|| anyhow!("worker deployment revision is not configured"))?;
-        let target_revision = envelope.meta.get("flow.deployment_revision").and_then(|value| value.as_str())
-            .ok_or_else(|| anyhow!("service deployment routing header flow.deployment_revision is required"))?
-            .parse::<i64>()
-            .map_err(|_| anyhow!("flow.deployment_revision must be an integer"))?;
+        let target_revision = match envelope.meta.get("flow.deployment_revision") {
+            Some(serde_json::Value::Number(value)) => value.as_i64(),
+            Some(serde_json::Value::String(value)) => value.parse::<i64>().ok(),
+            _ => None,
+        }.ok_or_else(|| anyhow!("meta.flow.deployment_revision must be an integer or integer string"))?;
         if target_revision != expected_revision {
             bail!("message targets deployment revision {target_revision}, not this worker's {expected_revision}");
         }
