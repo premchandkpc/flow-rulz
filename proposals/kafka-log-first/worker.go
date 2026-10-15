@@ -150,9 +150,15 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effe
 	var effects []Effect
 	var audits []ExecutionAudit
 	for _, ref := range refs {
+		if ref.TenantID != env.TenantID || ref.RulesetID == "" || ref.Revision <= 0 {
+			return nil, nil, errors.New("resolver returned an invalid or cross-tenant ruleset reference")
+		}
 		ruleset, contentHash, err := e.Resolver.GetRevision(ctx, ref)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%w: %s/%s@%d: %w", ErrMissingRuleset, ref.TenantID, ref.RulesetID, ref.Revision, err)
+		}
+		if ruleset == nil {
+			return nil, nil, fmt.Errorf("%w: %s/%s@%d: resolver returned a nil compiled ruleset", ErrMissingRuleset, ref.TenantID, ref.RulesetID, ref.Revision)
 		}
 		ruleEffects, err := ruleset.Evaluate(ctx, env)
 		if err != nil {
@@ -164,6 +170,9 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effe
 			ruleEffects[i].Hop = env.Metadata.Hop + 1
 			if ruleEffects[i].IdempotencyKey == "" {
 				return nil, nil, errors.New("effect idempotency key must be deterministic and non-empty")
+			}
+			if ruleEffects[i].Destination == "" || ruleEffects[i].PartitionKey == "" {
+				return nil, nil, errors.New("effect destination and partition key are required")
 			}
 			if ruleEffects[i].ID == "" {
 				ruleEffects[i].ID = ruleEffects[i].IdempotencyKey
@@ -189,6 +198,9 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effe
 			subscriptionEffects[i].CausationID = env.ID
 			if subscriptionEffects[i].IdempotencyKey == "" {
 				return nil, nil, errors.New("subscriber effect idempotency key is required")
+			}
+			if subscriptionEffects[i].Destination == "" || subscriptionEffects[i].PartitionKey == "" {
+				return nil, nil, errors.New("subscriber destination and partition key are required")
 			}
 			if subscriptionEffects[i].ID == "" {
 				subscriptionEffects[i].ID = subscriptionEffects[i].IdempotencyKey
