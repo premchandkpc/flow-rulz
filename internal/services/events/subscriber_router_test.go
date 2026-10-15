@@ -9,19 +9,19 @@ import (
 	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
-type subscriberRepositoryStub struct {
+type globalSubscriberRepositoryStub struct {
 	ports.SubscriberRepository
 	items []*domain.DomainService
 	err error
 }
 
-func (s subscriberRepositoryStub) ListSubscribersForEvent(context.Context, string, string) ([]*domain.DomainService, error) {
+func (s globalSubscriberRepositoryStub) ListSubscribersForEvent(context.Context, string, string) ([]*domain.DomainService, error) {
 	return s.items, s.err
 }
 
 func TestSubscriberRouterIncludesGlobalAndMatchingLegacySubscriptions(t *testing.T) {
 	router := SubscriberRouter{}
-	repo := subscriberRepositoryStub{items: []*domain.DomainService{
+	repo := globalSubscriberRepositoryStub{items: []*domain.DomainService{
 		{ID: "global-audit", TenantID: domain.DomainConfigurationScope, Active: true},
 		{ID: "tenant-a-consumer", TenantID: "tenant-a", Active: true},
 		{ID: "tenant-b-consumer", TenantID: "tenant-b", Active: true},
@@ -55,7 +55,7 @@ func TestSubscriberRouterIncludesGlobalAndMatchingLegacySubscriptions(t *testing
 func TestSubscriberRouterPropagatesRepositoryErrors(t *testing.T) {
 	repoErr := context.DeadlineExceeded
 	event := &domain.EventEnvelope{ID: "event-1", Type: "orders.created", TenantID: "tenant-a", PartitionKey: "order-1"}
-	_, err := (SubscriberRouter{}).Route(context.Background(), subscriberRepositoryStub{err: repoErr}, event, "execution-1", time.Now())
+	_, err := (SubscriberRouter{}).Route(context.Background(), globalSubscriberRepositoryStub{err: repoErr}, event, "execution-1", time.Now())
 	if err == nil {
 		t.Fatal("Route() error = nil, want repository error")
 	}
