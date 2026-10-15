@@ -80,7 +80,7 @@ const (
 
 // RuleRevision represents the rule revision.
 type RuleRevision struct {
-	TenantScope     string          `json:"tenant_scope"`
+	TenantScope     string          `json:"-"`
 	RuleID          string          `json:"rule_id"`
 	Revision        int64           `json:"revision"`
 	ContentHash     string          `json:"content_hash"`
@@ -560,7 +560,7 @@ type QuarantineEntry struct {
 
 // RuleActivation represents the rule activation.
 type RuleActivation struct {
-	TenantScope string    `json:"tenant_scope"`
+	TenantScope string    `json:"-"`
 	RuleSet     string    `json:"rule_set"`
 	Revision    int64     `json:"revision"`
 	Version     int64     `json:"version"`
