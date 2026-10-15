@@ -114,6 +114,19 @@ func newScenarioEvent(scenario Scenario, tenantID, clientID string, sequence int
 	if err != nil {
 		return domain.EventEnvelope{}, fmt.Errorf("marshal %s payload: %w", scenario, err)
 	}
+	metaJSON, err := json.Marshal(map[string]any{
+		"tenant_id": tenantID,
+		"partition_key": partitionKey,
+		"client_id": clientID,
+		"scenario": string(scenario),
+	})
+	if err != nil {
+		return domain.EventEnvelope{}, fmt.Errorf("marshal event metadata: %w", err)
+	}
+	var meta map[string]json.RawMessage
+	if err := json.Unmarshal(metaJSON, &meta); err != nil {
+		return domain.EventEnvelope{}, fmt.Errorf("decode event metadata: %w", err)
+	}
 	return domain.EventEnvelope{
 		ID:           domain.NewID(),
 		Type:         eventType,
@@ -126,12 +139,7 @@ func newScenarioEvent(scenario Scenario, tenantID, clientID string, sequence int
 			"scenario":  string(scenario),
 			"client_id": clientID,
 		},
-		Meta: map[string]any{
-			"tenant_id":     tenantID,
-			"partition_key": partitionKey,
-			"client_id":     clientID,
-			"scenario":      string(scenario),
-		},
+		Meta: meta,
 	}, nil
 }
 
