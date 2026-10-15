@@ -15,7 +15,7 @@ A **contract** defines the payload shape for a named message version. Its identi
 
 The API accepts a schema with `name`, `version`, `kind`, and a non-empty `fields` map. Supported kinds are `event`, `command`, `effect`, and `envelope`. The registry computes the canonical schema hash; callers should not invent one.
 
-See [contract.json](../data/examples/contract.json).
+See [contract.json](../data/examples/contract.json) and the [contract JSON Schema](../contracts/schemas/contract.schema.json).
 
 ## Event reference
 
