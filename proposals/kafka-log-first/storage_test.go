@@ -226,6 +226,7 @@ func TestWorkerAbortsOnCommitFailure(t *testing.T) {
 	store := newMemoryLogStore()
 	store.commitErr = errors.New("simulated durable commit failure")
 	worker := Worker{
+		DeploymentID: "domain/service", DeploymentRevision: 1,
 		GroupID: "group", Store: store, Evaluator: fixedEvaluator{effects: []Effect{{ID: "effect", IdempotencyKey: "effect", Destination: "commands", PartitionKey: "key"}}}, Codec: jsonCodec{},
 	}
 	input, marshalErr := json.Marshal(EventEnvelope{
