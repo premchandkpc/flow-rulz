@@ -2,7 +2,7 @@
 
 FlowRulz is a Go-based, event-driven rules runtime. NATS JetStream retains the durable message log; runtime caches accelerate reads, while PostgreSQL stores transactional processing state and the outbox. Rules are compiled into immutable revisions; a worker evaluates incoming events and commits an execution record plus resulting effects; effects are delivered asynchronously through an outbox.
 
-> Security: do not expose the HTTP API directly to untrusted networks. Production tenant identity must come from validated JWT claims or an authenticated trusted proxy that strips and replaces trusted headers. Development-only caller-supplied tenant headers are not authentication.
+> Security: do not expose the HTTP API directly to untrusted networks. Authenticate control-plane callers with validated JWT claims or a trusted proxy. Domain configuration does not carry tenant identity; event producers must be authorized to assert the runtime `tenant_id` and `partition_key` on each event.
 
 ## Processes
 
