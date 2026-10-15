@@ -53,6 +53,8 @@ The intended routing flow is:
 
 A subscriber registration is not an execution Service. Keep receiver subscriptions separate from Domain → Service → ruleset assignments.
 
+**Implementation status:** Domain configuration and per-Service ruleset assignments are persisted by the API. Automatic projection/reconciliation of changed assignments into worker deployments is still a follow-up; current worker environment settings must be kept in sync by deployment automation.
+
 ## API
 
 - `POST /v1/domains`: create a Domain.
