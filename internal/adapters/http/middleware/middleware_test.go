@@ -129,3 +129,28 @@ func TestTenantExtractorUsesJWTTenantWithoutProxyFallback(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
 	}
 }
+
+func TestGlobalConfigurationRoutesDoNotRequireTenantIdentity(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv(trustedProxyTokenEnv, "")
+	for _, path := range []string{
+		"/v1/domains",
+		"/v1/domains/domain-orders",
+		"/v1/subscriptions",
+		"/v1/subscriptions/audit-consumer",
+	} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			TenantExtractor(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := GetTenantID(r.Context()); got != "" {
+					t.Fatalf("global configuration route unexpectedly received tenant %q", got)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			})).ServeHTTP(rec, req)
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+			}
+		})
+	}
+}
