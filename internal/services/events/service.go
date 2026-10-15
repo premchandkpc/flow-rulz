@@ -12,14 +12,15 @@ import (
 
 // Service handles event processing, inbox dedup, rule evaluation, and execution creation.
 type Service struct {
-	compiler   ports.RuleCompiler
-	evaluator  ports.RuleEvaluator
-	quarantine ports.QuarantineRepository
-	clock      ports.Clock
-	beginTx    ports.TransactionManager
-	newRepos   ports.EventTxRepositoryFactory
-	contracts  ports.ContractRegistry
-	revisions  *immutableRevisionCache
+	compiler          ports.RuleCompiler
+	evaluator         ports.RuleEvaluator
+	quarantine        ports.QuarantineRepository
+	clock             ports.Clock
+	beginTx           ports.TransactionManager
+	newRepos          ports.EventTxRepositoryFactory
+	contracts         ports.ContractRegistry
+	subscriberRouter  SubscriberRouter
+	revisions         *immutableRevisionCache
 }
 
 // NewService constructs the event-processing service.
@@ -251,7 +252,7 @@ func (s *Service) processInTransaction(ctx context.Context, envelope *domain.Eve
 		}
 
 		// Persist execution and outbox effects
-		execution, err := s.persistExecutionAndOutboxForRuleset(ctx, repos, envelope, rr.Revision, rr.RuleSet, decision)
+		execution, err := s.persistExecutionAndOutboxForRuleset(ctx, repos, envelope, rr.Revision, rr.RuleSet, decision, !processedAny)
 		if err != nil {
 			return nil, err
 		}
@@ -327,7 +328,7 @@ func (s *Service) deduplicateEventForRuleset(ctx context.Context, repos ports.Ev
 }
 
 // persistExecutionAndOutboxForRuleset creates execution record and outbox effects for a specific ruleset.
-func (s *Service) persistExecutionAndOutboxForRuleset(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, revision *domain.RuleRevision, ruleSet string, decision *domain.Decision) (*domain.Execution, error) {
+func (s *Service) persistExecutionAndOutboxForRuleset(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, revision *domain.RuleRevision, ruleSet string, decision *domain.Decision, routeSubscribers bool) (*domain.Execution, error) {
 	executionID := domain.ComputeExecutionID(envelope.TenantID, envelope.ID, ruleSet, revision.Revision)
 	now := s.clock.Now()
 
@@ -363,6 +364,14 @@ func (s *Service) persistExecutionAndOutboxForRuleset(ctx context.Context, repos
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		})
+	}
+
+	if routeSubscribers {
+		subscriptionEffects, err := s.subscriberRouter.Route(ctx, repos.DomainServices, envelope, executionID, now)
+		if err != nil {
+			return nil, err
+		}
+		outboxEffects = append(outboxEffects, subscriptionEffects...)
 	}
 
 	if err := repos.Outbox.Insert(ctx, outboxEffects); err != nil {
