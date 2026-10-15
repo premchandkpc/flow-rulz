@@ -1,15 +1,13 @@
-# Data examples
+# Example data
 
-These files are small, human-readable fixtures for understanding the configuration/runtime boundary. They are examples, not production secrets or generated state.
+These JSON files show the public configuration and runtime event shapes:
 
-- `examples/domain.json`: global Domain create/update request.
-- `examples/domain-response.json`: server-generated Domain ID and timestamps with nested Services/ruleset revisions.
-- `examples/ruleset.json`: immutable ruleset revision.
-- `examples/contract.json`: event payload contract definition.
-- `examples/event.json`: runtime event with event-supplied tenant identity and partition key.
-- `examples/worker-config.json`: worker deployment/runtime settings.
+- `examples/domain.json`: Domain with Services and explicit immutable ruleset revisions.
+- `examples/domain-response.json`: response with server-generated Domain identity.
+- `examples/ruleset.json`: ruleset configuration and payload contract binding.
+- `examples/ruleset-*.json`: additional rule-set examples.
+- `examples/contract.json` and `examples/contract-payment-authorized.json`: versioned payload contracts.
+- `examples/event.json`: event envelope. Runtime context belongs in the extensible `meta` object; `meta.tenant_id` and `meta.partition_key` are required, and unknown metadata keys are allowed.
+- `examples/worker-config.json`: deployment-specific runtime configuration. Tenant and partition keys are never configured on a worker.
 
-Configuration examples intentionally omit `tenant_id` and `partition_key`. Only event data carries those values.
-
-
-The domain deployment examples under [domains/](../domains/README.md) also contain a `domain.json` file per sample application. These files show how multiple rulesets are assigned to named Services. Keep runtime identity (`tenant_id` and `partition_key`) exclusively in event envelopes.
+Validate examples against schemas under `contracts/schemas/`. Keep examples synchronized with the API and event-envelope docs when schemas change.
