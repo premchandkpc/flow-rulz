@@ -76,7 +76,7 @@ func (h *EventIngestionHandler) PublishEvent(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	event := buildEventEnvelope(request, eventType, tenantID)
+	event := buildEventEnvelope(request, eventType)
 	if request.Contract != nil {
 		if h.contracts == nil {
 			responses.WriteError(w, http.StatusServiceUnavailable, "contract registry is not configured", responses.CodeInternalError)
@@ -180,7 +180,6 @@ func validateEventIngestionRequest(
 func buildEventEnvelope(
 	request eventIngestionRequest,
 	eventType string,
-	tenantID string,
 ) *domain.EventEnvelope {
 	headers := buildEventHeaders(request)
 	return &domain.EventEnvelope{
