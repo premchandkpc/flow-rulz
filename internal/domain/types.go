@@ -117,6 +117,10 @@ type ContractSchema struct {
 	UpdatedAt       time.Time                `json:"updated_at,omitempty"`
 }
 
+// DomainConfigurationScope is the internal persistence namespace for shared configuration.
+// It is not an event tenant and is never exposed by the public API.
+const DomainConfigurationScope = "__domain_configuration__"
+
 // TenantDomain is persisted domain configuration. Runtime event identity and routing keys are not configuration.
 type TenantDomain struct {
 	ID          string              `json:"id"`
