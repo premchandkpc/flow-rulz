@@ -210,3 +210,26 @@ func TestCreateSubscriptionRejectsTenantConfiguration(t *testing.T) {
 		t.Fatal("SaveService must not be called when tenant configuration is supplied")
 	}
 }
+
+
+func TestCreateDomainRejectsRuntimeIdentityFields(t *testing.T) {
+	for _, field := range []string{"tenant_id", "partition_key", "event_types"} {
+		t.Run(field, func(t *testing.T) {
+			service := &deploymentCaptureUseCase{}
+			handler := NewDomainServiceHandler(service)
+			mux := http.NewServeMux()
+			handler.RegisterRoutes(mux)
+			body := `{"name":"orders","services":[],"FIELD":"unexpected"}`
+			body = strings.Replace(body, "FIELD", field, 1)
+			req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(body))
+			res := httptest.NewRecorder()
+			mux.ServeHTTP(res, req)
+			if res.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s; want bad request for config field %q", res.Code, res.Body.String(), field)
+			}
+			if service.called {
+				t.Fatal("SaveDomain must not be called when runtime-only fields are sent as configuration")
+			}
+		})
+	}
+}
