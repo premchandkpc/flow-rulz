@@ -453,10 +453,14 @@ mod tests {
         })).unwrap();
 
         let payload = build_child_event_payload(&action, &parent, "child-1", "order-1");
-        assert_eq!(payload["workflow_id"], "workflow-1");
-        assert_eq!(payload["correlation_id"], "correlation-1");
-        assert_eq!(payload["causation_id"], "event-1");
-        assert_eq!(payload["headers"]["flowrulz_parent_event_id"], "event-1");
+        assert_eq!(payload["meta"]["workflow_id"], "workflow-1");
+        assert_eq!(payload["meta"]["correlation_id"], "correlation-1");
+        assert_eq!(payload["meta"]["causation_id"], "event-1");
+        assert_eq!(payload["meta"]["tenant_id"], parent.tenant_id);
+        assert_eq!(payload["meta"]["partition_key"], "order-1");
+        assert_eq!(payload["meta"]["headers"]["flowrulz_parent_event_id"], "event-1");
+        assert!(payload.get("tenant_id").is_none());
+        assert!(payload.get("partition_key").is_none());
     }
 
 }
