@@ -1,55 +1,30 @@
-# Change and test checklist
+# Testing and PR readiness
 
-Use this checklist whenever changing a Domain, Service assignment, ruleset, contract, event envelope, API route, or worker.
+Run the repository CI workflows for Go and Rust before merging. For event-envelope changes, include the following coverage.
 
-## Configuration boundary
+## Event metadata boundary
 
-- [ ] Domain request contains only `name` and `services[]`; the server owns `id` and timestamps.
-- [ ] Each Service pins one or more immutable `ruleset_id + revision` assignments.
-- [ ] No configuration request or response exposes `tenant_id`, `partition_key`, or internal `tenant_scope`.
-- [ ] Rule management resolves revisions from `__domain_configuration__`.
-- [ ] Global configuration routes require admin scope or trusted control-plane proxy authentication; tenant-only credentials cannot mutate global configuration.
-- [ ] Legacy scope migration fails on conflicting ruleset contents, active revisions, contract hashes, priorities, or activation policies instead of silently merging them.
-
-## Runtime event boundary
-
-- [ ] Event envelope carries `tenant_id` and `partition_key`.
-- [ ] Shard identity is derived from both fields.
-- [ ] Inbox/deduplication, execution IDs, audit records, and effects retain the event's tenant identity.
+- [ ] `tenant_id` and `partition_key` are required inside `meta`, not at the top level.
+- [ ] Unknown fields inside `meta` are accepted and survive decode/encode round trips.
+- [ ] Unknown top-level envelope fields and legacy top-level runtime identity fields are rejected.
+- [ ] Go API ingestion reads runtime identity from `meta` and preserves extension metadata.
+- [ ] Go SDK emits and reads the same wire shape.
+- [ ] Rust worker reads the same wire shape and preserves unknown metadata.
+- [ ] Shard identity is derived from `meta.tenant_id + ":" + meta.partition_key`.
+- [ ] Deployment routing metadata is read from `meta` and must be set/validated by trusted routing infrastructure.
 - [ ] Contract name/version/hash are validated before rule evaluation.
-- [ ] Subscriber fan-out remains separate from rule evaluation.
-- [ ] Delivery effects retain event identity and use stable idempotency keys.
 
-## Required test layers
+## Domain configuration boundary
 
-| Change | Minimum checks |
-|---|---|
-| Domain/Service API | `internal/adapters/http/handlers/domain_deployments_test.go`, `internal/services/domainservices` |
-| Global auth boundary | `internal/adapters/http/middleware/middleware_test.go`, rule handler tests |
-| Ruleset resolution | `internal/services/events`, `internal/services/rules`, immutable revision tests |
-| Event/schema change | Go event validation tests, Rust engine/consumer tests, schema + fixture JSON parsing |
-| PostgreSQL persistence/migration | repository unit tests plus tagged integration/E2E suites that apply all migrations |
-| Go worker/runtime | `go test -race -count=1 ./internal/...` and integration/E2E tags |
-| Rust worker | `cd rust-worker && cargo fmt --all && cargo test --all-targets && cargo clippy --all-targets -- -D warnings` |
-| API/console contract | generated-code compile check and React console tests/build |
+- [ ] Domain request contains only Domain fields and `services[]`; each Service pins immutable `ruleset_id + revision` assignments.
+- [ ] Domain configuration does not accept or expose event metadata.
+- [ ] Runtime metadata is not copied into worker environment configuration.
+- [ ] Subscriber registrations remain separate from Domain execution Services.
 
-## CI commands
+## Runtime reliability
 
-Run the repository's normal validation before marking a PR ready:
-
-```bash
-make check-fmt
-go test -race -count=1 ./internal/...
-go test -race -count=1 -tags=integration ./tests/integration/...
-go test -race -tags=e2e -count=1 ./tests/e2e/...
-cd rust-worker
-cargo fmt --all
-cargo test --all-targets
-cargo clippy --all-targets -- -D warnings
-```
-
-CI also builds application/worker images, validates Compose, checks all JSON schemas and `data/examples/*.json`, compiles generated code, and builds/tests the React operations console.
-
-## Known rollout boundary
-
-The Domain API persists Service assignments and validates pinned revisions. A complete reconciler that automatically projects every Domain revision into both Go and Rust worker pools is not yet implemented. Until it exists, deployment automation must synchronize the worker's Service ID, deployment revision, and ruleset list with the Domain document.
+- [ ] Duplicate input events do not duplicate durable effects.
+- [ ] Failed processing does not acknowledge the input or advance a durable checkpoint.
+- [ ] Effects and execution state commit atomically.
+- [ ] Permanent invalid events are quarantined; transient failures retry.
+- [ ] Integration tests cover real PostgreSQL and NATS behavior for transaction, lease, retry, and recovery paths.
