@@ -233,3 +233,23 @@ func TestCreateDomainRejectsRuntimeIdentityFields(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateDomainRejectsServerManagedFields(t *testing.T) {
+	for _, body := range []string{
+		`{"id":"caller-id","name":"orders","services":[]}`,
+		`{"name":"orders","created_at":"2026-10-15T00:00:00Z","services":[]}`,
+		`{"name":"orders","updated_at":"2026-10-15T00:00:00Z","services":[]}`,
+	} {
+		service := &deploymentCaptureUseCase{}
+		handler := NewDomainServiceHandler(service)
+		mux := http.NewServeMux()
+		handler.RegisterRoutes(mux)
+		req := httptest.NewRequest(http.MethodPost, "/v1/domains", strings.NewReader(body))
+		res := httptest.NewRecorder()
+		mux.ServeHTTP(res, req)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("body %s: status = %d, want bad request", body, res.Code)
+		}
+		if service.called { t.Fatalf("SaveDomain called for server-managed input: %s", body) }
+	}
+}
