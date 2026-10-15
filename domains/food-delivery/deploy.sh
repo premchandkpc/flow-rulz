@@ -43,8 +43,7 @@ done
 domain_name="$(jq -r '.name' "$DOMAIN_FILE")"
 domain_id="$(
   curl --fail-with-body -sS "$API_URL/v1/domains" "${AUTH_ARGS[@]}" |
-    jq -r --arg name "$domain_name" '.data.domains[]? | select(.name == $name) | .id' |
-    head -n 1
+    jq -r --arg name "$domain_name" '[.data.domains[]? | select(.name == $name) | .id][0] // empty'
 )"
 
 echo "Applying Domain -> Services -> ruleset assignments..."
