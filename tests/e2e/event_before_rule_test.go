@@ -59,14 +59,14 @@ func TestEventBeforeRuleActivation_IsNotLost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile rule: %v", err)
 	}
-	revision.TenantScope = "test-tenant"
+	revision.TenantScope = domain.DomainConfigurationScope
 	revision.RuleID = "order.created"
 	if err := repositories.Rules.Save(context.Background(), revision); err != nil {
 		t.Fatalf("save revision: %v", err)
 	}
 
 	activation := &domain.RuleActivation{
-		TenantScope: "test-tenant",
+		TenantScope: domain.DomainConfigurationScope,
 		RuleSet:     "order.created",
 		Revision:    1,
 		Version:     1,
