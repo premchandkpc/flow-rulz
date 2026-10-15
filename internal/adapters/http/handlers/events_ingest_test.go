@@ -42,15 +42,13 @@ func TestEventIngestionPublishesValidatedEnvelopeToShard(t *testing.T) {
 	body, err := json.Marshal(struct {
 		ID           string            `json:"id"`
 		Type         string            `json:"type"`
-		TenantID     string            `json:"tenant_id"`
-		PartitionKey string            `json:"partition_key"`
-		OccurredAt   time.Time         `json:"occurred_at"`
-		Data         []byte            `json:"data"`
-		Headers      map[string]string `json:"headers,omitempty"`
+		OccurredAt time.Time       `json:"occurred_at"`
+		Data       json.RawMessage `json:"data"`
+		Meta       map[string]any  `json:"meta"`
 	}{
-		ID: "evt-1", Type: "order.created", TenantID: "tenant-a",
-		PartitionKey: "order-1", OccurredAt: time.Now().UTC(),
-		Data: []byte(`{"order_id":"order-1"}`),
+		ID: "evt-1", Type: "order.created", OccurredAt: time.Now().UTC(),
+		Data: json.RawMessage(`{"order_id":"order-1"}`),
+		Meta: map[string]any{"tenant_id":"tenant-a", "partition_key":"order-1", "traceparent":"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01", "producer":"test"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -72,14 +70,18 @@ func TestEventIngestionPublishesValidatedEnvelopeToShard(t *testing.T) {
 		t.Fatalf("subject = %q, want events", publisher.subject)
 	}
 	var published struct {
-		ID       string `json:"id"`
-		TenantID string `json:"tenant_id"`
-		Type     string `json:"type"`
+		ID string `json:"id"`
+		Type string `json:"type"`
+		Meta map[string]json.RawMessage `json:"meta"`
 	}
 	if err := json.Unmarshal(publisher.payload, &published); err != nil {
 		t.Fatal(err)
 	}
-	if published.ID != "evt-1" || published.TenantID != "tenant-a" || published.Type != "order.created" {
+	var tenantID, partitionKey, producer string
+	_ = json.Unmarshal(published.Meta["tenant_id"], &tenantID)
+	_ = json.Unmarshal(published.Meta["partition_key"], &partitionKey)
+	_ = json.Unmarshal(published.Meta["producer"], &producer)
+	if published.ID != "evt-1" || tenantID != "tenant-a" || partitionKey != "order-1" || producer != "test" || published.Type != "order.created" {
 		t.Fatalf("published envelope = %+v", published)
 	}
 }
@@ -95,13 +97,12 @@ func TestEventIngestionRejectsTenantMismatch(t *testing.T) {
 	body, err := json.Marshal(struct {
 		ID           string    `json:"id"`
 		Type         string    `json:"type"`
-		TenantID     string    `json:"tenant_id"`
-		PartitionKey string    `json:"partition_key"`
-		OccurredAt   time.Time `json:"occurred_at"`
-		Data         []byte    `json:"data"`
+		OccurredAt time.Time       `json:"occurred_at"`
+		Data       json.RawMessage `json:"data"`
+		Meta       map[string]any  `json:"meta"`
 	}{
-		ID: "evt-1", Type: "order.created", TenantID: "tenant-victim",
-		PartitionKey: "order-1", OccurredAt: time.Now().UTC(), Data: []byte(`{}`),
+		ID: "evt-1", Type: "order.created", OccurredAt: time.Now().UTC(), Data: json.RawMessage(`{}`),
+		Meta: map[string]any{"tenant_id":"tenant-victim", "partition_key":"order-1"},
 	})
 	if err != nil {
 		t.Fatal(err)
