@@ -118,7 +118,6 @@ async fn persist_new_event(
     let revision = persistence::load_active_revision(tx, envelope).await?;
     let (matched_rules, effects) = rules::evaluate(&revision, envelope)?;
     let decision_hash = calculate_decision_hash(&revision, envelope, &matched_rules, &effects);
-    effects.extend(persistence::load_service_subscriber_effects(tx, envelope).await?);
     let execution_id = calculate_execution_id(envelope, revision.revision);
 
     persist_execution_result(tx, &execution_id, envelope, &revision, &decision_hash, &effects).await?;
