@@ -82,6 +82,24 @@ func (r *repositoryStub) ListServices(_ context.Context, tenantID string) ([]*do
 	return items, nil
 }
 
+func (r *repositoryStub) ListSubscribersForEvent(_ context.Context, scopeID, eventType string) ([]*domain.DomainService, error) {
+	items := make([]*domain.DomainService, 0)
+	for _, item := range r.services {
+		if item.TenantID != scopeID {
+			continue
+		}
+		for _, filter := range item.EventTypes {
+			if filter == eventType {
+				cloned := *item
+				cloned.EventTypes = append([]string(nil), item.EventTypes...)
+				items = append(items, &cloned)
+				break
+			}
+		}
+	}
+	return items, nil
+}
+
 type fixedClock struct{ now time.Time }
 
 func (c fixedClock) Now() time.Time { return c.now }
@@ -203,5 +221,24 @@ func TestSaveSubscriptionRejectsInvalidEventType(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("SaveService() error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestSubscribersForEventUsesGlobalRegistryAndKeepsEventTenantRuntimeOnly(t *testing.T) {
+	service := NewService(newRepositoryStub(), fixedClock{now: time.Unix(82, 0).UTC()})
+	if _, err := service.SaveService(context.Background(), "ignored-scope", &domain.DomainService{
+		Name: "audit-consumer", EventTypes: []string{"orders.created"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	subscribers, err := service.SubscribersForEvent(context.Background(), "merchant-42", "orders.created")
+	if err != nil {
+		t.Fatalf("SubscribersForEvent() error = %v", err)
+	}
+	if len(subscribers) != 1 || subscribers[0].Name != "audit-consumer" {
+		t.Fatalf("global subscribers = %#v, want audit-consumer", subscribers)
+	}
+	if subscribers[0].TenantID != domain.DomainConfigurationScope {
+		t.Fatalf("subscriber config scope = %q, want global config scope", subscribers[0].TenantID)
 	}
 }
