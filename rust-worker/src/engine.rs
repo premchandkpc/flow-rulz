@@ -116,15 +116,7 @@ async fn persist_new_event(
     envelope: &EventEnvelope,
 ) -> Result<ProcessOutcome> {
     let revision = persistence::load_active_revision(tx, envelope).await?;
-    if let Some(required) = &revision.input_contract {
-        if envelope.contract.is_none() {
-            bail!("rule set {} requires contract {}@{}", revision.rule_id, required.name, required.version);
-        }
-        bail!("Rust worker cannot safely evaluate contract-bound rule set {} yet; route this event to the Go worker", revision.rule_id);
-    }
-    if envelope.contract.is_some() {
-        bail!("Rust worker cannot safely validate event contracts yet; route this event to the Go worker");
-    }
+    validate_contract_support(&revision, envelope)?;
     let (matched_rules, effects) = rules::evaluate(&revision, envelope)?;
     let decision_hash = calculate_decision_hash(&revision, envelope, &matched_rules, &effects);
     let execution_id = calculate_execution_id(envelope, revision.revision);
@@ -145,6 +137,19 @@ async fn persist_execution_result(
     persistence::persist_execution(tx, execution_id, envelope, revision, decision_hash).await?;
     persistence::persist_outbox_effects(tx, execution_id, effects).await?;
     persistence::mark_inbox_committed(tx, envelope, execution_id).await
+}
+
+fn validate_contract_support(revision: &RuleRevision, envelope: &EventEnvelope) -> Result<()> {
+    if let Some(required) = &revision.input_contract {
+        if envelope.contract.is_none() {
+            bail!("rule set {} requires contract {}@{}", revision.rule_id, required.name, required.version);
+        }
+        bail!("Rust worker cannot safely evaluate contract-bound rule set {} yet; route this event to the Go worker", revision.rule_id);
+    }
+    if envelope.contract.is_some() {
+        bail!("Rust worker cannot safely validate event contracts yet; route this event to the Go worker");
+    }
+    Ok(())
 }
 
 fn validate_worker_lease(worker_id: &str, fencing_token: i64) -> Result<()> {
@@ -197,6 +202,30 @@ mod tests {
     use chrono::Utc;
     use serde_json::json;
     use super::rules::{Action, Predicate, build_effect, compare_eq, eval_predicate, expand_template};
+
+    #[test]
+    fn contract_bound_events_fail_closed_until_contract_parity_exists() {
+        let revision = rules::RuleRevision {
+            tenant_scope: "tenant-a".into(),
+            rule_id: "orders.created".into(),
+            revision: 1,
+            content_hash: "hash".into(),
+            match_mode: "all_matches".into(),
+            input_contract: Some(rules::ContractRef {
+                name: "OrderEvent".into(),
+                version: "1".into(),
+                schema_hash: Some("schema-hash".into()),
+            }),
+            compiled: vec![],
+        };
+        let event = EventEnvelope {
+            id: "e".into(), event_type: "orders.created".into(), tenant_id: "tenant-a".into(),
+            partition_key: "p".into(), workflow_id: None, occurred_at: Utc::now(),
+            data: json!({}), headers: Default::default(), contract: None, message_kind: None,
+            correlation_id: None, causation_id: None,
+        };
+        assert!(validate_contract_support(&revision, &event).is_err());
+    }
 
     #[test]
     fn sha256_hex_matches_standard_sha256_vector() {
