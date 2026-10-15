@@ -113,13 +113,11 @@ type SubscriberRouter interface {
 
 // Evaluator turns an event into generic effects and audit records.
 type Evaluator interface {
-	Evaluate(context.Context, EventEnvelope) ([]Effect, []ExecutionAudit, error)
+	Evaluate(context.Context, string, int64, EventEnvelope) ([]Effect, []ExecutionAudit, error)
 }
 
 // RuleEvaluator resolves pinned rulesets and delegates subscriber fan-out.
 type RuleEvaluator struct {
-	DeploymentID       string
-	DeploymentRevision int64
 	Resolver           Resolver
 	Router    SubscriberRouter
 	MaxHop    int
@@ -128,11 +126,11 @@ type RuleEvaluator struct {
 
 // Evaluate is pure with respect to external side effects: it builds outputs in
 // memory. The transaction adapter persists these outputs atomically with offsets.
-func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effect, []ExecutionAudit, error) {
+func (e *RuleEvaluator) Evaluate(ctx context.Context, deploymentID string, deploymentRevision int64, env EventEnvelope) ([]Effect, []ExecutionAudit, error) {
 	if e == nil || e.Resolver == nil {
 		return nil, nil, errors.New("ruleset resolver is not configured")
 	}
-	if e.DeploymentID == "" || e.DeploymentRevision <= 0 {
+	if deploymentID == "" || deploymentRevision <= 0 {
 		return nil, nil, errors.New("worker service deployment identity and revision are required")
 }
 	if env.SchemaVersion != 1 {
@@ -141,13 +139,13 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effe
 	if env.ID == "" || env.TenantID == "" || env.EventType == "" || env.PartitionKey == "" {
 		return nil, nil, errors.New("event id, tenant, type, and partition key are required")
 	}
-	if env.Metadata.TargetServiceID != e.DeploymentID || env.Metadata.DeploymentRevision != e.DeploymentRevision {
+	if env.Metadata.TargetServiceID != deploymentID || env.Metadata.DeploymentRevision != deploymentRevision {
 		return nil, nil, errors.New("event target does not match this worker deployment")
 	}
 	if e.MaxHop > 0 && env.Metadata.Hop >= e.MaxHop {
 		return nil, nil, ErrHopLimit
 	}
-	refs, err := e.Resolver.Resolve(ctx, e.DeploymentID, e.DeploymentRevision, env)
+	refs, err := e.Resolver.Resolve(ctx, deploymentID, deploymentRevision, env)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -303,7 +301,7 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 		if err != nil {
 			return fmt.Errorf("decode %s[%d]@%d: %w", record.Topic, record.Partition, record.Offset, err)
 		}
-		effects, audits, err := w.Evaluator.Evaluate(ctx, env)
+		effects, audits, err := w.Evaluator.Evaluate(ctx, w.DeploymentID, w.DeploymentRevision, env)
 		if err != nil {
 			// Production code must classify permanent errors into a DLQ transaction.
 			// Returning an error aborts this batch; do not silently skip poison records.
