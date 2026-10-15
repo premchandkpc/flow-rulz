@@ -270,7 +270,7 @@ mod deployment_routing_tests {
         ]);
         for (key, value) in route_meta {
             let value = if key == "deployment_revision" {
-                value.parse::<i64>().map(json!).unwrap_or_else(|_| json!(value))
+                match value.parse::<i64>() { Ok(revision) => json!(revision), Err(_) => json!(value) }
             } else {
                 json!(value)
             };
