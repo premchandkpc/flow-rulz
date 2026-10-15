@@ -63,10 +63,10 @@ impl Serialize for EventEnvelope {
             ("tenant_id", self.tenant_id.as_str()),
             ("partition_key", self.partition_key.as_str()),
         ] {
-            if let Some(existing) = meta.get(key) {
-                if existing.as_str() != Some(value) {
-                    return Err(serde::ser::Error::custom(format!("event field and meta.{key} disagree")));
-                }
+            if let Some(existing) = meta.get(key)
+                && existing.as_str() != Some(value)
+            {
+                return Err(serde::ser::Error::custom(format!("event field and meta.{key} disagree")));
             }
             meta.insert(key.into(), Value::String(value.to_owned()));
         }
