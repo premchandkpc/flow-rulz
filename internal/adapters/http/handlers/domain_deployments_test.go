@@ -15,9 +15,9 @@ import (
 
 type deploymentCaptureUseCase struct {
 	ports.DomainServiceUseCase
-	called bool
+	called   bool
 	tenantID string
-	item *domain.TenantDomain
+	item     *domain.TenantDomain
 }
 
 func (s *deploymentCaptureUseCase) SaveDomain(_ context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
