@@ -249,8 +249,10 @@ func (s *Service) SaveService(ctx context.Context, tenantID string, item *domain
 	if err := normalizeAndValidateService(item, tenantID); err != nil {
 		return nil, err
 	}
-	if err := s.validateServiceDomains(ctx, tenantID, item.DomainIDs); err != nil {
-		return nil, err
+	if len(item.DomainIDs) > 0 {
+		if err := s.validateServiceDomains(ctx, tenantID, item.DomainIDs); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.ensureServiceNameAvailable(ctx, item); err != nil {
 		return nil, err
@@ -274,8 +276,17 @@ func normalizeAndValidateService(item *domain.DomainService, tenantID string) er
 	item.Name = strings.TrimSpace(item.Name)
 	item.EndpointURL = strings.TrimSpace(item.EndpointURL)
 	item.DomainIDs = uniqueTrimmed(item.DomainIDs)
+	item.EventTypes = uniqueTrimmed(item.EventTypes)
 	if !validTenantID(tenantID) || !namePattern.MatchString(item.Name) || len(item.DomainIDs) > maxDomainsPerService {
-		return fmt.Errorf("%w: service name and at most %d domain_ids are required", ErrInvalidInput, maxDomainsPerService)
+		return fmt.Errorf("%w: a valid subscription name and at most %d legacy domain_ids are allowed", ErrInvalidInput, maxDomainsPerService)
+	}
+	if len(item.EventTypes) == 0 && len(item.DomainIDs) == 0 {
+		return fmt.Errorf("%w: at least one event_type is required", ErrInvalidInput)
+	}
+	for _, eventType := range item.EventTypes {
+		if !eventTypePattern.MatchString(eventType) {
+			return fmt.Errorf("%w: invalid subscription event type %q", ErrInvalidInput, eventType)
+		}
 	}
 	if item.EndpointURL != "" {
 		return fmt.Errorf("%w: endpoint_url HTTP callbacks are no longer supported; FlowRulz assigns a NATS subject", ErrInvalidInput)
