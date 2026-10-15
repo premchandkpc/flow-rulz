@@ -42,7 +42,7 @@ pub(super) async fn load_duplicate_execution(tx: &mut Transaction<'_, Postgres>,
 
 pub(super) async fn load_active_revision(tx: &mut Transaction<'_, Postgres>, event: &EventEnvelope) -> Result<RuleRevision> {
     let row = sqlx::query(
-        "SELECT r.tenant_scope,r.rule_id,r.revision,r.content_hash,r.match_mode,r.compiled \
+        "SELECT r.tenant_scope,r.rule_id,r.revision,r.content_hash,r.match_mode,r.input_contract,r.compiled \
          FROM rule_revisions r JOIN rule_activations a \
          ON a.tenant_scope=r.tenant_scope AND a.rule_set=r.rule_id AND a.revision=r.revision \
          WHERE a.tenant_scope=$1 AND a.rule_set=$2"
@@ -56,6 +56,10 @@ pub(super) async fn load_active_revision(tx: &mut Transaction<'_, Postgres>, eve
         revision: row.try_get("revision")?,
         content_hash: row.try_get("content_hash")?,
         match_mode: row.try_get("match_mode")?,
+        input_contract: row.try_get::<Option<Value>, _>("input_contract")?
+            .map(serde_json::from_value)
+            .transpose()
+            .context("decode rule input contract")?,
         compiled: serde_json::from_value(row.try_get::<Value, _>("compiled")?).context("decode compiled rule set")?,
     })
 }
