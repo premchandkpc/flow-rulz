@@ -224,7 +224,7 @@ func TestWorkerAbortsOnCommitFailure(t *testing.T) {
 	store := newMemoryLogStore()
 	store.commitErr = errors.New("simulated durable commit failure")
 	worker := Worker{
-		GroupID: "group", Store: store, Evaluator: fixedEvaluator{}, Codec: jsonCodec{},
+		GroupID: "group", Store: store, Evaluator: fixedEvaluator{effects: []Effect{{ID: "effect", IdempotencyKey: "effect", Destination: "commands", PartitionKey: "key"}}}, Codec: jsonCodec{},
 	}
 	input, marshalErr := json.Marshal(EventEnvelope{
 		SchemaVersion: 1, ID: "event", TenantID: "tenant", EventType: "test", PartitionKey: "key",
