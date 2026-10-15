@@ -36,7 +36,7 @@ type ScheduleCodec interface {
 }
 
 type Scheduler struct {
-	Transactions TransactionFactory
+	Store         LogStore
 	Codec        ScheduleCodec
 	EventsTopic  string
 	SchedulesTopic string
@@ -48,7 +48,7 @@ type Scheduler struct {
 // The caller must only call this for a due record in a partition currently assigned
 // to this scheduler; on assignment loss it must stop and discard local heap entries.
 func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
-	if s.Transactions == nil || s.Codec == nil || s.EventsTopic == "" || s.SchedulesTopic == "" {
+	if s.Store == nil || s.Codec == nil || s.EventsTopic == "" || s.SchedulesTopic == "" {
 		return errors.New("scheduler dependencies are not configured")
 	}
 	if due.Record.ScheduleID == "" || due.Record.TenantID == "" || due.Occurrence == "" {
@@ -70,7 +70,7 @@ func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
 		return err
 	}
 
-	tx, err := s.Transactions.Begin(ctx)
+	tx, err := s.Store.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -81,11 +81,11 @@ func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
 		}
 	}()
 
-	if err := tx.Produce(ctx, s.EventsTopic, []byte(event.TenantID+":"+event.PartitionKey), payload); err != nil {
+	if err := tx.Append(ctx, LogRecord{ID: event.ID, TenantID: event.TenantID, PartitionKey: event.PartitionKey, Kind: s.EventsTopic, Key: []byte(event.TenantID + ":" + event.PartitionKey), Value: payload}); err != nil {
 		return err
 	}
 	// A nil value is a Kafka tombstone for this compacted schedule key.
-	if err := tx.Produce(ctx, s.SchedulesTopic, due.Key, nil); err != nil {
+	if err := tx.Append(ctx, LogRecord{ID: "schedule-tombstone:" + due.Record.TenantID + ":" + due.Record.ScheduleID + ":" + strconv.FormatInt(due.Record.Revision, 10), TenantID: due.Record.TenantID, PartitionKey: string(due.Key), Kind: s.SchedulesTopic, Key: due.Key, Value: nil}); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
