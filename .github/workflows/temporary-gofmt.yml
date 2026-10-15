@@ -3,7 +3,7 @@ name: Temporary Go formatter
 on:
   push:
     branches:
-      - proposal/kafka-log-data-plane
+      - refactor/repo-small-focused-methods
 
 permissions:
   contents: write
@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref_name }}
+          ref: refactor/repo-small-focused-methods
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
@@ -31,4 +31,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add '*.go'
           git commit -m "style: apply gofmt to Go sources"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin HEAD:refactor/repo-small-focused-methods
