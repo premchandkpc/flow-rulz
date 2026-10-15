@@ -2,7 +2,8 @@
 //! This module intentionally uses the existing PostgreSQL schema and event contract.
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashMap;
 use self::rules::{Effect, RuleRevision};
 
 mod lease;
@@ -14,28 +15,119 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct EventEnvelope {
     pub id: String,
-    #[serde(rename = "type")]
     pub event_type: String,
     pub tenant_id: String,
     pub partition_key: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_id: Option<String>,
     pub occurred_at: DateTime<Utc>,
-    #[serde(default)]
     pub data: Value,
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub headers: std::collections::HashMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: HashMap<String, String>,
     pub contract: Option<ContractRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_kind: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correlation_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub causation_id: Option<String>,
+    /// Unknown event metadata is preserved across deserialize/serialize cycles.
+    pub meta: HashMap<String, Value>,
+}
+
+#[derive(Serialize)]
+struct EventEnvelopeWireRef<'a> {
+    id: &'a str,
+    #[serde(rename = "type")]
+    event_type: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workflow_id: &'a Option<String>,
+    occurred_at: DateTime<Utc>,
+    data: &'a Value,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    headers: &'a HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    contract: &'a Option<ContractRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message_kind: &'a Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    correlation_id: &'a Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    causation_id: &'a Option<String>,
+    meta: HashMap<String, Value>,
+}
+
+impl Serialize for EventEnvelope {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where S: Serializer {
+        let mut meta = self.meta.clone();
+        meta.insert("tenant_id".into(), Value::String(self.tenant_id.clone()));
+        meta.insert("partition_key".into(), Value::String(self.partition_key.clone()));
+        EventEnvelopeWireRef {
+            id: &self.id,
+            event_type: &self.event_type,
+            workflow_id: &self.workflow_id,
+            occurred_at: self.occurred_at,
+            data: &self.data,
+            headers: &self.headers,
+            contract: &self.contract,
+            message_kind: &self.message_kind,
+            correlation_id: &self.correlation_id,
+            causation_id: &self.causation_id,
+            meta,
+        }.serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+struct EventEnvelopeWire {
+    id: String,
+    #[serde(rename = "type")]
+    event_type: String,
+    #[serde(default)]
+    tenant_id: Option<String>,
+    #[serde(default)]
+    partition_key: Option<String>,
+    #[serde(default)]
+    workflow_id: Option<String>,
+    occurred_at: DateTime<Utc>,
+    #[serde(default)]
+    data: Value,
+    #[serde(default)]
+    headers: HashMap<String, String>,
+    #[serde(default)]
+    contract: Option<ContractRef>,
+    #[serde(default)]
+    message_kind: Option<String>,
+    #[serde(default)]
+    correlation_id: Option<String>,
+    #[serde(default)]
+    causation_id: Option<String>,
+    #[serde(default)]
+    meta: HashMap<String, Value>,
+}
+
+impl<'de> Deserialize<'de> for EventEnvelope {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let wire = EventEnvelopeWire::deserialize(deserializer)?;
+        let tenant_id = wire.meta.get("tenant_id").and_then(Value::as_str)
+            .map(str::to_owned).or(wire.tenant_id)
+            .ok_or_else(|| serde::de::Error::custom("meta.tenant_id is required"))?;
+        let partition_key = wire.meta.get("partition_key").and_then(Value::as_str)
+            .map(str::to_owned).or(wire.partition_key)
+            .ok_or_else(|| serde::de::Error::custom("meta.partition_key is required"))?;
+        if wire.meta.get("tenant_id").is_some_and(|v| !v.is_string()) {
+            return Err(serde::de::Error::custom("meta.tenant_id must be a string"));
+        }
+        if wire.meta.get("partition_key").is_some_and(|v| !v.is_string()) {
+            return Err(serde::de::Error::custom("meta.partition_key must be a string"));
+        }
+        Ok(Self {
+            id: wire.id, event_type: wire.event_type, tenant_id, partition_key,
+            workflow_id: wire.workflow_id, occurred_at: wire.occurred_at, data: wire.data,
+            headers: wire.headers, contract: wire.contract, message_kind: wire.message_kind,
+            correlation_id: wire.correlation_id, causation_id: wire.causation_id, meta: wire.meta,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
