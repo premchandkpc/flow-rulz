@@ -171,7 +171,7 @@ func validateDeployments(deployments []domain.ServiceDeployment) error {
 func (s *Service) ensureDomainNameAvailable(ctx context.Context, item *domain.TenantDomain) error {
 	existingDomains, err := s.repository.ListDomains(ctx, item.TenantID)
 	if err != nil {
-		return fmt.Errorf("check tenant domain names: %w", err)
+		return fmt.Errorf("check domain names: %w", err)
 	}
 	for _, existing := range existingDomains {
 		if existing.ID != item.ID && existing.Name == item.Name {
@@ -188,7 +188,7 @@ func (s *Service) initializeDomainIdentity(ctx context.Context, tenantID string,
 	}
 	existing, err := s.repository.GetDomain(ctx, tenantID, item.ID)
 	if err != nil {
-		return fmt.Errorf("get tenant domain before update: %w", err)
+		return fmt.Errorf("get domain before update: %w", err)
 	}
 	if existing == nil {
 		return ErrNotFound
@@ -207,7 +207,7 @@ func (s *Service) persistDomain(ctx context.Context, item *domain.TenantDomain) 
 		if errors.Is(err, domain.ErrDomainServiceConflict) {
 			return fmt.Errorf("%w: domain name %q already exists", ErrConflict, item.Name)
 		}
-		return fmt.Errorf("save tenant domain: %w", err)
+		return fmt.Errorf("save domain: %w", err)
 	}
 	return nil
 }
@@ -216,7 +216,7 @@ func (s *Service) persistDomain(ctx context.Context, item *domain.TenantDomain) 
 func (s *Service) GetDomain(ctx context.Context, tenantID, domainID string) (*domain.TenantDomain, error) {
 	item, err := s.repository.GetDomain(ctx, tenantID, domainID)
 	if err != nil {
-		return nil, fmt.Errorf("get tenant domain: %w", err)
+		return nil, fmt.Errorf("get domain: %w", err)
 	}
 	if item == nil {
 		return nil, ErrNotFound
@@ -228,7 +228,7 @@ func (s *Service) GetDomain(ctx context.Context, tenantID, domainID string) (*do
 func (s *Service) ListDomains(ctx context.Context, tenantID string) ([]*domain.TenantDomain, error) {
 	items, err := s.repository.ListDomains(ctx, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("list tenant domains: %w", err)
+		return nil, fmt.Errorf("list domains: %w", err)
 	}
 	return items, nil
 }
@@ -239,7 +239,7 @@ func (s *Service) DeleteDomain(ctx context.Context, tenantID, domainID string) e
 		return err
 	}
 	if err := s.repository.DeleteDomain(ctx, tenantID, domainID); err != nil {
-		return fmt.Errorf("delete tenant domain: %w", err)
+		return fmt.Errorf("delete domain: %w", err)
 	}
 	return nil
 }
@@ -298,7 +298,7 @@ func (s *Service) validateServiceDomains(ctx context.Context, tenantID string, d
 	for _, domainID := range domainIDs {
 		if _, err := s.GetDomain(ctx, tenantID, domainID); err != nil {
 			if errors.Is(err, ErrNotFound) {
-				return fmt.Errorf("%w: domain %q does not belong to this tenant", ErrInvalidInput, domainID)
+				return fmt.Errorf("%w: domain %q does not exist", ErrInvalidInput, domainID)
 			}
 			return err
 		}
@@ -309,11 +309,11 @@ func (s *Service) validateServiceDomains(ctx context.Context, tenantID string, d
 func (s *Service) ensureServiceNameAvailable(ctx context.Context, item *domain.DomainService) error {
 	existingServices, err := s.repository.ListServices(ctx, item.TenantID)
 	if err != nil {
-		return fmt.Errorf("check tenant service names: %w", err)
+		return fmt.Errorf("check subscription names: %w", err)
 	}
 	for _, existing := range existingServices {
 		if existing.ID != item.ID && existing.Name == item.Name {
-			return fmt.Errorf("%w: service name %q already exists", ErrConflict, item.Name)
+			return fmt.Errorf("%w: subscription name %q already exists", ErrConflict, item.Name)
 		}
 	}
 	return nil
@@ -327,7 +327,7 @@ func (s *Service) initializeServiceIdentity(ctx context.Context, tenantID string
 	}
 	existing, err := s.repository.GetService(ctx, tenantID, item.ID)
 	if err != nil {
-		return fmt.Errorf("get tenant service before update: %w", err)
+		return fmt.Errorf("get subscription before update: %w", err)
 	}
 	if existing == nil {
 		return ErrNotFound
@@ -346,9 +346,9 @@ func (s *Service) persistService(ctx context.Context, item *domain.DomainService
 	item.UpdatedAt = now
 	if err := s.repository.SaveService(ctx, item); err != nil {
 		if errors.Is(err, domain.ErrDomainServiceConflict) {
-			return fmt.Errorf("%w: service name %q already exists", ErrConflict, item.Name)
+			return fmt.Errorf("%w: subscription name %q already exists", ErrConflict, item.Name)
 		}
-		return fmt.Errorf("save tenant service: %w", err)
+		return fmt.Errorf("save subscription: %w", err)
 	}
 	return nil
 }
