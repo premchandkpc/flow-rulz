@@ -71,6 +71,10 @@ jobs:
             echo "Checking shell syntax: $script"
             bash -n "$script"
           done
+          if grep -nE 'X-Tenant-ID|FLOWRULZ_TENANT|event_types' "${deploy_scripts[@]}"; then
+            echo "::error::Domain deploy scripts must use global Domain configuration, not tenant/event filters"
+            exit 1
+          fi
 
           echo "Validating Docker Compose configuration"
           cp .env.example .env
