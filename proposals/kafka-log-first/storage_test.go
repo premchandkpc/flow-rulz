@@ -220,9 +220,12 @@ func TestWorkerAbortsOnCommitFailure(t *testing.T) {
 	worker := Worker{
 		GroupID: "group", Store: store, Evaluator: fixedEvaluator{}, Codec: jsonCodec{},
 	}
-	input, _ := json.Marshal(EventEnvelope{
+	input, marshalErr := json.Marshal(EventEnvelope{
 		SchemaVersion: 1, ID: "event", TenantID: "tenant", EventType: "test", PartitionKey: "key",
 	})
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
 	err := worker.ProcessBatch(context.Background(), Batch{
 		Records: []Record{{Topic: "flow.events", Partition: 0, Offset: 0, Value: input}},
 		Offsets: []Offset{{Topic: "flow.events", Partition: 0, Next: 1}},
