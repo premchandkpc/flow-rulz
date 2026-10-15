@@ -1,16 +1,18 @@
 # HTTP API
 
-The API has two distinct responsibilities: global control-plane configuration and runtime/event operations. A Domain configuration request must not include event identity fields.
+The API separates global configuration from runtime event ingestion.
 
 ## Domain configuration
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/v1/domains` | Create a Domain with Services and ruleset assignments |
+| POST | `/v1/domains` | Create a Domain containing Services and ruleset assignments |
 | GET | `/v1/domains` | List Domains |
 | GET | `/v1/domains/{domainID}` | Get a Domain |
-| PUT | `/v1/domains/{domainID}` | Replace/update a Domain |
+| PUT | `/v1/domains/{domainID}` | Update a Domain |
 | DELETE | `/v1/domains/{domainID}` | Delete a Domain |
+
+A Domain configuration contains only Domain fields and nested Services. Each Service pins one or more immutable ruleset revisions. Runtime event identity, partitioning, tracing, and other event metadata are not configuration fields.
 
 Example request:
 
@@ -33,20 +35,20 @@ Example request:
 }
 ```
 
-There is no `tenant_id`, `partition_key`, or `event_types` property in this request. The decoder rejects unknown fields and rejects client-supplied `id`, `created_at`, and `updated_at`. See the [request schema](../contracts/schemas/domain.schema.json) and [response schema](../contracts/schemas/domain-response.schema.json).
+See the [Domain request schema](../contracts/schemas/domain.schema.json), [response schema](../contracts/schemas/domain-response.schema.json), and [sample Domain](../data/examples/domain.json).
 
 ## Ruleset and contract APIs
 
-- `POST /v1/rules/{ruleSet}/revisions`: compile and activate a revision.
+- `POST /v1/rules/{ruleSet}/revisions`: compile and publish a revision.
 - `GET /v1/rules/{ruleSet}/revisions`: list revisions.
 - `GET /v1/rules/{ruleSet}/revisions/{revision}`: fetch a revision.
-- `DELETE /v1/rules/{ruleSet}/revisions/{revision}`: deactivate the ruleset.
-- `POST /v1/contracts`, `GET /v1/contracts`, `GET /v1/contracts/{name}/{version}`: manage/read immutable contract definitions.
-
-Rule and Domain configuration use the global configuration scope. Runtime event identity does not select the configuration namespace.
+- `DELETE /v1/rules/{ruleSet}/revisions/{revision}`: deactivate a ruleset revision.
+- `POST /v1/contracts`, `GET /v1/contracts`, `GET /v1/contracts/{name}/{version}`: manage/read versioned contract definitions.
 
 ## Runtime events
 
-The event envelope contains `tenant_id` and `partition_key`. Those values are data on each event, not query parameters for Domain configuration. The authenticated ingress path may still enforce producer authorization; authentication is not a reason to copy tenant identity into Domain configuration.
+`POST /v1/events/{eventType}` accepts an event whose top-level envelope contains `id`, `type`, `occurred_at`, optional `contract`, and `data`. The required `meta` object contains `tenant_id` and `partition_key`; it can also contain tracing, correlation, producer, routing, and future metadata fields. Unknown metadata keys are accepted and preserved. Unknown top-level envelope fields are rejected.
 
-See [event.md](event.md), [domain.md](domain.md), and [the sample files](../data/examples/).
+The event metadata tenant value must match the authenticated producer scope when the ingress authentication middleware supplies one. This is an event authorization check, not Domain configuration.
+
+See [event.md](event.md), [domain.md](domain.md), and the [JSON samples](../data/examples/).
