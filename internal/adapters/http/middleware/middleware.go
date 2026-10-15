@@ -68,10 +68,12 @@ func globalConfigurationAuthStatus(r *http.Request) int {
 	if env == "development" || env == "dev" || env == "test" {
 		return http.StatusOK
 	}
-	// A validated JWT is accepted when auth middleware is enabled. This legacy
-	// validator requires a tenant claim; the handler itself does not consume it.
-	if _, ok := auth.TenantFromContext(r.Context()); ok {
-		return http.StatusOK
+	// Global configuration requires an administrative scope, not merely an
+	// authenticated event tenant. Tenant identity belongs to runtime events.
+	for _, scope := range []string{"flowrulz:admin", "admin", "domains:admin", "rules:admin", "contracts:admin", "subscriptions:admin"} {
+		if auth.HasScope(r.Context(), scope) {
+			return http.StatusOK
+		}
 	}
 	expected := os.Getenv(trustedProxyTokenEnv)
 	if expected == "" {
