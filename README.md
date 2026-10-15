@@ -32,7 +32,7 @@ NATS delivery is at-least-once. JetStream is the durable append-only message log
 
 ## Domain configuration and service deployments
 
-Domain configuration is managed through the `/v1/domains` API. A Domain contains named execution Services, and each Service declares its assigned ruleset revisions and optional worker profile. The public domain payload contains `name` and `services[]`; it does not configure tenant identity, event types, or partition keys. Those values arrive on each event. The worker uses the event's tenant identity and partition key for runtime routing, deduplication, and ordering.
+Domain configuration is managed through the `/v1/domains` API. See the [Domain guide](docs/domain.md), [API guide](docs/api.md), [ruleset guide](docs/ruleset.md), [contract guide](docs/contract.md), [event guide](docs/event.md), [worker guide](docs/worker.md), and [sample walkthrough](docs/sample.md); JSON fixtures live in [data/examples](data/examples/). A Domain contains named execution Services, and each Service declares its assigned ruleset revisions and optional worker profile. The public domain payload contains `name` and `services[]`; it does not configure tenant identity, event types, or partition keys. Those values arrive on each event. The worker uses the event's tenant identity and partition key for runtime routing, deduplication, and ordering.
 
 Example:
 
