@@ -13,7 +13,7 @@ func TestEventEnvelopeSerializesAllMetadataInsideMeta(t *testing.T) {
 		Data:        json.RawMessage(`{"order_id":"order-1007"}`),
 		MessageKind: "event", CorrelationID: "corr-1", CausationID: "evt-parent",
 		Headers: map[string]string{"traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"},
-		Meta: map[string]json.RawMessage{"source": json.RawMessage(`"checkout-api"`), "producer_sequence": json.RawMessage(`1042`)},
+		Meta:    map[string]json.RawMessage{"source": json.RawMessage(`"checkout-api"`), "producer_sequence": json.RawMessage(`1042`)},
 	}
 	encoded, err := json.Marshal(event)
 	if err != nil {
