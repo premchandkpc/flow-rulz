@@ -97,7 +97,7 @@ type shardLeaseStub struct{ ports.ShardLeaseRepository }
 func (shardLeaseStub) AssertHeld(context.Context, uint32, string, int64) error { return nil }
 
 type subscriberRepositoryStub struct {
-	ports.DomainServiceRepository
+	ports.SubscriberRepository
 	lookups int
 }
 
@@ -125,7 +125,7 @@ func setupEventService(activeRule bool) (*Service, *inboxStub, *executionStub, *
 	repos := ports.EventTxRepos{
 		Inbox: inbox, Activations: activationStub{active: activeRule},
 		RuleRepo: ruleRepositoryStub{}, Executions: executions, Outbox: outbox,
-		ShardLeases: shardLeaseStub{}, DomainServices: subscribers,
+		ShardLeases: shardLeaseStub{}, Subscribers: subscribers,
 	}
 	service := NewService(
 		nil, eventEvaluatorStub{}, nil, domain.SystemClock{}, transactionManagerStub{tx: tx},
