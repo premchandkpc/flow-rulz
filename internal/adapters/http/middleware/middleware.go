@@ -29,9 +29,21 @@ const (
 // a trusted proxy that authenticates callers and overwrites the trusted headers.
 func TenantExtractor(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" || isGlobalConfigurationRoute(r.URL.Path) {
-			// Domain deployments and generic subscriptions are global configuration.
-			// Runtime tenant identity is carried by each event, not control-plane headers.
+		if r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if isGlobalConfigurationRoute(r.URL.Path) {
+			// Global configuration still requires control-plane authentication, but
+			// does not require a tenant identity. Runtime tenant identity is on events.
+			if status := globalConfigurationAuthStatus(r); status != http.StatusOK {
+				if status == http.StatusServiceUnavailable {
+					http.Error(w, "global configuration authentication is not configured", status)
+				} else {
+					http.Error(w, "authenticated control-plane identity is required", status)
+				}
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -49,6 +61,27 @@ func TenantExtractor(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), TenantIDKey, tenantID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func globalConfigurationAuthStatus(r *http.Request) int {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+	if env == "development" || env == "dev" || env == "test" {
+		return http.StatusOK
+	}
+	// A validated JWT is accepted when auth middleware is enabled. This legacy
+	// validator requires a tenant claim; the handler itself does not consume it.
+	if _, ok := auth.TenantFromContext(r.Context()); ok {
+		return http.StatusOK
+	}
+	expected := os.Getenv(trustedProxyTokenEnv)
+	if expected == "" {
+		return http.StatusServiceUnavailable
+	}
+	provided := r.Header.Get(trustedProxyTokenHeader)
+	if len(provided) != len(expected) || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+		return http.StatusUnauthorized
+	}
+	return http.StatusOK
 }
 
 func isGlobalConfigurationRoute(path string) bool {
