@@ -7,7 +7,7 @@ type WorkerSnapshot = { url: string; name: string; online: boolean; checkedAt: n
 type NavKey = "overview" | "simulations" | "catalog" | "api" | "codegen" | "workers" | "rules" | "logs";
 type SimulationScenario = "all" | "ecommerce" | "banking" | "food-delivery";
 type DomainConfig = { id: string; name: string; services?: Array<{ service_id: string; name: string; rulesets: Array<{ ruleset_id: string; revision: number }> }> };
-type DomainService = { id: string; name: string; nats_subject: string; domain_ids: string[]; active: boolean };
+type DomainService = { id: string; name: string; nats_subject: string; event_types: string[]; active: boolean };
 const SOURCE_RULE_BY_SCENARIO: Record<Exclude<SimulationScenario, "all">, string> = {
   ecommerce: "order.created",
   banking: "transaction.initiated",
@@ -232,7 +232,7 @@ function RuleStudio({ settings, activeRules, contracts: allContracts, onChanged 
   const fillSample = () => {
     const name = ruleSet.trim() || sourceDoc?.rule_set;
     const contract = contracts.find(c => c.name === name);
-    if (!contract) { setMessage({ tone: "error", text: `No contract named "${name}" is stored. Save the domain from the Domain catalog first.` }); return; }
+    if (!contract) { setMessage({ tone: "error", text: `No contract named "${name}" is stored. Register the contract first.` }); return; }
     setSample(JSON.stringify(sampleForContract(contract), null, 2));
   };
   const deploy = async () => {
@@ -333,25 +333,25 @@ function RuleFlowMap({ settings, scenario, startRuleSet, events, running }: { se
     setLoadError("");
     (async () => {
       try {
-        const [domainsResponse, activeResponse, servicesResponse] = await Promise.all([
+        const [domainsResponse, activeResponse, subscriptionsResponse] = await Promise.all([
           apiRequest(settings, "/v1/domains"),
           apiRequest(settings, "/v1/rules/active"),
           apiRequest(settings, "/v1/subscriptions"),
         ]);
         const domainRows = asArray(domainsResponse);
-        const serviceRows = asArray(servicesResponse) as DomainService[];
+        const subscriptionRows = asArray(subscriptionsResponse) as DomainService[];
         const subscribedTypes = new Set<string>();
-        for (const domain of domainRows) {
-          if (!Array.isArray(domain.event_types)) continue;
-          const subscribed = serviceRows.some(service =>
-            service.active && Array.isArray(service.domain_ids) && service.domain_ids.includes(String(domain.id))
-          );
-          if (subscribed) domain.event_types.forEach((type: unknown) => {
-            if (typeof type === "string" && type.trim()) subscribedTypes.add(type.trim());
-          });
+        for (const subscription of subscriptionRows) {
+          if (subscription.active && Array.isArray(subscription.event_types)) {
+            subscription.event_types.forEach((type: unknown) => {
+              if (typeof type === "string" && type.trim()) subscribedTypes.add(type.trim());
+            });
+          }
         }
         const domain = domainRows.find(d => d.name === scenario);
-        const types = new Set<string>(Array.isArray(domain?.event_types) ? domain.event_types : []);
+        const types = new Set<string>((domain?.services ?? []).flatMap((service: any) =>
+          (service.rulesets ?? []).map((ruleset: any) => String(ruleset.ruleset_id))
+        ));
         const names = asArray(activeResponse)
           .map(r => ({ name: String(r.rule_set ?? ""), revision: Number(r.revision) }))
           .filter(r => r.name && Number.isFinite(r.revision) && r.revision > 0 && types.has(r.name));
@@ -378,9 +378,9 @@ function RuleFlowMap({ settings, scenario, startRuleSet, events, running }: { se
   }, [events, scenario]);
   const levels = [...new Set(nodes.map(node => node.level))];
   return <section className="panel rule-flow-panel">
-    <div className="panel-heading"><div><h3>{DOMAIN_LABELS[scenario] || scenario} rule-set flow</h3><p>Each column is one hop. A rule set emits an event; when that event type has its own rule set, processing continues there, otherwise it leaves for a subscribed service.</p></div></div>
+    <div className="panel-heading"><div><h3>{DOMAIN_LABELS[scenario] || scenario} rule-set flow</h3><p>Each column is one hop. A rule set emits an event; matching active rulesets can continue processing it, while generic subscriptions remain a separate routing stage.</p></div></div>
     {loadError && <div className="notice" role="alert">{loadError}</div>}
-    {!loadError && nodes.length === 0 && <Empty title="No rule sets in the database" detail={`Save the ${DOMAIN_LABELS[scenario] || scenario} domain from the Domain catalog page to see its flow.`} />}
+    {!loadError && nodes.length === 0 && <Empty title="No rule sets in the database" detail={`Assign rule sets to Services in the ${DOMAIN_LABELS[scenario] || scenario} Domain to see its flow.`} />}
     <div className="rule-flow-map">{levels.map(level => <div className="rule-flow-column" key={level}>
       <div className="rule-flow-level">{level === 0 ? "Entry" : nodes.some(n => n.level === level && n.reachability === "unreachable") ? "Unreachable from entry" : `Hop ${level}`}</div>
       {nodes.filter(node => node.level === level).map(node => {
@@ -1504,9 +1504,9 @@ export default function App() {
       {error && <div className="alert error"><strong>API connection issue</strong><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
       {nav === "overview" && <section className="page-content">
         <div className="welcome-row"><div><div className="eyebrow">SYSTEM SNAPSHOT</div><h2>Runtime at a glance</h2><p>Rules, workers, and contract generation in one place.</p></div><div className="updated">Last refreshed <strong>{lastRefresh?.toLocaleTimeString() || "—"}</strong></div></div>
-        <div className="metric-grid"><MetricCard label="API status" value={health === "online" ? "Online" : health === "offline" ? "Offline" : "Checking"} hint={dependencies ? Object.entries(dependencies).map(([k, v]) => `${k} ${v.status}`).join(" · ") : `${normalizeBase(settings.apiBase)} · dependency state unknown`} icon="⌘"/><MetricCard label="Active rules" value={ruleCount} hint="From the tenant-scoped rules API" icon="◎"/><MetricCard label="Workers online" value={workers.length ? `${onlineWorkers}/${workers.length}` : "Not configured"} hint="Worker Prometheus endpoints" icon="▦"/><MetricCard label="Rule executions" value={workers.length ? executionTotal.toLocaleString() : "—"} hint="Cumulative counters from configured workers" icon="↗"/></div>
+        <div className="metric-grid"><MetricCard label="API status" value={health === "online" ? "Online" : health === "offline" ? "Offline" : "Checking"} hint={dependencies ? Object.entries(dependencies).map(([k, v]) => `${k} ${v.status}`).join(" · ") : `${normalizeBase(settings.apiBase)} · dependency state unknown`} icon="⌘"/><MetricCard label="Active rules" value={ruleCount} hint="From the rules API" icon="◎"/><MetricCard label="Workers online" value={workers.length ? `${onlineWorkers}/${workers.length}` : "Not configured"} hint="Worker Prometheus endpoints" icon="▦"/><MetricCard label="Rule executions" value={workers.length ? executionTotal.toLocaleString() : "—"} hint="Cumulative counters from configured workers" icon="↗"/></div>
         <div className="content-grid"><section className="panel"><div className="panel-heading"><div><h3>Worker fleet</h3><p>Process-level telemetry, refreshed every 10 seconds</p></div><button className="text-button" onClick={() => setNav("workers")}>View workers ↗</button></div>{workers.length === 0 ? <Empty title="No worker endpoints configured" detail="Open Settings and add one private /metrics URL per worker process. The UI does not invent worker health."/> : <div className="worker-list">{workers.slice(0,4).map(worker => <div className="worker-row" key={worker.url}><div className="worker-symbol">▦</div><div className="worker-main"><strong>{worker.name}</strong><small>{worker.url}</small></div><Status value={worker.online ? "Online" : "Unreachable"}/><div className="worker-stat"><strong>{worker.inFlight ?? "—"}</strong><small>in flight</small></div><div className="worker-stat"><strong>{worker.shards ?? "—"}</strong><small>shards owned</small></div></div>)}</div>}</section>
-        <section className="panel"><div className="panel-heading"><div><h3>Active rule sets</h3><p>Current activation state from the API</p></div><button className="text-button" onClick={() => setNav("rules")}>Manage ↗</button></div>{activeRules.length === 0 ? <Empty title="No active rules returned" detail={health === "online" ? "No active rules were found for this tenant." : "Connect to the API to load active rules."}/> : <div className="rule-mini-list">{activeRules.slice(0,6).map((rule,i) => <div className="rule-mini" key={rule.rule_id || rule.rule_set || rule.id || i}><div className="rule-symbol">R</div><div className="rule-main"><strong>{rule.rule_id || rule.rule_set || rule.ruleSet || rule.id || `Rule set ${i+1}`}</strong><small>{tenantDomains.find(d => (d.services ?? []).some(s => (s.rulesets ?? []).some(r => r.ruleset_id === (rule.rule_set || rule.rule_id))))?.name ?? "no domain"} · revision {rule.revision ?? rule.active_revision ?? "—"}</small></div><Status value={rule.status || "Active"}/></div>)}</div>}</section></div>
+        <section className="panel"><div className="panel-heading"><div><h3>Active rule sets</h3><p>Current activation state from the API</p></div><button className="text-button" onClick={() => setNav("rules")}>Manage ↗</button></div>{activeRules.length === 0 ? <Empty title="No active rules returned" detail={health === "online" ? "No active rules were found." : "Connect to the API to load active rules."}/> : <div className="rule-mini-list">{activeRules.slice(0,6).map((rule,i) => <div className="rule-mini" key={rule.rule_id || rule.rule_set || rule.id || i}><div className="rule-symbol">R</div><div className="rule-main"><strong>{rule.rule_id || rule.rule_set || rule.ruleSet || rule.id || `Rule set ${i+1}`}</strong><small>{tenantDomains.find(d => (d.services ?? []).some(s => (s.rulesets ?? []).some(r => r.ruleset_id === (rule.rule_set || rule.rule_id))))?.name ?? "no domain"} · revision {rule.revision ?? rule.active_revision ?? "—"}</small></div><Status value={rule.status || "Active"}/></div>)}</div>}</section></div>
         <section className="panel"><div className="panel-heading"><div><h3>Quick actions</h3><p>Jump directly to a common operation</p></div></div><div className="quick-grid"><button onClick={() => setNav("api")}><span>⌘</span><strong>Explore API</strong><small>Inspect routes and send requests</small><b>→</b></button><button onClick={() => setNav("codegen")}><span>⟐</span><strong>Generate a client</strong><small>Go, Java, Protobuf, JSON Schema</small><b>→</b></button><button onClick={() => setNav("rules")}><span>◎</span><strong>Deploy a rule</strong><small>Validate and activate a revision</small><b>→</b></button><button onClick={() => setNav("logs")}><span>≋</span><strong>Inspect logs</strong><small>Query your configured Loki source</small><b>→</b></button></div></section>
       </section>}
       {nav === "simulations" && <section className="page-content simulation-page">
