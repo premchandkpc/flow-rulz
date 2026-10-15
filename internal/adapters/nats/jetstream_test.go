@@ -10,7 +10,7 @@ import (
 )
 
 func TestRulesetRoutingUsesDisjointSubjectToken(t *testing.T) {
-	payload := []byte(`{"id":"evt-1","type":"orders.created","tenant_id":"tenant-a","partition_key":"order-1"}`)
+	payload := []byte(`{"id":"evt-1","type":"orders.created","meta":{"tenant_id":"tenant-a","partition_key":"order-1"}}`)
 	got := subjectForMessage("events", 7, payload, []string{"orders.created"})
 	want := ruleSetSubject("events", "orders.created", 7)
 	if got != want {
@@ -22,7 +22,7 @@ func TestRulesetRoutingUsesDisjointSubjectToken(t *testing.T) {
 }
 
 func TestRulesetRoutingFallsBackToLegacyForUnconfiguredTypes(t *testing.T) {
-	payload := []byte(`{"id":"evt-1","type":"payments.created","tenant_id":"tenant-a","partition_key":"payment-1"}`)
+	payload := []byte(`{"id":"evt-1","type":"payments.created","meta":{"tenant_id":"tenant-a","partition_key":"payment-1"}}`)
 	if got, want := subjectForMessage("events", 3, payload, []string{"orders.created"}), "events.shard.3"; got != want {
 		t.Fatalf("subjectForMessage() = %q, want %q", got, want)
 	}

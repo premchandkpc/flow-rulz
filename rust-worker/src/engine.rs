@@ -59,8 +59,17 @@ impl Serialize for EventEnvelope {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where S: Serializer {
         let mut meta = self.meta.clone();
-        meta.insert("tenant_id".into(), Value::String(self.tenant_id.clone()));
-        meta.insert("partition_key".into(), Value::String(self.partition_key.clone()));
+        for (key, value) in [
+            ("tenant_id", self.tenant_id.as_str()),
+            ("partition_key", self.partition_key.as_str()),
+        ] {
+            if let Some(existing) = meta.get(key)
+                && existing.as_str() != Some(value)
+            {
+                return Err(serde::ser::Error::custom(format!("event field and meta.{key} disagree")));
+            }
+            meta.insert(key.into(), Value::String(value.to_owned()));
+        }
         EventEnvelopeWireRef {
             id: &self.id,
             event_type: &self.event_type,
@@ -83,10 +92,6 @@ struct EventEnvelopeWire {
     id: String,
     #[serde(rename = "type")]
     event_type: String,
-    #[serde(default)]
-    tenant_id: Option<String>,
-    #[serde(default)]
-    partition_key: Option<String>,
     #[serde(default)]
     workflow_id: Option<String>,
     occurred_at: DateTime<Utc>,
@@ -111,11 +116,17 @@ impl<'de> Deserialize<'de> for EventEnvelope {
     where D: Deserializer<'de> {
         let wire = EventEnvelopeWire::deserialize(deserializer)?;
         let tenant_id = wire.meta.get("tenant_id").and_then(Value::as_str)
-            .map(str::to_owned).or(wire.tenant_id)
-            .ok_or_else(|| serde::de::Error::custom("meta.tenant_id is required"))?;
+            .map(str::to_owned)
+            .ok_or_else(|| serde::de::Error::custom("meta.tenant_id is required and must be a string"))?;
         let partition_key = wire.meta.get("partition_key").and_then(Value::as_str)
-            .map(str::to_owned).or(wire.partition_key)
-            .ok_or_else(|| serde::de::Error::custom("meta.partition_key is required"))?;
+            .map(str::to_owned)
+            .ok_or_else(|| serde::de::Error::custom("meta.partition_key is required and must be a string"))?;
+        if tenant_id.trim().is_empty() {
+            return Err(serde::de::Error::custom("meta.tenant_id must be non-empty"));
+        }
+        if partition_key.trim().is_empty() {
+            return Err(serde::de::Error::custom("meta.partition_key must be non-empty"));
+        }
         if wire.meta.get("tenant_id").is_some_and(|v| !v.is_string()) {
             return Err(serde::de::Error::custom("meta.tenant_id must be a string"));
         }
@@ -386,17 +397,28 @@ mod tests {
     }
 
     #[test]
-    fn event_envelope_reads_legacy_identity_but_serializes_canonical_meta() {
-        let input = json!({
-            "id":"e","type":"orders.created","tenant_id":"t","partition_key":"p",
-            "occurred_at":"2026-10-14T00:00:00Z","data":{}
-        });
-        let event: EventEnvelope = serde_json::from_value(input).unwrap();
-        let encoded = serde_json::to_value(event).unwrap();
-        assert_eq!(encoded["meta"]["tenant_id"], "t");
-        assert_eq!(encoded["meta"]["partition_key"], "p");
-        assert!(encoded.get("tenant_id").is_none());
-        assert!(encoded.get("partition_key").is_none());
+    fn event_envelope_rejects_top_level_runtime_identity() {
+        for input in [
+            json!({"id":"e","type":"orders.created","tenant_id":"t","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":"t","partition_key":"p"}}),
+            json!({"id":"e","type":"orders.created","partition_key":"p","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":"t","partition_key":"p"}}),
+            json!({"id":"e","type":"orders.created","tenant_id":"t","partition_key":"p","occurred_at":"2026-10-14T00:00:00Z","data":{}}),
+        ] {
+            assert!(serde_json::from_value::<EventEnvelope>(input).is_err());
+        }
+    }
+
+    #[test]
+    fn event_envelope_rejects_conflicting_typed_and_meta_identity_on_serialize() {
+        let event = EventEnvelope {
+            id: "e".into(), event_type: "orders.created".into(), tenant_id: "tenant-a".into(),
+            partition_key: "order-1".into(), workflow_id: None, occurred_at: Utc::now(),
+            data: json!({}), headers: Default::default(), contract: None, message_kind: None,
+            correlation_id: None, causation_id: None, meta: HashMap::from([
+                ("tenant_id".into(), json!("tenant-b")),
+                ("partition_key".into(), json!("order-1")),
+            ]),
+        };
+        assert!(serde_json::to_value(event).is_err());
     }
 
     #[test]
