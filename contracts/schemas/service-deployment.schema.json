@@ -2,23 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://flowrulz.dev/schemas/service-deployment.schema.json",
   "title": "FlowRulz Domain Service Deployment",
-  "description": "Control-plane contract for a Domain-owned execution Service. This is distinct from subscriber/receiver registration.",
+  "description": "Nested execution deployment configuration for one Service within a tenant Domain. Contract-to-ruleset bindings remain independent.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "tenant_id",
-    "domain_id",
-    "service_id",
-    "revision",
-    "active",
-    "rulesets"
-  ],
+  "required": ["service_id", "name", "revision", "active", "rulesets"],
   "properties": {
-    "schema_version": { "const": 1 },
-    "tenant_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "domain_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "service_id": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Local service identifier within domain_id. Worker routing identity is domain_id/service_id." },
+    "service_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "description": "Local service identifier within its parent domain. Worker routing identity is domain_id/service_id."
+    },
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$" },
     "revision": { "type": "integer", "minimum": 1 },
     "active": { "type": "boolean" },
     "worker_profile": {
@@ -40,7 +35,7 @@
         "required": ["ruleset_id", "revision"],
         "properties": {
           "ruleset_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-          "revision": { "type": "integer", "minimum": 1 },
+          "revision": { "type": "integer", "minimum": 1 }
         }
       }
     },
