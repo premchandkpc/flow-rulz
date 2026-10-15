@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,6 +54,37 @@ func (r eventIngestionRequest) metaString(key string) string {
 	var value string
 	_ = json.Unmarshal(r.Meta[key], &value)
 	return value
+}
+
+func validateEventMetadata(meta map[string]json.RawMessage) error {
+	stringFields := []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "traceparent", "schema_version", "flow.service_id"}
+	for _, key := range stringFields {
+		raw, exists := meta[key]
+		if !exists { continue }
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return fmt.Errorf("meta.%s must be a string", key)
+		}
+	}
+	if raw, exists := meta["headers"]; exists {
+		var headers map[string]string
+		if err := json.Unmarshal(raw, &headers); err != nil {
+			return fmt.Errorf("meta.headers must be an object with string values")
+		}
+	}
+	if raw, exists := meta["flow.deployment_revision"]; exists {
+		var revision int64
+		if err := json.Unmarshal(raw, &revision); err != nil {
+			var value string
+			if textErr := json.Unmarshal(raw, &value); textErr != nil {
+				return fmt.Errorf("meta.flow.deployment_revision must be an integer or integer string")
+			}
+			if _, parseErr := strconv.ParseInt(value, 10, 64); parseErr != nil {
+				return fmt.Errorf("meta.flow.deployment_revision must be an integer or integer string")
+			}
+		}
+	}
+	return nil
 }
 
 func (r eventIngestionRequest) metaHeaders() map[string]string {
@@ -151,6 +184,10 @@ func validateEventIngestionRequest(
 ) bool {
 	if eventType == "" || request.Type != eventType {
 		responses.WriteError(w, http.StatusBadRequest, "event type must match the eventType path parameter", responses.CodeValidationFailed)
+		return false
+	}
+	if err := validateEventMetadata(request.Meta); err != nil {
+		responses.WriteError(w, http.StatusBadRequest, err.Error(), responses.CodeValidationFailed)
 		return false
 	}
 	if tenantID == "" {
