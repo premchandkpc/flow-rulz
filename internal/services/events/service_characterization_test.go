@@ -236,7 +236,7 @@ func TestProcessRollsBackWhenCommitFails(t *testing.T) {
 	repos := ports.EventTxRepos{
 		Inbox: inbox, Activations: activationStub{active: true},
 		RuleRepo: ruleRepositoryStub{}, Executions: executions, Outbox: outbox,
-		ShardLeases: shardLeaseStub{}, DomainServices: subscribers,
+		ShardLeases: shardLeaseStub{},
 	}
 	service := NewService(
 		nil, eventEvaluatorStub{}, nil, domain.SystemClock{},
