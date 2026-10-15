@@ -10,7 +10,7 @@ Each worker pool belongs to one configured Domain/Service deployment:
 - `FLOW_DEPLOYMENT_REVISION`: positive deployment revision.
 - Ruleset assignments come from the Domain's Service configuration; a worker should execute only those pinned revisions.
 
-The deployment identity is configuration. `tenant_id` and `partition_key` are read from each event and are never worker environment settings.
+The deployment identity is configuration. `meta.tenant_id` and `meta.partition_key` are read from each event and are never worker environment settings.
 
 **Current implementation note:** the Domain API stores Service assignments, but a complete deployment controller that continuously projects those assignments into both Go and Rust worker pools is not yet present. The current Rust runtime still reads its `RULESETS` list from environment configuration. Until that controller is implemented, deployment automation must keep worker settings aligned with the Domain revision; do not claim that workers dynamically reload the Domain API.
 
