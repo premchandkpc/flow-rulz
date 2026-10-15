@@ -308,7 +308,7 @@ func TestSchedulerDoesNotPublishPartialTransaction(t *testing.T) {
 
 func TestWorkerRequiresInputOffsets(t *testing.T) {
 	store := newMemoryLogStore()
-	worker := Worker{GroupID: "group", Store: store, Evaluator: fixedEvaluator{}, Codec: jsonCodec{}}
+	worker := Worker{DeploymentID: "domain/service", DeploymentRevision: 1, GroupID: "group", Store: store, Evaluator: fixedEvaluator{}, Codec: jsonCodec{}}
 	input, err := json.Marshal(EventEnvelope{
 		SchemaVersion: 1, ID: "event", TenantID: "tenant", EventType: "test", PartitionKey: "key",
 	})
