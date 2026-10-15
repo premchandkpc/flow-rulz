@@ -57,7 +57,7 @@ func (r eventIngestionRequest) metaString(key string) string {
 }
 
 func validateEventMetadata(meta map[string]json.RawMessage) error {
-	stringFields := []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "traceparent", "schema_version", "flow.service_id"}
+	stringFields := []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "traceparent", "flow.service_id"}
 	for _, key := range stringFields {
 		raw, exists := meta[key]
 		if !exists { continue }
@@ -70,6 +70,14 @@ func validateEventMetadata(meta map[string]json.RawMessage) error {
 		var headers map[string]string
 		if err := json.Unmarshal(raw, &headers); err != nil {
 			return fmt.Errorf("meta.headers must be an object with string values")
+		}
+	}
+	for _, key := range []string{"schema_version", "hop"} {
+		if raw, exists := meta[key]; exists {
+			var value int64
+			if err := json.Unmarshal(raw, &value); err != nil || value < 0 {
+				return fmt.Errorf("meta.%s must be a non-negative integer", key)
+			}
 		}
 	}
 	if raw, exists := meta["flow.deployment_revision"]; exists {
