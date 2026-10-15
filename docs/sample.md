@@ -1,20 +1,20 @@
-# End-to-end sample
+# Sample data walkthrough
 
-Use the JSON files in [data/examples](../data/examples/) in this order:
-
-1. **[contract.json](../data/examples/contract.json)** defines the immutable `OrderCreated` event payload contract.
-2. **[ruleset.json](../data/examples/ruleset.json)** defines a versioned ruleset that consumes that contract.
-3. **[domain.json](../data/examples/domain.json)** is the create request assigning multiple rulesets to Services inside a Domain. **[domain-response.json](../data/examples/domain-response.json)** shows the generated Domain ID returned by the API.
-4. **[event.json](../data/examples/event.json)** is a runtime event. It carries `tenant_id` and `partition_key`; neither appears in Domain or ruleset configuration.
-5. **[worker-config.json](../data/examples/worker-config.json)** shows deployment identity, mirrored ruleset assignments, and runtime connection settings. It does not configure a tenant or partition key.
-
-## Mental model
+The fixtures under `data/examples/` show the public configuration and runtime wire formats.
 
 ```text
 contract.json ──validates──> event.json
 ruleset.json ──pinned by──> domain.json / services[].rulesets[]
-domain.json ──selects deployment──> worker-config.json
-event.json ──provides runtime identity──> tenant_id + partition_key
+domain.json ──selects execution configuration──> worker-config.json
+event.json ──provides runtime identity and extension fields──> meta
 ```
 
-The worker configuration's `domain_id` is illustrative; in a live deployment, use the `id` returned by `POST /v1/domains`, not the Domain name. The files are illustrative and should be validated against the schemas and API handlers before being used in a live environment. Each deployable domain example also has a `domains/<name>/domain.json` file with the complete Service-to-ruleset assignments. The examples do not imply that the Kafka proposal is implemented.
+- `domain.json`: a Domain containing Services, each with explicit ruleset revision assignments.
+- `ruleset.json`: one immutable ruleset revision.
+- `contract.json`: the event payload contract.
+- `event.json`: stable top-level envelope plus `meta` and business `data`.
+- `worker-config.json`: illustrative worker runtime settings.
+
+In `event.json`, `meta.tenant_id` and `meta.partition_key` are required runtime identity values. Fields such as `traceparent`, `producer`, `region`, and future custom metadata belong in the same object. Domain configuration does not contain these values.
+
+The samples are illustrative and must be checked against the current schemas and API handlers before production use. The Kafka proposal is not a production Kafka adapter.
