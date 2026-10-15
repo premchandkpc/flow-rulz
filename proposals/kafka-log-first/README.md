@@ -17,7 +17,7 @@ The storage implementation is an adapter behind these ports. Start with one expl
 
 A Domain contains Services. Each Service declares the immutable ruleset revisions assigned to its worker deployment. Contract-to-ruleset bindings remain independent, versioned records; the router resolves the event contract against those bindings and intersects the matching rulesets with each target service's assigned revisions. Each worker group consumes only its assigned service stream and must not load rulesets outside its assigned deployment. Scaling one service changes only that service worker pool.
 
-Do not confuse a Service deployment (where rules execute) with a subscriber/receiver registration (where an emitted event is delivered). They are separate configuration concepts and must have separate IDs, lifecycle, and authorization. Subscriber fan-out remains a generic post-evaluation routing stage.
+Do not confuse a Service deployment (where rules execute) with a subscriber/receiver registration (where an emitted event is delivered). They are separate configuration concepts and must have separate IDs, lifecycle, and authorization. Subscribers declare their own `event_types` on `/v1/subscriptions`; Domain configuration does not carry event types. Subscriber fan-out remains a generic post-evaluation routing stage.
 
 ## Adapter contract
 
