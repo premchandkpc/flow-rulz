@@ -186,17 +186,6 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effe
 	return effects, audits, nil
 }
 
-type Transaction interface {
-	Produce(context.Context, topic string, key, value []byte) error
-	SendOffsetsToTransaction(context.Context, groupID string, offsets []Offset) error
-	Commit(context.Context) error
-	Abort(context.Context) error
-}
-
-type TransactionFactory interface {
-	Begin(context.Context) (Transaction, error)
-}
-
 type Codec interface {
 	DecodeEvent([]byte) (EventEnvelope, error)
 	EncodeEffect(Effect) ([]byte, error)
@@ -210,7 +199,7 @@ type Worker struct {
 	InputTopic    string
 	EffectsTopic  string
 	AuditTopic    string
-	Transactions  TransactionFactory
+	Store         LogStore
 	Evaluator     Evaluator
 	Codec         Codec
 }
@@ -224,11 +213,11 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 	if len(batch.Records) == 0 {
 		return nil
 	}
-	if w.GroupID == "" || w.Transactions == nil || w.Evaluator == nil || w.Codec == nil {
+	if w.GroupID == "" || w.Store == nil || w.Evaluator == nil || w.Codec == nil {
 		return errors.New("worker dependencies are not configured")
 	}
 
-	tx, err := w.Transactions.Begin(ctx)
+	tx, err := w.Store.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -255,7 +244,7 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 			if err != nil {
 				return err
 			}
-			if err := tx.Produce(ctx, effect.Destination, []byte(effect.PartitionKey), value); err != nil {
+			if err := tx.Append(ctx, LogRecord{ID: effect.ID, TenantID: effect.TenantID, PartitionKey: effect.PartitionKey, Kind: effect.Destination, Key: []byte(effect.PartitionKey), Value: value}); err != nil {
 				return err
 			}
 		}
@@ -264,12 +253,16 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 			if err != nil {
 				return err
 			}
-			if err := tx.Produce(ctx, w.AuditTopic, []byte(audit.TenantID+":"+audit.EventID), value); err != nil {
+			if err := tx.Append(ctx, LogRecord{ID: audit.TenantID + ":" + audit.EventID + ":" + audit.RulesetID + ":" + fmt.Sprint(audit.Revision), TenantID: audit.TenantID, PartitionKey: audit.TenantID + ":" + audit.EventID, Kind: w.AuditTopic, Key: []byte(audit.TenantID + ":" + audit.EventID), Value: value}); err != nil {
 				return err
 			}
 		}
 	}
-	if err := tx.SendOffsetsToTransaction(ctx, w.GroupID, batch.Offsets); err != nil {
+	positions := make([]LogPosition, 0, len(batch.Offsets))
+	for _, offset := range batch.Offsets {
+		positions = append(positions, LogPosition{Stream: offset.Topic, Partition: fmt.Sprint(offset.Partition), Sequence: offset.Next})
+	}
+	if err := tx.CommitInputPosition(ctx, w.GroupID, positions); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
