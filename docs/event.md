@@ -27,7 +27,7 @@ Example:
 }
 ```
 
-`tenant_id` identifies the runtime tenant and `partition_key` is the business key used to preserve same-key processing order. Future runtime context belongs inside `meta`; the envelope schema intentionally permits additional keys there. The trusted router may add `target_service_id` and `deployment_revision` there for deployment routing. Producers must not be trusted to select their own target service; ingress/router policy must overwrite or validate these internal routing fields. Do not add those runtime fields to Domain, Service, ruleset, or contract configuration. Unknown top-level envelope fields remain invalid, so extensibility stays scoped to `meta` and the event payload `data`.
+`tenant_id` identifies the runtime tenant and `partition_key` is the business key used to preserve same-key processing order. Future runtime context belongs inside `meta`; the envelope schema intentionally permits additional keys there. The trusted router may add `target_service_id` and `deployment_revision` there for deployment routing. Producers must not be trusted to select their own target service; ingress/router policy must overwrite or validate these internal routing fields. Do not add those runtime fields to Domain, Service, ruleset, or contract configuration. Unknown top-level envelope fields remain invalid, including legacy top-level `tenant_id` and `partition_key`. Producers must send both values under `meta`; there is no top-level compatibility fallback. Extensibility stays scoped to `meta` and the event payload `data`.
 
 ## Partitioning and ordering
 
