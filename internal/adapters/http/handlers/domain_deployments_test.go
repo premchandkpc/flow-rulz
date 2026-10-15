@@ -23,8 +23,8 @@ type deploymentCaptureUseCase struct {
 func (s *deploymentCaptureUseCase) SaveDomain(_ context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
 	s.called = true
 	s.tenantID = tenantID
-	copy := *item
-	s.item = &copy
+	cloned := *item
+	s.item = &cloned
 	return item, nil
 }
 
