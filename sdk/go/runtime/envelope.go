@@ -72,10 +72,20 @@ func metaString(meta map[string]json.RawMessage,key string) string {
 }
 
 // NewEnvelope creates a new envelope with a generated ID and current timestamp
-func NewEnvelope(eventType, tenantID, partitionKey string, payload any) (*Envelope, error) {
+func NewEnvelope(eventType, tenantID, partitionKey string, payload any, metadata ...map[string]any) (*Envelope, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
+	}
+	meta := make(map[string]json.RawMessage)
+	if len(metadata) > 0 {
+		for key, value := range metadata[0] {
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return nil, fmt.Errorf("marshal event metadata %q: %w", key, err)
+			}
+			meta[key] = encoded
+		}
 	}
 	return &Envelope{
 		ID:           uuid.New().String(),
@@ -84,6 +94,7 @@ func NewEnvelope(eventType, tenantID, partitionKey string, payload any) (*Envelo
 		PartitionKey: partitionKey,
 		OccurredAt:   time.Now().UTC(),
 		Data:         data,
+		Meta:         meta,
 	}, nil
 }
 
