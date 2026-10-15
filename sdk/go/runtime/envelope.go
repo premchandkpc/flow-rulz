@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,14 +10,63 @@ import (
 
 // Envelope wraps a typed payload with metadata for event processing
 type Envelope struct {
-	ID           string            `json:"id"`
-	Type         string            `json:"type"`
-	TenantID     string            `json:"tenant_id"`
-	PartitionKey string            `json:"partition_key"`
-	WorkflowID   string            `json:"workflow_id,omitempty"`
-	OccurredAt   time.Time         `json:"occurred_at"`
-	Data         json.RawMessage   `json:"data"`
-	Headers      map[string]string `json:"headers,omitempty"`
+	ID           string                     `json:"id"`
+	Type         string                     `json:"type"`
+	TenantID     string                     `json:"-"`
+	PartitionKey string                     `json:"-"`
+	WorkflowID   string                     `json:"-"`
+	OccurredAt   time.Time                  `json:"occurred_at"`
+	Data         json.RawMessage            `json:"data"`
+	Headers      map[string]string          `json:"-"`
+	Meta         map[string]json.RawMessage `json:"-"`
+}
+
+type envelopeWire struct {
+	ID string `json:"id"`
+	Type string `json:"type"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Data json.RawMessage `json:"data"`
+	Meta map[string]json.RawMessage `json:"meta"`
+	TenantID string `json:"tenant_id,omitempty"`
+	PartitionKey string `json:"partition_key,omitempty"`
+	WorkflowID string `json:"workflow_id,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+func (e Envelope) MarshalJSON() ([]byte, error) {
+	meta := cloneMeta(e.Meta)
+	setMeta(meta, "tenant_id", e.TenantID)
+	setMeta(meta, "partition_key", e.PartitionKey)
+	setMeta(meta, "workflow_id", e.WorkflowID)
+	if len(e.Headers) > 0 { meta["headers"], _ = json.Marshal(e.Headers) }
+	return json.Marshal(struct {
+		ID string `json:"id"`; Type string `json:"type"`; OccurredAt time.Time `json:"occurred_at"`
+		Data json.RawMessage `json:"data"`; Meta map[string]json.RawMessage `json:"meta"`
+	}{e.ID,e.Type,e.OccurredAt,e.Data,meta})
+}
+
+func (e *Envelope) UnmarshalJSON(data []byte) error {
+	var wire envelopeWire
+	if err := json.Unmarshal(data,&wire); err != nil { return err }
+	e.ID,e.Type,e.OccurredAt,e.Data,e.Meta=wire.ID,wire.Type,wire.OccurredAt,wire.Data,cloneMeta(wire.Meta)
+	e.TenantID=metaString(e.Meta,"tenant_id"); if e.TenantID=="" { e.TenantID=wire.TenantID }
+	e.PartitionKey=metaString(e.Meta,"partition_key"); if e.PartitionKey=="" { e.PartitionKey=wire.PartitionKey }
+	e.WorkflowID=metaString(e.Meta,"workflow_id"); if e.WorkflowID=="" { e.WorkflowID=wire.WorkflowID }
+	if raw:=e.Meta["headers"];len(raw)>0 { if err:=json.Unmarshal(raw,&e.Headers);err!=nil{return fmt.Errorf("meta.headers: %w",err)} }
+	if e.Headers==nil { e.Headers=wire.Headers }
+	return nil
+}
+
+func cloneMeta(input map[string]json.RawMessage) map[string]json.RawMessage {
+	out:=make(map[string]json.RawMessage,len(input)+4)
+	for k,v:=range input { out[k]=append(json.RawMessage(nil),v...) }
+	return out
+}
+func setMeta(meta map[string]json.RawMessage,key,value string) {
+	if value=="" { return }; encoded,_:=json.Marshal(value); meta[key]=encoded
+}
+func metaString(meta map[string]json.RawMessage,key string) string {
+	var value string; _=json.Unmarshal(meta[key],&value); return value
 }
 
 // NewEnvelope creates a new envelope with a generated ID and current timestamp
