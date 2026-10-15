@@ -146,3 +146,34 @@ func TestEventIngestionRejectsInvalidKnownMetaTypes(t *testing.T) {
 		t.Fatalf("publish calls = %d, want 0", publisher.calls)
 	}
 }
+
+func TestEventIngestionRejectsProducerSuppliedInternalRoutingMeta(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	for _, key := range []string{"flow.service_id", "flow.deployment_revision"} {
+		t.Run(key, func(t *testing.T) {
+			publisher := &capturePublisher{}
+			handler := NewEventIngestionHandler(publisher, 32)
+			mux := http.NewServeMux()
+			handler.RegisterRoutes(mux)
+			server := middleware.TenantExtractor(mux)
+			meta, _ := json.Marshal(map[string]any{"tenant_id":"tenant-a", "partition_key":"order-1", key:"attacker-controlled"})
+			var body map[string]json.RawMessage
+			body = map[string]json.RawMessage{
+				"id": json.RawMessage(`"evt-1"`), "type": json.RawMessage(`"order.created"`),
+				"occurred_at": json.RawMessage(`"2026-10-15T07:30:00Z"`), "data": json.RawMessage(`{}`),
+				"meta": meta,
+			}
+			encoded, err := json.Marshal(body)
+			if err != nil { t.Fatal(err) }
+			req := httptest.NewRequest(http.MethodPost, "/v1/events/order.created", bytes.NewReader(encoded))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Tenant-ID", "tenant-a")
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if publisher.calls != 0 { t.Fatal("event with producer-supplied internal routing metadata was published") }
+		})
+	}
+}
