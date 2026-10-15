@@ -8,6 +8,7 @@ use self::rules::{Effect, RuleRevision};
 mod lease;
 mod persistence;
 mod rules;
+mod subscriber_router;
 pub(crate) use lease::{acquire_lease, release_lease, renew_lease};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -117,8 +118,11 @@ async fn persist_new_event(
 ) -> Result<ProcessOutcome> {
     let revision = persistence::load_active_revision(tx, envelope).await?;
     validate_contract_support(&revision, envelope)?;
-    let (matched_rules, effects) = rules::evaluate(&revision, envelope)?;
+    let (matched_rules, mut effects) = rules::evaluate(&revision, envelope)?;
+    // Keep the decision hash scoped to rule evaluation. Subscription routing is
+    // a separate platform policy that contributes durable delivery intents.
     let decision_hash = calculate_decision_hash(&revision, envelope, &matched_rules, &effects);
+    effects.extend(subscriber_router::route_subscribers(tx, envelope).await?);
     let execution_id = calculate_execution_id(envelope, revision.revision);
 
     persist_execution_result(tx, &execution_id, envelope, &revision, &decision_hash, &effects).await?;
