@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn rejects_empty_partition_key_for_child_event() {
         let revision = RuleRevision { tenant_scope:"t".into(), rule_id:"r".into(), revision:1, content_hash:"h".into(), match_mode:"all_matches".into(), input_contract: None, compiled:vec![] };
-        let event = EventEnvelope { id:"e".into(), event_type:"r".into(), tenant_id:"t".into(), partition_key:"p".into(), workflow_id:None, occurred_at:Utc::now(), data:json!({}), headers:Default::default(), contract:None, message_kind:None, correlation_id:None, causation_id:None };
+        let event = EventEnvelope { id:"e".into(), event_type:"r".into(), tenant_id:"t".into(), partition_key:"p".into(), workflow_id:None, occurred_at:Utc::now(), data:json!({}), headers:Default::default(), contract:None, message_kind:None, correlation_id:None, causation_id:None, meta:Default::default() };
         let action: Action = serde_json::from_value(json!({"emit_event":{"type":"child","partition_key_policy":"from_data","partition_key_path":"$.missing","data":{}}})).unwrap();
         assert!(build_effect(&revision, &event, "rule", 0, &action).is_err());
     }
@@ -326,7 +326,7 @@ mod tests {
         let event = EventEnvelope { id: "e".into(), event_type: "orders".into(), tenant_id: "t".into(),
             partition_key: "p".into(), workflow_id: None, occurred_at: Utc::now(),
             data: json!({"amount": 12, "customer": {"name": "Ada"}}), headers: Default::default(),
-            contract: None, message_kind: None, correlation_id: None, causation_id: None };
+            contract: None, message_kind: None, correlation_id: None, causation_id: None, meta: Default::default() };
         assert_eq!(expand_template("{{$.amount}}", &event, "child-1"), json!(12));
         assert_eq!(expand_template("amount={{$.amount}} for {{$.customer.name}}", &event, "child-1"), json!("amount=12 for Ada"));
         assert_eq!(expand_template("{{new_id}}", &event, "child-1"), json!("child-1"));
