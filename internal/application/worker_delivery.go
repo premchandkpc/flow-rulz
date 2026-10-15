@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"strconv"
 	"time"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
@@ -130,6 +131,10 @@ func (w *Worker) processSingleDelivery(ctx context.Context, delivery ports.Deliv
 		w.quarantineInvalidDelivery(ctx, delivery, err)
 		return nil // The malformed delivery has been quarantined or scheduled for retry.
 	}
+	if err := w.validateServiceDeployment(env); err != nil {
+		w.quarantineRoutedDelivery(ctx, env, delivery, err)
+		return nil
+	}
 
 	vshard := w.shardService.VirtualShardForEvent(env)
 	if !w.shardService.IsOwner(vshard) {
@@ -194,4 +199,37 @@ func settleNak(ctx context.Context, delivery ports.Delivery) error {
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	return delivery.Nak(settleCtx)
+}
+
+func (w *Worker) validateServiceDeployment(env *domain.EventEnvelope) error {
+	serviceID := w.config.ServiceID
+	revision := w.config.DeploymentRevision
+	if serviceID == "" && revision == 0 {
+		return nil // Legacy deployments remain supported during rollout.
+	}
+	if serviceID == "" || revision <= 0 {
+		return errors.New("worker service deployment identity is incomplete")
+	}
+	if env.Headers == nil || env.Headers["flow.service_id"] != serviceID {
+		return fmt.Errorf("event target service does not match worker deployment %q", serviceID)
+	}
+	targetRevision, err := strconv.ParseInt(env.Headers["flow.deployment_revision"], 10, 64)
+	if err != nil || targetRevision != revision {
+		return fmt.Errorf("event target deployment revision does not match worker revision %d", revision)
+	}
+	return nil
+}
+
+func (w *Worker) quarantineRoutedDelivery(ctx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, routeErr error) {
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := w.events.QuarantineEvent(settleCtx, env.ID, env.ID, env.TenantID, domain.ErrorClassValidation, routeErr.Error()); err != nil {
+		if retryErr := delivery.Retry(settleCtx, retryDelayForDelivery(w.config.RetryDelay, delivery)); retryErr != nil {
+			log.Printf("quarantine misrouted event %s: %v; retry failed: %v", env.ID, err, retryErr)
+		}
+		return
+	}
+	if err := delivery.Ack(settleCtx); err != nil {
+		log.Printf("ack quarantined misrouted event %s: %v", env.ID, err)
+	}
 }
