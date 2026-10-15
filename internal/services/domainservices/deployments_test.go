@@ -13,14 +13,14 @@ import (
 func TestDomainDeploymentPinsImmutableRulesetRevisions(t *testing.T) {
 	service := NewService(newRepositoryStub(), fixedClock{now: time.Unix(40, 0).UTC()})
 	item, err := service.SaveDomain(context.Background(), "tenant-a", &domain.TenantDomain{
-		Name: "orders",
+		Name:       "orders",
 		EventTypes: []string{"orders.created"},
 		Deployments: []domain.ServiceDeployment{{
-			ServiceID: "order-evaluator",
-			Name: "order-evaluator",
-			Revision: 1,
-			Active: true,
-			Rulesets: []domain.RulesetAssignment{{RulesetID: "order-created", Revision: 7}},
+			ServiceID:     "order-evaluator",
+			Name:          "order-evaluator",
+			Revision:      1,
+			Active:        true,
+			Rulesets:      []domain.RulesetAssignment{{RulesetID: "order-created", Revision: 7}},
 			WorkerProfile: domain.WorkerProfile{MinReplicas: 1, MaxReplicas: 4, Concurrency: 8},
 		}},
 	})
@@ -32,7 +32,7 @@ func TestDomainDeploymentPinsImmutableRulesetRevisions(t *testing.T) {
 	}
 
 	invalid := &domain.TenantDomain{
-		Name: "billing",
+		Name:       "billing",
 		EventTypes: []string{"billing.created"},
 		Deployments: []domain.ServiceDeployment{{
 			ServiceID: "billing-worker", Name: "billing-worker", Revision: 1, Active: true,
@@ -50,7 +50,7 @@ func TestDomainDeploymentPinsImmutableRulesetRevisions(t *testing.T) {
 type ruleRevisionStub struct {
 	ports.RuleService
 	revision *domain.RuleRevision
-	err error
+	err      error
 }
 
 func (r ruleRevisionStub) GetRevision(context.Context, string, string, int64) (*domain.RuleRevision, error) {
