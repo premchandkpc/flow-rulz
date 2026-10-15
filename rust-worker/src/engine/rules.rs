@@ -21,8 +21,6 @@ pub(super) struct RuleRevision {
 pub(super) struct ContractRef {
     pub(super) name: String,
     pub(super) version: String,
-    #[serde(default)]
-    pub(super) schema_hash: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
