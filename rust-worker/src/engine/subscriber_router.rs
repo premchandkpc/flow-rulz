@@ -39,13 +39,7 @@ pub(super) async fn route_subscribers(
     let mut effects = Vec::with_capacity(rows.len());
     for row in rows {
         let service_id: String = row.try_get("service_id")?;
-        let effect_id = sha256_hex(
-            format!(
-                "{}|{}|service-subscription|1|{}|0",
-                event.tenant_id, event.id, service_id
-            )
-            .as_bytes(),
-        );
+        let effect_id = subscriber_effect_id(&event.tenant_id, &event.id, &service_id);
         effects.push(Effect {
             id: effect_id,
             tenant_id: event.tenant_id.clone(),
@@ -56,4 +50,24 @@ pub(super) async fn route_subscribers(
         });
     }
     Ok(effects)
+}
+
+fn subscriber_effect_id(tenant_id: &str, event_id: &str, service_id: &str) -> String {
+    sha256_hex(
+        format!("{tenant_id}|{event_id}|service-subscription|1|{service_id}|0").as_bytes(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::subscriber_effect_id;
+
+    #[test]
+    fn subscriber_effect_id_is_stable_and_tenant_scoped() {
+        let first = subscriber_effect_id("tenant-a", "event-1", "service-a");
+        assert_eq!(first, subscriber_effect_id("tenant-a", "event-1", "service-a"));
+        assert_ne!(first, subscriber_effect_id("tenant-b", "event-1", "service-a"));
+        assert_ne!(first, subscriber_effect_id("tenant-a", "event-2", "service-a"));
+        assert_ne!(first, subscriber_effect_id("tenant-a", "event-1", "service-b"));
+    }
 }
