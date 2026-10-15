@@ -139,10 +139,8 @@ func normalizeAndValidateDomain(item *domain.TenantDomain, scopeID string) error
 	}
 	item.TenantID = scopeID
 	item.Name = strings.TrimSpace(item.Name)
-	item.EventTypes = uniqueTrimmed(item.EventTypes)
-	if item.EventTypes == nil {
-		item.EventTypes = []string{}
-	}
+	// Event type filters belong to subscriber registrations, not Domain configuration.
+	item.EventTypes = []string{}
 	if !validIdentifier(scopeID) || !namePattern.MatchString(item.Name) {
 		return fmt.Errorf("%w: a valid domain name is required", ErrInvalidInput)
 	}
