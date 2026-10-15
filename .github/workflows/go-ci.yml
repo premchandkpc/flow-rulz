@@ -47,8 +47,22 @@ jobs:
             python -m json.tool "$sample" > /dev/null
           done
 
-          shopt -s nullglob
-          deploy_scripts=(domains/*/deploy.sh)
+          echo "Validating Domain configuration JSON"
+          domain_configs=()
+          while IFS= read -r config; do
+            domain_configs+=("$config")
+          done < <(find domains -mindepth 2 -maxdepth 2 -type f -name domain.json -print | sort)
+          if (("${#domain_configs[@]}" == 0)); then
+            echo "::error::No Domain configuration JSON files found"
+            exit 1
+          fi
+          for config in "${domain_configs[@]}"; do
+            echo "Validating Domain config: $config"
+            python -m json.tool "$config" > /dev/null
+            jq -e 'type == "object" and (.name | type == "string" and length > 0) and (.services | type == "array" and length > 0) and (has("tenant_id") | not) and (has("partition_key") | not) and (has("event_types") | not) and all(.services[]; (.service_id | type == "string" and length > 0) and (.rulesets | type == "array" and length > 0) and all(.rulesets[]; (.ruleset_id | type == "string" and length > 0) and (.revision | type == "number" and . > 0)))' "$config" > /dev/null
+          done
+
+          mapfile -t deploy_scripts < <(find domains -mindepth 2 -maxdepth 2 -type f -name deploy.sh -print | sort)
           if (("${#deploy_scripts[@]}" == 0)); then
             echo "::error::No domain deploy scripts found"
             exit 1
