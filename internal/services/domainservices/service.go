@@ -416,7 +416,7 @@ func (s *Service) DeleteService(ctx context.Context, _ string, serviceID string)
 }
 
 // SubscribersForEvent returns services subscribed to a specific event type.
-func (s *Service) SubscribersForEvent(ctx context.Context, tenantID, eventType string) ([]*domain.DomainService, error) {
+func (s *Service) SubscribersForEvent(ctx context.Context, _ string, eventType string) ([]*domain.DomainService, error) {
 	items, err := s.repository.ListSubscribersForEvent(ctx, domain.DomainConfigurationScope, eventType)
 	if err != nil {
 		return nil, fmt.Errorf("list event subscribers: %w", err)
