@@ -95,7 +95,7 @@ func (s *Service) Process(ctx context.Context, envelope *domain.EventEnvelope, f
 func (s *Service) resolveRulesets(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope) ([]rulesetRevision, error) {
 	// If event has a contract, use bindings-based routing
 	if envelope.Contract != nil {
-		bindings, err := repos.Bindings.ListByContract(ctx, envelope.TenantID, envelope.Contract.Name, envelope.Contract.Version)
+		bindings, err := repos.Bindings.ListByContract(ctx, domain.DomainConfigurationScope, envelope.Contract.Name, envelope.Contract.Version)
 		if err != nil {
 			return nil, fmt.Errorf("list bindings: %w", err)
 		}
@@ -108,7 +108,7 @@ func (s *Service) resolveRulesets(ctx context.Context, repos ports.EventTxRepos,
 			}
 
 			// Check if ruleset has an active revision
-			activation, err := repos.Activations.Get(ctx, envelope.TenantID, binding.RuleSet)
+			activation, err := repos.Activations.Get(ctx, domain.DomainConfigurationScope, binding.RuleSet)
 			if err != nil {
 				return nil, fmt.Errorf("get activation for ruleset %s: %w", binding.RuleSet, err)
 			}
@@ -116,7 +116,7 @@ func (s *Service) resolveRulesets(ctx context.Context, repos ports.EventTxRepos,
 				continue // No activation for this ruleset yet
 			}
 
-			revision, err := s.getRevision(ctx, repos.RuleRepo, envelope.TenantID, binding.RuleSet, activation.Revision)
+			revision, err := s.getRevision(ctx, repos.RuleRepo, domain.DomainConfigurationScope, binding.RuleSet, activation.Revision)
 			if err != nil {
 				return nil, fmt.Errorf("get active revision for ruleset %s: %w", binding.RuleSet, err)
 			}
@@ -152,7 +152,7 @@ func (s *Service) resolveRulesets(ctx context.Context, repos ports.EventTxRepos,
 
 	// Legacy routing: event type directly maps to ruleset
 	ruleSet := envelope.Type
-	activation, err := repos.Activations.Get(ctx, envelope.TenantID, ruleSet)
+	activation, err := repos.Activations.Get(ctx, domain.DomainConfigurationScope, ruleSet)
 	if err != nil {
 		return nil, fmt.Errorf("get activation: %w", err)
 	}
@@ -160,7 +160,7 @@ func (s *Service) resolveRulesets(ctx context.Context, repos ports.EventTxRepos,
 		return nil, domain.ErrRuleNotReady
 	}
 
-	revision, err := s.getRevision(ctx, repos.RuleRepo, envelope.TenantID, ruleSet, activation.Revision)
+	revision, err := s.getRevision(ctx, repos.RuleRepo, domain.DomainConfigurationScope, ruleSet, activation.Revision)
 	if err != nil {
 		return nil, fmt.Errorf("get active revision: %w", err)
 	}
