@@ -17,7 +17,7 @@ The root module uses Go 1.26.0. Both sdk/go and the newer sdk/go/flowrulz client
 
 ## Control plane / data plane boundary
 
-The HTTP API is a control-plane service. It creates and validates configuration (domains, contracts, rule revisions, workflow definitions, and registered provider/service capabilities) and exposes management/read-only operational views. It does not accept business events and does not connect to NATS to publish them. Producers publish `EventEnvelope` messages directly to NATS JetStream using the configured subject and shard contract. Only `cmd/worker` consumes business events and evaluates rules. The Go SDK's HTTP event transport is rejected; configure `FLOWRULZ_TRANSPORT=nats` for event publication. A `schedule_event` rule action is persisted through the transactional outbox and then the worker-owned scheduler. Correlated workflow `wait`/resume semantics are not yet supported.
+The HTTP API is a control-plane service. It creates and validates configuration (Domains and nested Services/rulesets, contracts, rule revisions, workflow definitions, and generic subscriptions) and exposes management/read-only operational views. It does not accept business events and does not connect to NATS to publish them. Producers publish `EventEnvelope` messages directly to NATS JetStream using the configured subject and shard contract. Only `cmd/worker` consumes business events and evaluates rules. The Go SDK's HTTP event transport is rejected; configure `FLOWRULZ_TRANSPORT=nats` for event publication. A `schedule_event` rule action is persisted through the transactional outbox and then the worker-owned scheduler. Correlated workflow `wait`/resume semantics are not yet supported.
 
 ## Event lifecycle
 
@@ -110,7 +110,7 @@ err = typed.Send(ctx, &transactioninitiated.Initiated{
 }, flowrulz.WithPartitionKey("account-456"))
 ~~~
 
-Generated `Subscribe` methods use live core NATS subscriptions and are available only with the NATS transport. They receive matching events for the configured tenant without competing with the worker's JetStream WorkQueue consumer. They are best-effort rather than durable: events published while disconnected are not replayed, and handler failures stop the subscription without ACK/retry behavior.
+Generated `Subscribe` methods use live core NATS subscriptions and are available only with the NATS transport. They receive matching event types without competing with the worker's JetStream WorkQueue consumer. They are best-effort rather than durable: events published while disconnected are not replayed, and handler failures stop the subscription without ACK/retry behavior.
 
 Environment variable names and local defaults are documented in .env.example. API and worker startup initialize storage/migrations. The Go worker publishes all command and service effects through NATS JetStream; no HTTP destination URL is required.
 
@@ -136,7 +136,7 @@ Start with docs/README.md for the documentation index.
 
 ## Important limitations
 
-- Production tenant resolution requires validated JWT identity or a trusted proxy token and authenticated-tenant header. The proxy boundary is not first-party authentication; do not expose the API directly to untrusted networks.
+- Domain configuration has no tenant field. Runtime events must carry `tenant_id` and `partition_key`; authenticate producers before trusting those fields. Control-plane API authentication remains separate and must be enabled before exposing it to untrusted networks.
 - /health is a liveness endpoint only. Use /ready for database and NATS reachability; neither endpoint proves workers are processing.
 - The API starts HTTP only. No gRPC server is implemented; the SDK's gRPC transport requires a compatible server deployed separately.
 - Migration rollback/status commands and live infrastructure-backed chaos tests are not implemented.
