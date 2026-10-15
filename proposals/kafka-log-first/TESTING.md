@@ -6,10 +6,11 @@ This directory is a client-neutral design/reference implementation. It is not a 
 
 | Area | Test coverage |
 |---|---|
-| Domain Service deployment API | Valid immutable ruleset pinning; duplicate service IDs/names; invalid identifiers and revisions; empty/oversized assignments; invalid worker profiles; contract name/version/hash mismatch; missing or cross-tenant revisions; lookup errors; monotonic revision changes; explicit deactivation before removal |
+| Domain Service deployment API | Valid immutable ruleset pinning; duplicate service IDs/names; invalid identifiers and revisions; empty/oversized assignments; invalid worker profiles; missing or cross-tenant revisions; lookup errors; monotonic revision changes; explicit deactivation before removal |
 | HTTP control plane | Deployment JSON decode/response; tenant context required; malformed request rejected before calling the use case |
 | PostgreSQL adapter | JSONB deployment serialization; empty deployments encoded as an array; JSONB readback; malformed persisted JSON; database error wrapping |
-| MongoDB adapter | BSON deployment round-trip and tenant-scoped index definitions |
+| MongoDB adapter | BSON deployment round-trip and tenant-scoped index definitions
+| Contract bindings | Multiple rulesets may independently bind to the same immutable contract; exact contract version/hash matching |
 | Go worker configuration | Service ID and deployment revision must be configured together |
 | Go worker routing | Wrong service/revision rejected before evaluation; effects/audits must stay within the input event's tenant and identity |
 | Rule evaluator | Multiple pinned rulesets; deterministic IDs; audit metadata; resolver and evaluation errors; unsupported schema; hop limit; cross-tenant resolver results; missing compiled revision; malformed effects; subscriber router failures; subscriber routing once and separately from rule evaluation |
