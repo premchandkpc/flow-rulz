@@ -112,14 +112,14 @@ fn validate_message_routing(envelope: &EventEnvelope, config: &Config, shard: u3
         bail!("message routed to shard {shard} but envelope hashes to {computed_shard}");
     }
     if let Some(expected_service_id) = &config.service_id {
-        let target_service_id = envelope.headers.get("flow.service_id")
+        let target_service_id = envelope.meta.get("flow.service_id").and_then(|value| value.as_str())
             .ok_or_else(|| anyhow!("service deployment routing header flow.service_id is required"))?;
         if target_service_id != expected_service_id {
             bail!("message targets service deployment {target_service_id}, not this worker's {expected_service_id}");
         }
         let expected_revision = config.deployment_revision
             .ok_or_else(|| anyhow!("worker deployment revision is not configured"))?;
-        let target_revision = envelope.headers.get("flow.deployment_revision")
+        let target_revision = envelope.meta.get("flow.deployment_revision").and_then(|value| value.as_str())
             .ok_or_else(|| anyhow!("service deployment routing header flow.deployment_revision is required"))?
             .parse::<i64>()
             .map_err(|_| anyhow!("flow.deployment_revision must be an integer"))?;
@@ -281,7 +281,7 @@ mod deployment_routing_tests {
             }),
             message_kind: None,
             correlation_id: None,
-            causation_id: None,
+            causation_id: None, meta: Default::default(),
         }
     }
 
