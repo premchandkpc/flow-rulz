@@ -10,10 +10,10 @@ import (
 )
 
 type memoryLogStore struct {
-	records    []LogRecord
+	records     []LogRecord
 	checkpoints map[string][]LogPosition
-	beginErr   error
-	commitErr  error
+	beginErr    error
+	commitErr   error
 }
 
 func newMemoryLogStore() *memoryLogStore {
@@ -60,11 +60,11 @@ func (s *memoryLogStore) Health(context.Context) error { return nil }
 func (s *memoryLogStore) Close() error                { return nil }
 
 type memoryLogTx struct {
-	store       *memoryLogStore
-	records     []LogRecord
-	group       string
-	positions   []LogPosition
-	closed      bool
+	store     *memoryLogStore
+	records   []LogRecord
+	group     string
+	positions []LogPosition
+	closed    bool
 }
 
 func (tx *memoryLogTx) Append(_ context.Context, record LogRecord) error {
@@ -264,6 +264,9 @@ func TestSchedulerDoesNotPublishPartialTransaction(t *testing.T) {
 	}
 	if len(store.records) != 0 {
 		t.Fatalf("partial schedule transaction committed: %d records", len(store.records))
+	}
+	if _, ok := store.checkpoints["scheduler-group"]; ok {
+		t.Fatal("scheduler checkpoint committed after failed transaction")
 	}
 }
 
