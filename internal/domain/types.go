@@ -144,7 +144,6 @@ type ServiceDeployment struct {
 type RulesetAssignment struct {
 	RulesetID string       `json:"ruleset_id"`
 	Revision  int64        `json:"revision"`
-	Contract  *ContractRef `json:"contract,omitempty"`
 }
 
 // WorkerProfile contains service-level worker scaling and concurrency hints.
