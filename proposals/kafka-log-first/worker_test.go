@@ -41,10 +41,10 @@ func TestSubscriberRoutingRunsWhenDeploymentHasNoRulesets(t *testing.T) {
 		SchemaVersion: 1, ID: "event-1", TenantID: "tenant-1",
 		EventType: "orders.created", PartitionKey: "order-1",
 		OccurredAt: time.Unix(1, 0).UTC(),
-		Metadata: EventMetadata{TargetServiceID: "tenant-a/tenant-a/domain-a/service-a", DeploymentRevision: 2},
+		Metadata: EventMetadata{TargetServiceID: "domain-a/service-a", DeploymentRevision: 2},
 	}
 
-	effects, audits, err := evaluator.Evaluate(context.Background(), "tenant-a/tenant-a/domain-a/service-a", 2, event)
+	effects, audits, err := evaluator.Evaluate(context.Background(), "domain-a/service-a", 2, event)
 	if err != nil {
 		t.Fatalf("Evaluate() error = %v", err)
 	}
@@ -68,7 +68,7 @@ func TestRuleEvaluatorRejectsEventForDifferentServiceDeployment(t *testing.T) {
 		Metadata: EventMetadata{TargetServiceID: "tenant-a/domain-a/service-b", DeploymentRevision: 2},
 	}
 
-	if _, _, err := evaluator.Evaluate(context.Background(), "tenant-a/tenant-a/domain-a/service-a", 2, event); err == nil {
+	if _, _, err := evaluator.Evaluate(context.Background(), "domain-a/service-a", 2, event); err == nil {
 		t.Fatal("expected target deployment mismatch error")
 	}
 	if router.calls != 0 {
