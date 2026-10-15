@@ -11,9 +11,13 @@ import (
 )
 
 var (
+	// ErrLogUnavailable indicates the selected log adapter cannot currently serve requests.
 	ErrLogUnavailable       = errors.New("log storage unavailable")
+	// ErrPositionUnavailable indicates a requested replay position is no longer available.
 	ErrPositionUnavailable  = errors.New("log position unavailable")
+	// ErrAmbiguousCommit indicates the caller must resolve a commit using idempotent retry or status lookup.
 	ErrAmbiguousCommit      = errors.New("log transaction outcome is ambiguous")
+	// ErrIdempotencyConflict indicates a stable record ID was reused with different content.
 	ErrIdempotencyConflict = errors.New("record id reused with different content")
 )
 
