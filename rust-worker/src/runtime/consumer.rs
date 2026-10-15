@@ -269,7 +269,12 @@ mod deployment_routing_tests {
             ("partition_key".into(), json!("order-1")),
         ]);
         for (key, value) in route_meta {
-            meta.insert(key, json!(value));
+            let value = if key == "deployment_revision" {
+                value.parse::<i64>().map(json!).unwrap_or_else(|_| json!(value))
+            } else {
+                json!(value)
+            };
+            meta.insert(key, value);
         }
         EventEnvelope {
             id: "event-1".into(),
