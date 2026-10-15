@@ -20,9 +20,10 @@ type ScheduleRecord struct {
 }
 
 type DueSchedule struct {
-	Key         []byte
-	Record      ScheduleRecord
-	Occurrence string
+	Key            []byte
+	Record         ScheduleRecord
+	Occurrence     string
+	InputPosition  LogPosition
 }
 
 // OccurrenceID must be deterministic for a schedule revision and due occurrence.
@@ -48,11 +49,14 @@ type Scheduler struct {
 // The caller must only call this for a due record in a partition currently assigned
 // to this scheduler; on assignment loss it must stop and discard local heap entries.
 func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
-	if s.Store == nil || s.Codec == nil || s.EventsTopic == "" || s.SchedulesTopic == "" {
+	if s.Store == nil || s.Codec == nil || s.EventsTopic == "" || s.SchedulesTopic == "" || s.GroupID == "" {
 		return errors.New("scheduler dependencies are not configured")
 	}
 	if due.Record.ScheduleID == "" || due.Record.TenantID == "" || due.Occurrence == "" {
 		return errors.New("schedule identity and deterministic occurrence are required")
+	}
+	if due.InputPosition.Stream == "" || due.InputPosition.Partition == "" || due.InputPosition.Sequence < 0 {
+		return errors.New("consumed input position is required")
 	}
 	if due.Record.SchemaVersion != 1 {
 		return ErrUnsupportedSchema
@@ -86,6 +90,9 @@ func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
 	}
 	// A nil value is a Kafka tombstone for this compacted schedule key.
 	if err := tx.Append(ctx, LogRecord{ID: "schedule-tombstone:" + due.Record.TenantID + ":" + due.Record.ScheduleID + ":" + strconv.FormatInt(due.Record.Revision, 10), TenantID: due.Record.TenantID, PartitionKey: string(due.Key), Kind: s.SchedulesTopic, Key: due.Key, Value: nil}); err != nil {
+		return err
+	}
+	if err := tx.CommitInputPosition(ctx, s.GroupID, []LogPosition{due.InputPosition}); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
