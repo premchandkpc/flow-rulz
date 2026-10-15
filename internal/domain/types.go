@@ -117,20 +117,18 @@ type ContractSchema struct {
 	UpdatedAt       time.Time                `json:"updated_at,omitempty"`
 }
 
-// TenantDomain groups event types that tenant services can subscribe to.
+// TenantDomain is persisted domain configuration. Runtime event identity and routing keys are not configuration.
 type TenantDomain struct {
 	ID          string              `json:"id"`
-	TenantID    string              `json:"tenant_id"`
+	TenantID    string              `json:"-"`
 	Name        string              `json:"name"`
-	EventTypes  []string            `json:"event_types"`
-	Deployments []ServiceDeployment `json:"deployments,omitempty"`
+	EventTypes  []string            `json:"-"`
+	Deployments []ServiceDeployment `json:"services"`
 	CreatedAt   time.Time           `json:"created_at"`
 	UpdatedAt   time.Time           `json:"updated_at"`
 }
 
-// ServiceDeployment declares the immutable ruleset revisions assigned to one
-// execution-service worker pool. It is distinct from DomainService, which represents
-// subscriber registration and delivery routing.
+// ServiceDeployment declares the ruleset revisions assigned to one service worker pool.
 type ServiceDeployment struct {
 	ServiceID     string              `json:"service_id"`
 	Name          string              `json:"name"`
