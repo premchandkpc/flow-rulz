@@ -311,6 +311,16 @@ func TestWorkerRequiresInputOffsets(t *testing.T) {
 	if len(store.records) != 0 {
 		t.Fatalf("records committed without input checkpoint: %d", len(store.records))
 	}
+	err = worker.ProcessBatch(context.Background(), Batch{
+		Records: []Record{{Topic: "flow.events", Partition: 0, Offset: 0, Value: input}},
+		Offsets: []Offset{{Topic: "flow.events", Partition: 0, Next: 0}},
+	})
+	if err == nil {
+		t.Fatal("expected checkpoint-behind-record error")
+	}
+	if len(store.records) != 0 {
+		t.Fatalf("records committed with stale input checkpoint: %d", len(store.records))
+	}
 }
 
 func TestLogStoreIdempotencyConflictIsRejected(t *testing.T) {
