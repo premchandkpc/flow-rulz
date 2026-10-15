@@ -221,10 +221,10 @@ function RuleStudio({ settings, activeRules, contracts: allContracts, onChanged 
     else { setRuleSet(""); setSource(""); }
   }, [domainName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const startNew = (eventType: string) => {
-    const contract = contracts.find(c => c.name === eventType);
-    setRevisions([]); setCheck(null); setRuleSet(eventType);
-    setSource(JSON.stringify({ rule_set: eventType, revision: 1, mode: "all_matches", rules: [{ id: "first_rule", name: "First rule", priority: 100, when: { path: `$.${Object.keys(contract?.fields ?? { id: 1 })[0]}`, op: "exists" }, then: [{ emit_event: { type: eventType, partition_key_policy: "inherit", data: {} } }] }] }, null, 2));
+  const startNew = (rulesetID: string) => {
+    const contract = contracts.find(c => c.name === rulesetID);
+    setRevisions([]); setCheck(null); setRuleSet(rulesetID);
+    setSource(JSON.stringify({ rule_set: rulesetID, revision: 1, mode: "all_matches", rules: [{ id: "first_rule", name: "First rule", priority: 100, when: { path: `$.${Object.keys(contract?.fields ?? { id: 1 })[0]}`, op: "exists" }, then: [] }] }, null, 2));
     setSample(JSON.stringify(sampleForContract(contract), null, 2));
   };
 
@@ -271,7 +271,7 @@ function RuleStudio({ settings, activeRules, contracts: allContracts, onChanged 
   }, [sourceDoc, ruleSet, contracts]);
 
   return <section className="page-content rule-studio">
-    <div className="page-intro"><h2>Rule studio</h2><p>Rules belong to a domain. Pick a domain, open one of its rule sets, check it against sample event data, then activate it as a new revision. Nothing is saved until you activate.</p></div>
+    <div className="page-intro"><h2>Rule studio</h2><p>Rulesets are assigned to Services inside a Domain. Pick a Domain and one of its assigned rulesets, check it against sample event data, then activate a new revision. Nothing is saved until you activate.</p></div>
     <div className="studio-domains" role="tablist" aria-label="Domain">
       {domains.map(d => { const ids = (d.services ?? []).flatMap((s: any) => (s.rulesets ?? []).map((r: any) => r.ruleset_id)); const n = activeRules.filter(r => ids.includes(r.rule_set || r.rule_id)).length; return <button key={d.id} role="tab" aria-selected={d.name === domainName} className={d.name === domainName ? "active" : ""} onClick={() => setDomainName(d.name)}><strong>{d.name}</strong><small>{(d.services ?? []).length} services · {ids.length} assigned rule sets</small></button>; })}
       {domains.length === 0 && <p className="studio-muted">No domains yet. Save an example domain from the Domain catalog.</p>}
