@@ -216,6 +216,14 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 	if w.GroupID == "" || w.Store == nil || w.Evaluator == nil || w.Codec == nil {
 		return errors.New("worker dependencies are not configured")
 	}
+	if len(batch.Offsets) == 0 {
+		return errors.New("input offsets are required for transactional processing")
+	}
+	for _, offset := range batch.Offsets {
+		if offset.Topic == "" || offset.Partition < 0 || offset.Next < 0 {
+			return errors.New("input offset contains an invalid topic, partition, or sequence")
+		}
+	}
 
 	tx, err := w.Store.Begin(ctx)
 	if err != nil {
