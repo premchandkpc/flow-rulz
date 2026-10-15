@@ -62,18 +62,32 @@ func TestEventIngestionPublishesExtensibleMetaEnvelopeToShard(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusAccepted, rec.Body.String())
 	}
-	if publisher.calls != 1 { t.Fatalf("publish calls = %d, want 1", publisher.calls) }
-	if publisher.subject != "events" { t.Fatalf("subject = %q, want events", publisher.subject) }
+	if publisher.calls != 1 {
+		t.Fatalf("publish calls = %d, want 1", publisher.calls)
+	}
+	if publisher.subject != "events" {
+		t.Fatalf("subject = %q, want events", publisher.subject)
+	}
 
 	var published map[string]json.RawMessage
-	if err := json.Unmarshal(publisher.payload, &published); err != nil { t.Fatal(err) }
-	if _, ok := published["tenant_id"]; ok { t.Fatal("tenant_id must not be a top-level event field") }
-	if _, ok := published["partition_key"]; ok { t.Fatal("partition_key must not be a top-level event field") }
+	if err := json.Unmarshal(publisher.payload, &published); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := published["tenant_id"]; ok {
+		t.Fatal("tenant_id must not be a top-level event field")
+	}
+	if _, ok := published["partition_key"]; ok {
+		t.Fatal("partition_key must not be a top-level event field")
+	}
 	var meta map[string]json.RawMessage
-	if err := json.Unmarshal(published["meta"], &meta); err != nil { t.Fatalf("meta is invalid: %v", err) }
+	if err := json.Unmarshal(published["meta"], &meta); err != nil {
+		t.Fatalf("meta is invalid: %v", err)
+	}
 	for key, want := range map[string]string{"tenant_id":"tenant-a","partition_key":"order-1","correlation_id":"corr-1","source":"checkout-api"} {
 		var got string
-		if err := json.Unmarshal(meta[key], &got); err != nil || got != want { t.Fatalf("meta.%s = %q, want %q (err=%v)", key, got, want, err) }
+		if err := json.Unmarshal(meta[key], &got); err != nil || got != want {
+			t.Fatalf("meta.%s = %q, want %q (err=%v)", key, got, want, err)
+		}
 	}
 	var sequence int
 	if err := json.Unmarshal(meta["producer_sequence"], &sequence); err != nil || sequence != 1042 {
@@ -103,8 +117,12 @@ func TestEventIngestionRejectsTenantMismatchInsideMeta(t *testing.T) {
 	req.Header.Set("X-Tenant-ID", "tenant-attacker")
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden { t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String()) }
-	if publisher.calls != 0 { t.Fatalf("publish calls = %d, want 0", publisher.calls) }
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	if publisher.calls != 0 {
+		t.Fatalf("publish calls = %d, want 0", publisher.calls)
+	}
 }
 
 func TestEventIngestionRequiresPartitionKeyInMeta(t *testing.T) {
@@ -120,8 +138,12 @@ func TestEventIngestionRequiresPartitionKeyInMeta(t *testing.T) {
 	req.Header.Set("X-Tenant-ID", "tenant-a")
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest { t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String()) }
-	if publisher.calls != 0 { t.Fatalf("publish calls = %d, want 0", publisher.calls) }
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if publisher.calls != 0 {
+		t.Fatalf("publish calls = %d, want 0", publisher.calls)
+	}
 }
 
 func TestEventIngestionRejectsLegacyTopLevelMetadata(t *testing.T) {
