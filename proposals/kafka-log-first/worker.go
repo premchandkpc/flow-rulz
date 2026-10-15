@@ -99,7 +99,7 @@ type SubscriberRouter interface {
 }
 
 type Evaluator interface {
-	Evaluate(context.Context, EventEnvelope, []RulesetRef) ([]Effect, []ExecutionAudit, error)
+	Evaluate(context.Context, EventEnvelope) ([]Effect, []ExecutionAudit, error)
 }
 
 type RuleEvaluator struct {
