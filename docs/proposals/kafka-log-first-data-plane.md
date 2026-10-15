@@ -25,11 +25,12 @@ This removes PostgreSQL from the worker hot path, but it does **not** make state
 | Deployable | Role | Correctness-critical state |
 |---|---|---|
 | `flowrulz --role=api` | Validate and publish contracts, rule revisions, activation records, tenant/service config, and schedule commands | Broker writes; disposable query projection |
-| `flowrulz --role=worker` | Consume events, resolve a pinned ruleset revision, evaluate, route generic subscriber intents, and transactionally produce outputs plus offsets | Kafka transaction only; rebuildable cache |
+| `flowrulz --role=router` (may share the worker binary) | Consume ingress events, resolve Domain → Service assignments, and publish one routed copy per target service deployment | Kafka transaction and compacted deployment projection |
+| `flowrulz --role=worker --deployment=<domain/service>` | Consume only the configured service deployment stream; load/evaluate only rules assigned to that deployment; emit generic effects and subscriber intents | Kafka transaction only; deployment-scoped rebuildable cache |
 | `flowrulz --role=scheduler` | Consume assigned schedule partitions, rebuild timer heap, publish due events and schedule tombstones transactionally | Compacted schedule topic; rebuildable heap |
 | Optional sink consumer | Write audit/history to ClickHouse or object storage | Sink-owned checkpoints; not on hot path |
 
-These are **process roles**, not necessarily separate codebases. Deploy API, worker, and scheduler independently so each can scale for its own load. Broker is the required infrastructure. ClickHouse is optional. Do not add Redis, a routing microservice, or a sidecar unless measurements establish a concrete need.
+These are **process roles**, not necessarily separate codebases. The router is a module/loop, not a mandatory additional microservice. Deploy API, router, each service worker pool, and scheduler independently only where independent scaling is useful. Broker is the required infrastructure. ClickHouse is optional. Do not add Redis, a routing microservice, or a sidecar unless measurements establish a concrete need.
 
 ## Topic contract
 
@@ -144,6 +145,19 @@ A domain service is the deployment target for a set of rulesets. The deployment 
 ```
 
 The deployment resolver validates that every referenced immutable ruleset revision exists and that each contract binding is compatible before publishing the deployment. Workers are started/configured with a stable `deployment_id` (`tenant/domain/service`) and consume only that deployment's work stream. On rollout, a new deployment revision warms its cache and reports readiness before traffic shifts; the old revision drains before it is retired. Do not let every worker subscribe to every service's rulesets.
+
+### Routed event metadata
+
+The producer-facing event envelope does not choose an internal worker deployment. After validating the event, the router resolves the tenant-scoped Domain → Service deployment mapping and writes a routed copy to the target service work stream. The routed copy adds trusted internal metadata:
+
+```json
+{
+  "target_service_id": "risk-engine",
+  "deployment_revision": 4
+}
+```
+
+Workers reject a routed record if these fields do not match the deployment identity configured at process startup. These fields are routing metadata, not authorization; broker ACLs and tenant-scoped deployment validation are still required.
 
 ### RulesetActivation v1
 
