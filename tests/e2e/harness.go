@@ -356,23 +356,28 @@ func (e *TestEnv) WaitForExecution(t *testing.T, tenantID, eventID string, timeo
 	return false
 }
 
-func (e *TestEnv) DeployRule(t *testing.T, tenantScope, ruleSet string, ruleSource json.RawMessage) {
+func (e *TestEnv) DeployRule(t *testing.T, _ string, ruleSet string, ruleSource json.RawMessage) {
+	t.Helper()
 	ctx := context.Background()
 	repositories := e.Storage.Repositories()
 	compiler := rules.NewCompiler(rules.DefaultLimits())
 
+	// Rulesets are global configuration. Keep the legacy parameter in this
+	// helper temporarily so existing E2E callers remain source-compatible,
+	// but never use an event tenant as a configuration namespace.
+	configurationScope := domain.DomainConfigurationScope
 	revision, err := compiler.Compile(ruleSource)
 	if err != nil {
 		t.Fatalf("compile rule: %v", err)
 	}
-	revision.TenantScope = tenantScope
+	revision.TenantScope = configurationScope
 	revision.RuleID = ruleSet
 	if err := repositories.Rules.Save(ctx, revision); err != nil {
 		t.Fatalf("save revision: %v", err)
 	}
 
 	activation := &domain.RuleActivation{
-		TenantScope: tenantScope,
+		TenantScope: configurationScope,
 		RuleSet:     ruleSet,
 		Revision:    1,
 		Version:     1,
