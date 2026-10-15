@@ -2,7 +2,6 @@ package domain
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 )
@@ -78,17 +77,19 @@ func TestEventEnvelopeAcceptsLegacyIdentityDuringRollingUpgradeButWritesCanonica
 	if err != nil {
 		t.Fatalf("canonical Marshal() error = %v", err)
 	}
-	if strings.Contains(string(raw), `"tenant_id":`) && strings.Contains(string(raw), `"partition_key":`) {
-		var wire map[string]any
-		if err := json.Unmarshal(raw, &wire); err != nil {
-			t.Fatal(err)
-		}
-		if _, exists := wire["tenant_id"]; exists {
-			t.Fatalf("legacy tenant_id leaked to top level: %s", raw)
-		}
-		if _, exists := wire["partition_key"]; exists {
-			t.Fatalf("legacy partition_key leaked to top level: %s", raw)
-		}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := wire["tenant_id"]; exists {
+		t.Fatalf("legacy tenant_id leaked to top level: %s", raw)
+	}
+	if _, exists := wire["partition_key"]; exists {
+		t.Fatalf("legacy partition_key leaked to top level: %s", raw)
+	}
+	meta, ok := wire["meta"].(map[string]any)
+	if !ok || meta["tenant_id"] != "merchant-42" || meta["partition_key"] != "order-1007" {
+		t.Fatalf("canonical meta identity missing: %#v", wire["meta"])
 	}
 }
 
