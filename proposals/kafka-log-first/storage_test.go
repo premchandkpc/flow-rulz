@@ -217,7 +217,7 @@ func TestWorkerAbortsOnCommitFailure(t *testing.T) {
 
 func TestSchedulerWritesEventAndTombstoneInOneTransaction(t *testing.T) {
 	store := newMemoryLogStore()
-	scheduler := Scheduler{Store: store, Codec: jsonCodec{}, EventsTopic: "flow.events", SchedulesTopic: "flow.schedules"}
+	scheduler := Scheduler{Store: store, Codec: jsonCodec{}, EventsTopic: "flow.events", SchedulesTopic: "flow.schedules", GroupID: "scheduler-group"}
 	due := DueSchedule{
 		Key: []byte("tenant-1:schedule-1"),
 		Record: ScheduleRecord{
@@ -226,6 +226,7 @@ func TestSchedulerWritesEventAndTombstoneInOneTransaction(t *testing.T) {
 			Event: EventEnvelope{EventType: "timer.fired", PartitionKey: "order-1"},
 		},
 		Occurrence: OccurrenceID("schedule-1", 2, time.Unix(100, 0).UTC()),
+		InputPosition: LogPosition{Stream: "flow.schedules", Partition: "0", Sequence: 7},
 	}
 	if err := scheduler.FireDue(context.Background(), due); err != nil {
 		t.Fatalf("FireDue() error = %v", err)
@@ -239,12 +240,16 @@ func TestSchedulerWritesEventAndTombstoneInOneTransaction(t *testing.T) {
 	if store.records[1].Kind != "flow.schedules" || store.records[1].Value != nil {
 		t.Fatalf("expected schedule tombstone, got %#v", store.records[1])
 	}
+	wantPositions := []LogPosition{{Stream: "flow.schedules", Partition: "0", Sequence: 7}}
+	if got := store.checkpoints["scheduler-group"]; !reflect.DeepEqual(got, wantPositions) {
+		t.Fatalf("scheduler checkpoint = %#v, want %#v", got, wantPositions)
+	}
 }
 
 func TestSchedulerDoesNotPublishPartialTransaction(t *testing.T) {
 	store := newMemoryLogStore()
 	store.commitErr = errors.New("simulated commit failure")
-	scheduler := Scheduler{Store: store, Codec: jsonCodec{}, EventsTopic: "flow.events", SchedulesTopic: "flow.schedules"}
+	scheduler := Scheduler{Store: store, Codec: jsonCodec{}, EventsTopic: "flow.events", SchedulesTopic: "flow.schedules", GroupID: "scheduler-group"}
 	due := DueSchedule{
 		Key: []byte("tenant:schedule"),
 		Record: ScheduleRecord{
@@ -252,11 +257,32 @@ func TestSchedulerDoesNotPublishPartialTransaction(t *testing.T) {
 			Event: EventEnvelope{EventType: "timer.fired", PartitionKey: "key"},
 		},
 		Occurrence: "schedule:1",
+		InputPosition: LogPosition{Stream: "flow.schedules", Partition: "0", Sequence: 1},
 	}
 	if err := scheduler.FireDue(context.Background(), due); err == nil {
 		t.Fatal("expected commit error")
 	}
 	if len(store.records) != 0 {
 		t.Fatalf("partial schedule transaction committed: %d records", len(store.records))
+	}
+}
+
+func TestWorkerRequiresInputOffsets(t *testing.T) {
+	store := newMemoryLogStore()
+	worker := Worker{GroupID: "group", Store: store, Evaluator: fixedEvaluator{}, Codec: jsonCodec{}}
+	input, err := json.Marshal(EventEnvelope{
+		SchemaVersion: 1, ID: "event", TenantID: "tenant", EventType: "test", PartitionKey: "key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = worker.ProcessBatch(context.Background(), Batch{
+		Records: []Record{{Topic: "flow.events", Partition: 0, Offset: 0, Value: input}},
+	})
+	if err == nil {
+		t.Fatal("expected missing-offset error")
+	}
+	if len(store.records) != 0 {
+		t.Fatalf("records committed without input checkpoint: %d", len(store.records))
 	}
 }
