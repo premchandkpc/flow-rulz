@@ -2,7 +2,7 @@
 
 ## Experimental status
 
-The Rust worker now publishes generic effects, commands, child events, and tenant-service deliveries through NATS JetStream, matching the Go worker's transport boundary. It also waits for JetStream publish acknowledgements before settling outbox/scheduler state.
+The Rust worker publishes generic effects, commands, child events, and explicitly declared `service_event` effects through NATS JetStream. It waits for JetStream publish acknowledgements before settling outbox/scheduler state. It no longer queries tenant-domain subscriptions or synthesizes subscriber deliveries during event evaluation.
 
 It is still experimental, not a production replacement for Go. Rule/contract behavior, key ordering, lease rebalancing, observability, and crash/recovery behavior have not been proven equivalent with differential tests and live PostgreSQL/NATS integration tests. Keep Go selected until those gates pass.
 
@@ -34,7 +34,7 @@ docker compose up -d worker
 - `src/runtime/effects.rs`: outbox claiming, NATS JetStream effect routing and retry settlement.
 - `src/runtime/scheduler.rs`: scheduled-event claiming and publication.
 - `src/engine.rs`: event-processing transaction orchestration and stable event/shard contracts.
-- `src/engine/persistence.rs`: inbox, active revision, execution, outbox and subscriber persistence.
+- `src/engine/persistence.rs`: inbox, active revision, execution and outbox persistence.
 - `src/engine/rules.rs`: compiled rule model, predicate evaluation, templates and action construction.
 - `src/engine/lease.rs`: PostgreSQL shard lease acquisition, renewal and release.
 
@@ -67,7 +67,9 @@ cargo clippy --all-targets -- -D warnings
 ```
 ## Architectural boundary and contract safety
 
-The worker is a rules execution runtime, not a domain router. A committed execution may contain only effects emitted by the selected ruleset. It must not query tenant-domain subscriptions or synthesize service-delivery effects outside the ruleset.
+The worker is a rules execution runtime, not a subscriber registry or business router. A committed execution may contain only effects emitted by the selected ruleset. It must not query tenant-domain subscriptions or synthesize service-delivery effects outside the ruleset.
+
+The control plane still manages tenant domains and service/subscriber registrations, but subscription-based fan-out is not currently implemented by this worker branch. A separate generic router should match events to authorized subscriptions and persist delivery intents through a defined transactional boundary; do not treat a registration as an active delivery path until that component and its tests exist. Explicit `service_event` effects remain rule-declared outputs and are dispatched through the generic effect path.
 
 Go remains the supported runtime for contract-bound events. Rust currently fails closed when an event declares a contract or the active ruleset requires an input contract; it must not silently skip contract validation or binding-based ruleset resolution. Do not route contract-bearing production traffic to Rust until differential tests prove contract validation, binding resolution, and effect parity with Go.
 
