@@ -2,7 +2,7 @@
 
 FlowRulz is a Go-based, event-driven rules runtime. NATS JetStream retains the durable message log; runtime caches accelerate reads, while PostgreSQL stores transactional processing state and the outbox. Rules are compiled into immutable revisions; a worker evaluates incoming events and commits an execution record plus resulting effects; effects are delivered asynchronously through an outbox.
 
-> Security: do not expose the HTTP API directly to untrusted networks. Authenticate control-plane callers with validated JWT claims or a trusted proxy. Domain configuration does not carry tenant identity; event producers must be authorized to assert the runtime `tenant_id` and `partition_key` on each event.
+> Security: do not expose the HTTP API directly to untrusted networks. Authenticate control-plane callers with validated JWT claims or a trusted proxy. Domain configuration does not carry tenant identity; event producers must be authorized to assert the runtime `meta.tenant_id` and `meta.partition_key` on each event.
 
 ## Processes
 
@@ -57,7 +57,7 @@ Example:
 
 Generic subscriber fan-out remains a separate routing stage, independent of rule evaluation and execution Service deployments. Receiver registrations use `/v1/subscriptions`; they are not the execution Services nested inside a Domain. The router creates stable delivery intents in the same transaction as the event execution. Delivery is at-least-once, so receivers must deduplicate using the effect's idempotency key. HTTP callback URLs are not the delivery path.
 
-The management API does not accept tenant identity as configuration. Runtime event envelopes still carry `tenant_id` and `partition_key`; these are event-level identity and ordering fields, not Domain fields. Configure broker credentials and subject permissions separately; hashed subjects are routing identifiers, not authorization.
+The management API does not accept tenant identity as configuration. Runtime event envelopes carry `meta.tenant_id` and `meta.partition_key`; these are event-level identity and ordering fields, not Domain fields. Future runtime context belongs in the same extensible `meta` object. Configure broker credentials and subject permissions separately; hashed subjects are routing identifiers, not authorization.
 
 ## Run locally
 
@@ -136,7 +136,7 @@ Start with docs/README.md for the documentation index.
 
 ## Important limitations
 
-- Domain configuration has no tenant field. Runtime events must carry `tenant_id` and `partition_key`; authenticate producers before trusting those fields. Control-plane API authentication remains separate and must be enabled before exposing it to untrusted networks.
+- Domain configuration has no tenant field. Runtime events must carry `meta.tenant_id` and `meta.partition_key`; authenticate producers before trusting those fields. Control-plane API authentication remains separate and must be enabled before exposing it to untrusted networks.
 - /health is a liveness endpoint only. Use /ready for database and NATS reachability; neither endpoint proves workers are processing.
 - The API starts HTTP only. No gRPC server is implemented; the SDK's gRPC transport requires a compatible server deployed separately.
 - Migration rollback/status commands and live infrastructure-backed chaos tests are not implemented.
