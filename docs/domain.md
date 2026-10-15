@@ -24,7 +24,7 @@ The create request accepts `name` and `services`. The server assigns `id`, `crea
 - A Service ID is unique within the Domain.
 - Each Service must assign 1–500 unique ruleset IDs, each pinned to a positive immutable revision.
 
-See [the JSON Schema](../contracts/schemas/domain.schema.json) and [sample Domain](../data/examples/domain.json).
+See the [request JSON Schema](../contracts/schemas/domain.schema.json), [response JSON Schema](../contracts/schemas/domain-response.schema.json), and [sample Domain](../data/examples/domain.json).
 
 ## Service configuration
 
