@@ -1,6 +1,7 @@
 package logfirst
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -40,18 +41,31 @@ func (s *memoryLogStore) Append(ctx context.Context, record LogRecord) (LogPosit
 		_ = tx.Abort(context.Background())
 		return LogPosition{}, err
 	}
-	return LogPosition{Stream: record.Kind, Partition: record.PartitionKey, Sequence: int64(len(s.records))}, nil
+	for i := len(s.records) - 1; i >= 0; i-- {
+		if s.records[i].Kind == record.Kind && s.records[i].PartitionKey == record.PartitionKey {
+			return LogPosition{Stream: record.Kind, Partition: record.PartitionKey, Sequence: int64(i)}, nil
+		}
+	}
+	return LogPosition{}, errors.New("record was not committed")
 }
 
-func (s *memoryLogStore) ReadFrom(_ context.Context, stream, partition string, from int64, limit int) ([]LogRecord, error) {
-	var result []LogRecord
-	for i, record := range s.records {
-		if record.Kind == stream && record.PartitionKey == partition && int64(i) >= from {
-			result = append(result, record)
+func (s *memoryLogStore) ReadFrom(_ context.Context, stream, partition string, from int64, limit int) ([]LogEntry, error) {
+	var result []LogEntry
+	var sequence int64
+	for _, record := range s.records {
+		if record.Kind != stream || record.PartitionKey != partition {
+			continue
+		}
+		if sequence >= from {
+			result = append(result, LogEntry{
+				Position: LogPosition{Stream: stream, Partition: partition, Sequence: sequence},
+				Record: record,
+			})
 			if limit > 0 && len(result) >= limit {
 				break
 			}
 		}
+		sequence++
 	}
 	return result, nil
 }
@@ -74,6 +88,14 @@ func (tx *memoryLogTx) Append(_ context.Context, record LogRecord) error {
 	if record.ID == "" || record.TenantID == "" || record.Kind == "" {
 		return errors.New("record identity, tenant, and kind are required")
 	}
+	for _, existing := range append(append([]LogRecord(nil), tx.store.records...), tx.records...) {
+		if existing.TenantID == record.TenantID && existing.Kind == record.Kind && existing.ID == record.ID {
+			if !bytes.Equal(existing.Key, record.Key) || !bytes.Equal(existing.Value, record.Value) || existing.PartitionKey != record.PartitionKey {
+				return ErrIdempotencyConflict
+			}
+			return nil
+		}
+	}
 	tx.records = append(tx.records, record)
 	return nil
 }
@@ -94,10 +116,11 @@ func (tx *memoryLogTx) Commit(context.Context) error {
 	if tx.closed {
 		return errors.New("transaction is closed")
 	}
-	tx.closed = true
 	if tx.store.commitErr != nil {
+		tx.closed = true
 		return tx.store.commitErr
 	}
+	tx.closed = true
 	tx.store.records = append(tx.store.records, tx.records...)
 	if tx.group != "" {
 		tx.store.checkpoints[tx.group] = append([]LogPosition(nil), tx.positions...)
@@ -287,5 +310,40 @@ func TestWorkerRequiresInputOffsets(t *testing.T) {
 	}
 	if len(store.records) != 0 {
 		t.Fatalf("records committed without input checkpoint: %d", len(store.records))
+	}
+}
+
+func TestLogStoreIdempotencyConflictIsRejected(t *testing.T) {
+	store := newMemoryLogStore()
+	record := LogRecord{ID: "record-1", TenantID: "tenant", Kind: "events", PartitionKey: "key", Key: []byte("key"), Value: []byte("one")}
+	if _, err := store.Append(context.Background(), record); err != nil {
+		t.Fatalf("first append: %v", err)
+	}
+	if _, err := store.Append(context.Background(), record); err != nil {
+		t.Fatalf("identical retry should be idempotent: %v", err)
+	}
+	conflict := record
+	conflict.Value = []byte("different")
+	if _, err := store.Append(context.Background(), conflict); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("conflicting retry error = %v, want %v", err, ErrIdempotencyConflict)
+	}
+}
+
+func TestLogStoreReplayIncludesStablePosition(t *testing.T) {
+	store := newMemoryLogStore()
+	for _, id := range []string{"one", "two"} {
+		_, err := store.Append(context.Background(), LogRecord{
+			ID: id, TenantID: "tenant", Kind: "events", PartitionKey: "key", Value: []byte(id),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := store.ReadFrom(context.Background(), "events", "key", 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Record.ID != "two" || entries[0].Position.Sequence != 1 {
+		t.Fatalf("unexpected replay result: %#v", entries)
 	}
 }
