@@ -98,7 +98,7 @@ func (s *Scheduler) FireDue(ctx context.Context, due DueSchedule) error {
 	if err := tx.Append(ctx, LogRecord{ID: "schedule-tombstone:" + due.Record.TenantID + ":" + due.Record.ScheduleID + ":" + strconv.FormatInt(due.Record.Revision, 10), TenantID: due.Record.TenantID, PartitionKey: string(due.Key), Kind: s.SchedulesTopic, Key: due.Key, Value: nil}); err != nil {
 		return err
 	}
-	if err := tx.CommitInputPosition(ctx, s.GroupID, []LogPosition{due.InputPosition}); err != nil {
+	if err := tx.CommitInputPosition(ctx, s.GroupID, []InputCheckpoint{due.InputPosition}); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
