@@ -163,7 +163,7 @@ type fixedEvaluator struct {
 	err     error
 }
 
-func (e fixedEvaluator) Evaluate(context.Context, EventEnvelope) ([]Effect, []ExecutionAudit, error) {
+func (e fixedEvaluator) Evaluate(context.Context, string, int64, EventEnvelope) ([]Effect, []ExecutionAudit, error) {
 	return e.effects, e.audits, e.err
 }
 
@@ -175,6 +175,7 @@ func TestWorkerCommitsOutputsAndInputPositionsTogether(t *testing.T) {
 	}
 	audit := ExecutionAudit{TenantID: "tenant-1", EventID: "event-1", RulesetID: "rules", Revision: 3}
 	worker := Worker{
+		DeploymentID: "domain-a/service-a", DeploymentRevision: 3,
 		GroupID: "worker-group", AuditTopic: "flow.audit", Store: store,
 		Evaluator: fixedEvaluator{effects: []Effect{effect}, audits: []ExecutionAudit{audit}},
 		Codec: jsonCodec{},
@@ -182,6 +183,7 @@ func TestWorkerCommitsOutputsAndInputPositionsTogether(t *testing.T) {
 	input, err := json.Marshal(EventEnvelope{
 		SchemaVersion: 1, ID: "event-1", TenantID: "tenant-1",
 		EventType: "orders.created", PartitionKey: "order-1", OccurredAt: time.Unix(1, 0).UTC(),
+		Metadata: EventMetadata{TargetServiceID: "domain-a/service-a", DeploymentRevision: 3},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +206,7 @@ func TestWorkerCommitsOutputsAndInputPositionsTogether(t *testing.T) {
 
 func TestWorkerAbortsOnDecodeFailure(t *testing.T) {
 	store := newMemoryLogStore()
-	worker := Worker{GroupID: "group", Store: store, Evaluator: fixedEvaluator{}, Codec: jsonCodec{}}
+	worker := Worker{DeploymentID: "domain/service", DeploymentRevision: 1, GroupID: "group", Store: store, Evaluator: fixedEvaluator{}, Codec: jsonCodec{}}
 	err := worker.ProcessBatch(context.Background(), Batch{
 		Records: []Record{{Topic: "flow.events", Partition: 0, Offset: 0, Value: []byte("{")}},
 		Offsets: []Offset{{Topic: "flow.events", Partition: 0, Next: 1}},
@@ -228,6 +230,7 @@ func TestWorkerAbortsOnCommitFailure(t *testing.T) {
 	}
 	input, marshalErr := json.Marshal(EventEnvelope{
 		SchemaVersion: 1, ID: "event", TenantID: "tenant", EventType: "test", PartitionKey: "key",
+		Metadata: EventMetadata{TargetServiceID: "domain/service", DeploymentRevision: 1},
 	})
 	if marshalErr != nil {
 		t.Fatal(marshalErr)
