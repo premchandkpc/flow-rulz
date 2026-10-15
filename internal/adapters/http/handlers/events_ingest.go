@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -57,7 +56,12 @@ func (r eventIngestionRequest) metaString(key string) string {
 }
 
 func validateEventMetadata(meta map[string]json.RawMessage) error {
-	stringFields := []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "traceparent", "flow.service_id"}
+	for _, reserved := range []string{"flow.service_id", "flow.deployment_revision"} {
+		if _, exists := meta[reserved]; exists {
+			return fmt.Errorf("meta.%s is reserved for trusted routing infrastructure", reserved)
+		}
+	}
+	stringFields := []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "traceparent"}
 	for _, key := range stringFields {
 		raw, exists := meta[key]
 		if !exists { continue }
@@ -77,18 +81,6 @@ func validateEventMetadata(meta map[string]json.RawMessage) error {
 			var value int64
 			if err := json.Unmarshal(raw, &value); err != nil || value < 0 {
 				return fmt.Errorf("meta.%s must be a non-negative integer", key)
-			}
-		}
-	}
-	if raw, exists := meta["flow.deployment_revision"]; exists {
-		var revision int64
-		if err := json.Unmarshal(raw, &revision); err != nil {
-			var value string
-			if textErr := json.Unmarshal(raw, &value); textErr != nil {
-				return fmt.Errorf("meta.flow.deployment_revision must be an integer or integer string")
-			}
-			if _, parseErr := strconv.ParseInt(value, 10, 64); parseErr != nil {
-				return fmt.Errorf("meta.flow.deployment_revision must be an integer or integer string")
 			}
 		}
 	}
