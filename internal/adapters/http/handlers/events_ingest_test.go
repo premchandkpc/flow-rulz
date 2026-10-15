@@ -42,14 +42,12 @@ func TestEventIngestionPublishesValidatedEnvelopeToShard(t *testing.T) {
 	body, err := json.Marshal(struct {
 		ID           string            `json:"id"`
 		Type         string            `json:"type"`
-		TenantID     string            `json:"tenant_id"`
-		PartitionKey string            `json:"partition_key"`
+		Meta         map[string]any     `json:"meta"`
 		OccurredAt   time.Time         `json:"occurred_at"`
 		Data         []byte            `json:"data"`
 		Headers      map[string]string `json:"headers,omitempty"`
 	}{
-		ID: "evt-1", Type: "order.created", TenantID: "tenant-a",
-		PartitionKey: "order-1", OccurredAt: time.Now().UTC(),
+		ID: "evt-1", Type: "order.created", Meta: map[string]any{"tenant_id": "tenant-a", "partition_key": "order-1", "region": "ap-south-1"}, OccurredAt: time.Now().UTC(),
 		Data: []byte(`{"order_id":"order-1"}`),
 	})
 	if err != nil {
@@ -72,14 +70,14 @@ func TestEventIngestionPublishesValidatedEnvelopeToShard(t *testing.T) {
 		t.Fatalf("subject = %q, want events", publisher.subject)
 	}
 	var published struct {
-		ID       string `json:"id"`
-		TenantID string `json:"tenant_id"`
-		Type     string `json:"type"`
+		ID string `json:"id"`
+		Type string `json:"type"`
+		Meta map[string]any `json:"meta"`
 	}
 	if err := json.Unmarshal(publisher.payload, &published); err != nil {
 		t.Fatal(err)
 	}
-	if published.ID != "evt-1" || published.TenantID != "tenant-a" || published.Type != "order.created" {
+	if published.ID != "evt-1" || published.Meta["tenant_id"] != "tenant-a" || published.Meta["partition_key"] != "order-1" || published.Meta["region"] != "ap-south-1" || published.Type != "order.created" {
 		t.Fatalf("published envelope = %+v", published)
 	}
 }
@@ -95,13 +93,11 @@ func TestEventIngestionRejectsTenantMismatch(t *testing.T) {
 	body, err := json.Marshal(struct {
 		ID           string    `json:"id"`
 		Type         string    `json:"type"`
-		TenantID     string    `json:"tenant_id"`
-		PartitionKey string    `json:"partition_key"`
+		Meta         map[string]any `json:"meta"`
 		OccurredAt   time.Time `json:"occurred_at"`
 		Data         []byte    `json:"data"`
 	}{
-		ID: "evt-1", Type: "order.created", TenantID: "tenant-victim",
-		PartitionKey: "order-1", OccurredAt: time.Now().UTC(), Data: []byte(`{}`),
+		ID: "evt-1", Type: "order.created", Meta: map[string]any{"tenant_id": "tenant-victim", "partition_key": "order-1"}, OccurredAt: time.Now().UTC(), Data: []byte(`{}`),
 	})
 	if err != nil {
 		t.Fatal(err)
