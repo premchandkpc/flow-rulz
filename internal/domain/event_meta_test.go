@@ -10,10 +10,10 @@ func TestEventEnvelopeSerializesAllMetadataInsideMeta(t *testing.T) {
 	event := EventEnvelope{
 		ID: "evt-1", Type: "orders.created", TenantID: "merchant-42", PartitionKey: "order-1007",
 		WorkflowID: "workflow-1", OccurredAt: time.Date(2026, 10, 15, 7, 30, 0, 0, time.UTC),
-		Data: json.RawMessage(`{"order_id":"order-1007"}`),
+		Data:        json.RawMessage(`{"order_id":"order-1007"}`),
 		MessageKind: "event", CorrelationID: "corr-1", CausationID: "evt-parent",
-		Headers: map[string]string{"traceparent":"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"},
-		Meta: map[string]json.RawMessage{"source":json.RawMessage(`"checkout-api"`),"producer_sequence":json.RawMessage(`1042`)},
+		Headers: map[string]string{"traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"},
+		Meta: map[string]json.RawMessage{"source": json.RawMessage(`"checkout-api"`), "producer_sequence": json.RawMessage(`1042`)},
 	}
 	encoded, err := json.Marshal(event)
 	if err != nil {
@@ -23,7 +23,7 @@ func TestEventEnvelopeSerializesAllMetadataInsideMeta(t *testing.T) {
 	if err := json.Unmarshal(encoded, &wire); err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"tenant_id","partition_key","workflow_id","message_kind","correlation_id","causation_id","headers"} {
+	for _, forbidden := range []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "headers"} {
 		if _, ok := wire[forbidden]; ok {
 			t.Fatalf("%s must be inside meta, got top-level envelope %s", forbidden, encoded)
 		}
@@ -32,7 +32,7 @@ func TestEventEnvelopeSerializesAllMetadataInsideMeta(t *testing.T) {
 	if err := json.Unmarshal(wire["meta"], &meta); err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range map[string]string{"tenant_id":"merchant-42","partition_key":"order-1007","workflow_id":"workflow-1","message_kind":"event","correlation_id":"corr-1","causation_id":"evt-parent","source":"checkout-api"} {
+	for key, want := range map[string]string{"tenant_id": "merchant-42", "partition_key": "order-1007", "workflow_id": "workflow-1", "message_kind": "event", "correlation_id": "corr-1", "causation_id": "evt-parent", "source": "checkout-api"} {
 		var got string
 		if err := json.Unmarshal(meta[key], &got); err != nil || got != want {
 			t.Fatalf("meta.%s = %q, want %q (err=%v)", key, got, want, err)
