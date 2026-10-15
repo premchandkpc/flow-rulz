@@ -12,11 +12,15 @@ import (
 )
 
 var (
+	// ErrUnsupportedSchema indicates an envelope version this worker cannot process.
 	ErrUnsupportedSchema = errors.New("unsupported event schema")
+	// ErrHopLimit indicates an event exceeded the configured hop limit.
 	ErrHopLimit           = errors.New("event hop limit reached")
+	// ErrMissingRuleset indicates the pinned active ruleset revision is unavailable.
 	ErrMissingRuleset     = errors.New("active ruleset revision is unavailable")
 )
 
+// EventEnvelope is the versioned, tenant-scoped event consumed by the worker.
 type EventEnvelope struct {
 	SchemaVersion int             `json:"schema_version"`
 	ID            string          `json:"id"`
@@ -28,6 +32,7 @@ type EventEnvelope struct {
 	Metadata      EventMetadata   `json:"metadata"`
 }
 
+// EventMetadata carries correlation and event-chain metadata.
 type EventMetadata struct {
 	CorrelationID       string `json:"correlation_id,omitempty"`
 	CausationID         string `json:"causation_id,omitempty"`
@@ -36,6 +41,7 @@ type EventMetadata struct {
 	RequestedRulesetID  string `json:"requested_ruleset_id,omitempty"`
 }
 
+// Record is an input record with its source stream position.
 type Record struct {
 	Topic     string
 	Partition int32
@@ -44,22 +50,26 @@ type Record struct {
 	Value     []byte
 }
 
+// Offset identifies the next source offset to consume after a batch.
 type Offset struct {
 	Topic     string
 	Partition int32
 	Next      int64
 }
 
+// RulesetRef pins a tenant-scoped ruleset to an immutable revision.
 type RulesetRef struct {
 	TenantID  string
 	RulesetID string
 	Revision  int64
 }
 
+// CompiledRuleset evaluates one event without performing external side effects.
 type CompiledRuleset interface {
 	Evaluate(context.Context, EventEnvelope) ([]Effect, error)
 }
 
+// Effect is a deterministic, generic output produced by rule evaluation or routing.
 type Effect struct {
 	ID             string
 	IdempotencyKey string
@@ -74,6 +84,7 @@ type Effect struct {
 	Payload        json.RawMessage
 }
 
+// ExecutionAudit records which immutable ruleset revision processed an event.
 type ExecutionAudit struct {
 	TenantID     string
 	EventID      string
@@ -98,10 +109,12 @@ type SubscriberRouter interface {
 	Route(context.Context, EventEnvelope, string) ([]Effect, error)
 }
 
+// Evaluator turns an event into generic effects and audit records.
 type Evaluator interface {
 	Evaluate(context.Context, EventEnvelope) ([]Effect, []ExecutionAudit, error)
 }
 
+// RuleEvaluator resolves pinned rulesets and delegates subscriber fan-out.
 type RuleEvaluator struct {
 	Resolver  Resolver
 	Router    SubscriberRouter
@@ -139,7 +152,7 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effe
 	for _, ref := range refs {
 		ruleset, contentHash, err := e.Resolver.GetRevision(ctx, ref)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %s/%s@%d: %v", ErrMissingRuleset, ref.TenantID, ref.RulesetID, ref.Revision, err)
+			return nil, nil, fmt.Errorf("%w: %s/%s@%d: %w", ErrMissingRuleset, ref.TenantID, ref.RulesetID, ref.Revision, err)
 		}
 		ruleEffects, err := ruleset.Evaluate(ctx, env)
 		if err != nil {
@@ -186,6 +199,7 @@ func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effe
 	return effects, audits, nil
 }
 
+// Codec encodes and decodes backend-neutral event, effect, and audit envelopes.
 type Codec interface {
 	DecodeEvent([]byte) (EventEnvelope, error)
 	EncodeEffect(Effect) ([]byte, error)
@@ -204,11 +218,13 @@ type Worker struct {
 	Codec         Codec
 }
 
+// Batch contains input records and the next offsets to checkpoint atomically.
 type Batch struct {
 	Records []Record
 	Offsets []Offset
 }
 
+// ProcessBatch atomically appends outputs and advances input checkpoints.
 func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 	if len(batch.Records) == 0 {
 		return nil
@@ -232,7 +248,9 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 	committed := false
 	defer func() {
 		if !committed {
-			_ = tx.Abort(context.Background())
+			abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			_ = tx.Abort(abortCtx)
 		}
 	}()
 
