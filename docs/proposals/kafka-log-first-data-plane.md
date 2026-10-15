@@ -38,7 +38,7 @@ Use a topic prefix configurable per environment, shown below as `flow.`. Configu
 
 | Topic | Key | Value / meaning | Cleanup |
 |---|---|---|---|
-| `flow.events` | `tenant_id + ":" + partition_key` | Versioned `EventEnvelope` | Time/size retention, sized for replay policy |
+| `flow.events` | `meta.tenant_id + ":" + meta.partition_key` | Versioned `EventEnvelope` | Time/size retention, sized for replay policy |
 | `flow.rulesets` | `ruleset_id + ":" + revision` | Immutable compiled/source rule revision | Compacted; retain revision history through explicit policy |
 | `flow.ruleset-activation` | `ruleset_id` | Active revision and optional effective-from marker | Compacted |
 | `flow.contracts` | `contract_id + ":" + version` | Immutable JSON Schema / contract metadata | Compacted |
@@ -46,12 +46,12 @@ Use a topic prefix configurable per environment, shown below as `flow.`. Configu
 | `flow.domains` | `domain_id` | Event domain configuration | Compacted |
 | `flow.services` | `domain_id + ":" + service_id` | Service identity within a domain, deployment metadata, worker profile, and status | Compacted |
 | `flow.service-deployments` | `domain_id + ":" + service_id` | Immutable deployment revision: assigned ruleset IDs/revisions, concurrency/resource profile, activation generation | Compacted |
-| `flow.service-work.<service-token>` | `tenant_id + ":" + partition_key` | Routed event copy addressed to one service deployment; target service ID is part of the envelope | Time/size retention; separate topic/ACL boundary per deployed service or deployment group |
+| `flow.service-work.<service-token>` | `meta.tenant_id + ":" + meta.partition_key` | Routed event copy addressed to one service deployment; target service ID is part of the envelope | Time/size retention; separate topic/ACL boundary per deployed service or deployment group |
 | `flow.subscriptions` | `subscriber_id` | Receiver subscription filters, independent of execution-service deployment | Compacted |
-| `flow.schedules` | `tenant_id + ":" + schedule_id` | Schedule upsert; tombstone on cancel/fire | Compacted |
+| `flow.schedules` | `schedule_id` | Schedule upsert; tombstone on cancel/fire | Compacted |
 | `flow.commands` | Destination-specific key | Generic command envelope | Time/size retention |
 | `flow.service-deliveries` | `tenant_id + ":" + subscriber_id + ":" + event_id` | One delivery intent per matching subscriber | Time/size retention |
-| `flow.audit` | `tenant_id + ":" + execution_id` | Execution, selected revision, outcomes, correlation IDs | Time/size retention; sink for long-term history |
+| `flow.audit` | `execution_id` | Execution, selected revision, outcomes, correlation IDs | Time/size retention; sink for long-term history |
 | `flow.retry` | Original partition key | Retry envelope, attempt, not-before timestamp | Time/size retention |
 | `flow.dlq` | Original partition key | Poison event plus failure metadata | Operational retention and replay policy |
 
@@ -259,7 +259,7 @@ If operational needs require relational joins, billing, uniqueness across multip
 
 Required metrics: consumer lag by group/partition, transaction aborts, rebalance count/duration, processing latency, rule-cache misses, missing revisions, DLQ/retry count, scheduler lateness, output production failures, per-key skew, and broker under-replicated partitions. Correlate logs with tenant ID, event ID, execution ID, causation ID, ruleset revision, topic, partition, and offset. Never log raw sensitive payloads by default.
 
-Set bounded retry attempts and a DLQ policy. Alert on sustained consumer lag, scheduler lateness, missing rule revisions, transaction abort storms, and partition skew. Secure topics with least-privilege ACLs; tenant IDs in keys and subjects are isolation metadata, not authorization.
+Set bounded retry attempts and a DLQ policy. Alert on sustained consumer lag, scheduler lateness, missing rule revisions, transaction abort storms, and partition skew. Secure topics with least-privilege ACLs; event metadata in keys and subjects is an isolation hint, not authorization.
 
 ## Migration plan and gates
 
