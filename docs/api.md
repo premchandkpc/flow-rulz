@@ -47,7 +47,7 @@ See the [Domain request schema](../contracts/schemas/domain.schema.json), [respo
 
 ## Runtime events
 
-`POST /v1/events/{eventType}` accepts an event whose top-level envelope contains `id`, `type`, `occurred_at`, optional `contract`, and `data`. The required `meta` object contains `tenant_id` and `partition_key`; it can also contain tracing, correlation, producer, routing, and future metadata fields. Unknown metadata keys are accepted and preserved. Unknown top-level envelope fields are rejected.
+`POST /v1/events/{eventType}` accepts an event whose top-level envelope contains `id`, `type`, `occurred_at`, optional `contract`, and `data`. The required `meta` object contains `tenant_id` and `partition_key`; it can also contain tracing, correlation, producer, routing, and future metadata fields. Unknown metadata keys are accepted and preserved. Unknown top-level envelope fields are rejected. Public ingress also rejects `meta.flow.service_id` and `meta.flow.deployment_revision`; trusted routing infrastructure alone may set those internal routing values.
 
 The event metadata tenant value must match the authenticated producer scope when the ingress authentication middleware supplies one. This is an event authorization check, not Domain configuration.
 
