@@ -23,7 +23,7 @@ type SubscriberRouter struct{}
 // after the transaction commits.
 func (SubscriberRouter) Route(
 	ctx context.Context,
-	repository ports.DomainServiceRepository,
+	repository ports.SubscriberRepository,
 	envelope *domain.EventEnvelope,
 	executionID string,
 	now time.Time,
