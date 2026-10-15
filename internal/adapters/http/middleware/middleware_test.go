@@ -203,3 +203,21 @@ func TestGlobalConfigurationRejectsTenantOnlyJWT(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
 }
+
+func TestGlobalConfigurationAcceptsAdminScopeWithoutTenantRoutingContext(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv(trustedProxyTokenEnv, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/rules/order-review/revisions", nil)
+	claims := &auth.Claims{TenantID: "admin-principal", Scopes: []string{"flowrulz:admin"}}
+	req = req.WithContext(auth.ContextWithClaims(req.Context(), claims))
+	rec := httptest.NewRecorder()
+	TenantExtractor(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := GetTenantID(r.Context()); got != "" {
+			t.Fatalf("global configuration unexpectedly received event tenant %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
