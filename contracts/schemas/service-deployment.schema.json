@@ -41,16 +41,6 @@
         "properties": {
           "ruleset_id": { "type": "string", "minLength": 1, "maxLength": 128 },
           "revision": { "type": "integer", "minimum": 1 },
-          "contract": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["name", "version"],
-            "properties": {
-              "name": { "type": "string", "minLength": 1 },
-              "version": { "type": "string", "minLength": 1 },
-              "schema_hash": { "type": "string" }
-            }
-          }
         }
       }
     },
