@@ -144,15 +144,27 @@ func EventDocFromDomain(event *domain.EventEnvelope) *EventDoc {
 	meta := make(map[string]any, len(event.Meta)+8)
 	for key, raw := range event.Meta {
 		var value any
-		if json.Unmarshal(raw, &value) == nil { meta[key] = value }
+		if json.Unmarshal(raw, &value) == nil {
+			meta[key] = value
+		}
 	}
 	meta["tenant_id"] = event.TenantID
 	meta["partition_key"] = event.PartitionKey
-	if event.WorkflowID != "" { meta["workflow_id"] = event.WorkflowID }
-	if event.MessageKind != "" { meta["message_kind"] = event.MessageKind }
-	if event.CorrelationID != "" { meta["correlation_id"] = event.CorrelationID }
-	if event.CausationID != "" { meta["causation_id"] = event.CausationID }
-	if len(event.Headers) > 0 { meta["headers"] = event.Headers }
+	if event.WorkflowID != "" {
+		meta["workflow_id"] = event.WorkflowID
+	}
+	if event.MessageKind != "" {
+		meta["message_kind"] = event.MessageKind
+	}
+	if event.CorrelationID != "" {
+		meta["correlation_id"] = event.CorrelationID
+	}
+	if event.CausationID != "" {
+		meta["causation_id"] = event.CausationID
+	}
+	if len(event.Headers) > 0 {
+		meta["headers"] = event.Headers
+	}
 	return &EventDoc{
 		EventID:      event.ID,
 		TenantID:     event.TenantID,
@@ -172,7 +184,9 @@ func EventDocFromDomain(event *domain.EventEnvelope) *EventDoc {
 func (d *EventDoc) ToDomain() *domain.EventEnvelope {
 	meta := make(map[string]json.RawMessage, len(d.Meta))
 	for key, value := range d.Meta {
-		if raw, err := json.Marshal(value); err == nil { meta[key] = raw }
+		if raw, err := json.Marshal(value); err == nil {
+			meta[key] = raw
+		}
 	}
 	var data json.RawMessage
 	if d.Data != nil {
