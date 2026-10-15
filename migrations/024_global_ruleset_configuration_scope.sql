@@ -116,3 +116,15 @@ WHERE NOT EXISTS (
       AND existing.contract_hash = s.contract_hash
       AND existing.rule_set = s.rule_set
 );
+
+-- Remove exact duplicate global bindings left by older tenant-scoped copies.
+-- Conflict checks above guarantee duplicates have identical routing policy.
+DELETE FROM contract_bindings older
+USING contract_bindings newer
+WHERE older.tenant_id = '__domain_configuration__'
+  AND newer.tenant_id = '__domain_configuration__'
+  AND older.contract_name = newer.contract_name
+  AND older.contract_version = newer.contract_version
+  AND older.contract_hash = newer.contract_hash
+  AND older.rule_set = newer.rule_set
+  AND (older.updated_at, older.id) < (newer.updated_at, newer.id);
