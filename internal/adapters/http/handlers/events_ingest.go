@@ -1,7 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -124,7 +128,29 @@ func (h *EventIngestionHandler) PublishEvent(w http.ResponseWriter, r *http.Requ
 
 func decodeEventIngestionRequest(w http.ResponseWriter, r *http.Request) (eventIngestionRequest, bool) {
 	var request eventIngestionRequest
-	if err := decodeRequestBody(r, &request); err != nil {
+	data, err := readRequestBody(r)
+	if err == nil && isYAMLContentType(r.Header.Get(headerContentType)) {
+		var document any
+		if err = decodeSingleYAMLDocument(data, &document); err == nil {
+			data, err = json.Marshal(document)
+		}
+	}
+	if err == nil {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		err = decoder.Decode(&request)
+		if err == nil {
+			var extra any
+			if trailingErr := decoder.Decode(&extra); trailingErr != io.EOF {
+				if trailingErr == nil {
+					err = errors.New("multiple JSON values are not supported")
+				} else {
+					err = fmt.Errorf("decode trailing JSON value: %w", trailingErr)
+				}
+			}
+		}
+	}
+	if err != nil {
 		responses.WriteError(w, http.StatusBadRequest, "invalid event envelope: "+err.Error(), responses.CodeInvalidJSON)
 		return eventIngestionRequest{}, false
 	}
