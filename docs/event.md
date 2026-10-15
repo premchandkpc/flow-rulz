@@ -5,7 +5,7 @@ An event separates its stable envelope from runtime metadata and business payloa
 - Top-level `id`, `type`, `occurred_at`, `contract`, and `data` define the event identity, kind, timestamp, payload contract, and business payload.
 - `meta` contains runtime identity and extensible context. It is intentionally open to unknown fields so new tracing, routing, producer, and execution metadata does not require a breaking envelope change.
 - `meta.tenant_id` and `meta.partition_key` are required runtime values. They come with each event and are never configured on a Domain, Service, ruleset, or worker.
-- `meta.flow.service_id` and `meta.flow.deployment_revision`, when present, are internal routing metadata. Trusted routing infrastructure must set or validate them; producers must not be allowed to choose arbitrary worker deployments.
+- `meta.flow.service_id` and `meta.flow.deployment_revision` are reserved internal routing metadata. Public ingress rejects producer-supplied values; trusted routing infrastructure alone sets them after resolving the Domain → Service assignment.
 - Unknown keys inside `meta` must be preserved when the event is decoded and re-encoded. Unknown top-level envelope keys remain rejected to keep the envelope stable.
 
 ## Partitioning and ordering
