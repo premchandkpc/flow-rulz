@@ -8,6 +8,7 @@ FlowRulz is a Go event-driven rules runtime. Start with the [root README](../REA
 |---|---|
 | [architecture.md](architecture/overview.md) | Current package structure, ports, adapter boundaries, process wiring and tests |
 | [ADR-006](adr/ADR-006-global-domain-service-config.md) | Global Domain → Service → ruleset configuration and event identity boundary |
+| [testing.md](testing.md) | Change-specific test matrix and PR readiness checklist |
 | [design.md](design.md) | Data model, transaction boundaries, consistency assumptions, state machines and failure handling |
 | [operations.md](operations.md) | Local deployment, process behavior, troubleshooting and operational checklist |
 | [rules.md](rules.md) | Rule JSON/YAML shape, operators, compilation, evaluation and deployment lifecycle |
