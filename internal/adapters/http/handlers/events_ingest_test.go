@@ -43,7 +43,6 @@ func TestEventIngestionPublishesExtensibleMetaEnvelopeToShard(t *testing.T) {
 		"type":"order.created",
 		"occurred_at":"2026-10-15T07:30:00Z",
 		"data":{"order_id":"order-1"},
-		"contract":{"name":"order.created","version":"v1","schema_hash":"sha256:abc"},
 		"meta":{
 			"tenant_id":"tenant-a",
 			"partition_key":"order-1",
