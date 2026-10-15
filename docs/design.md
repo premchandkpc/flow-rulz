@@ -77,7 +77,7 @@ COMMIT
 
 | Type | Package | Fields | Purpose |
 |------|---------|--------|---------|
-| EventEnvelope | domain | ID, Type, TenantID, PartitionKey, OccurredAt, Data, Headers | Inbound event |
+| EventEnvelope | domain | ID, Type, OccurredAt, Data, Contract, Meta | Inbound event; extensible metadata lives in Meta |
 | RuleRevision | domain | TenantScope, RuleID, Revision, Source, Compiled, Hash, InputContract | Compiled rules + metadata |
 | CompiledRule | domain | ID, Priority, When, Then, Name, Description, Tags | Single rule |
 | Predicate | domain | Path, Op, Value, All, Any, Not | Leaf or composite condition |
@@ -312,7 +312,7 @@ Stable across identical inputs. Used for:
 **Virtual Shards**: 4096 fixed shards mapped to physical workers.
 
 ```
-shard = fnv32a(tenant_id + ":" + partition_key) % 4096
+shard = fnv32a(meta.tenant_id + ":" + meta.partition_key) % 4096
 ```
 
 **Ordering scope and limits:**
@@ -423,4 +423,4 @@ Paths use dot notation starting with `$`:
 
 ## Global configuration scope
 
-The Domain API and ruleset management API do not accept tenant identity as configuration. They use the fixed internal scope `__domain_configuration__` for legacy persistence columns named `tenant_scope`. That column name is a storage compatibility detail, not a public API field. The event service reads `tenant_id` and `partition_key` from each runtime event and uses them for shard routing, inbox deduplication, execution identity, and tenant isolation. Never use event tenant identity as the namespace for global Domain or ruleset configuration.
+The Domain API and ruleset management API do not accept tenant identity as configuration. They use the fixed internal scope `__domain_configuration__` for legacy persistence columns named `tenant_scope`. That column name is a storage compatibility detail, not a public API field. The event service reads `meta.tenant_id` and `meta.partition_key` from each runtime event and uses them for shard routing, inbox deduplication, execution identity, and isolation. Never use event tenant identity as the namespace for global Domain or ruleset configuration.
