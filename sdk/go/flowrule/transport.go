@@ -54,6 +54,7 @@ type envelopeWire struct {
 	SchemaVersion string `json:"schema_version,omitempty"`
 }
 
+// MarshalJSON encodes all runtime context inside the extensible meta object.
 func (e Envelope) MarshalJSON() ([]byte, error) {
 	meta := cloneEnvelopeMeta(e.Meta)
 	setEnvelopeMeta(meta,"tenant_id",e.TenantID)
@@ -70,6 +71,7 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 	}{e.ID,e.Type,e.OccurredAt,e.Data,e.Contract,meta})
 }
 
+// UnmarshalJSON decodes nested metadata and supports legacy top-level fields.
 func (e *Envelope) UnmarshalJSON(data []byte) error {
 	var wire envelopeWire
 	if err:=json.Unmarshal(data,&wire);err!=nil{return err}
