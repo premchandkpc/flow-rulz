@@ -224,8 +224,9 @@ func (w *Worker) quarantineRoutedDelivery(ctx context.Context, env *domain.Event
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := w.events.QuarantineEvent(settleCtx, env.ID, env.ID, env.TenantID, domain.ErrorClassValidation, routeErr.Error()); err != nil {
+		log.Printf("quarantine misrouted event %s: %v", env.ID, err)
 		if retryErr := delivery.Retry(settleCtx, retryDelayForDelivery(w.config.RetryDelay, delivery)); retryErr != nil {
-			log.Printf("quarantine misrouted event %s: %v; retry failed: %v", env.ID, err, retryErr)
+			log.Printf("retry misrouted event %s after quarantine failure: %v", env.ID, retryErr)
 		}
 		return
 	}
