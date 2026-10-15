@@ -266,9 +266,9 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 			}
 		}
 	}
-	positions := make([]LogPosition, 0, len(batch.Offsets))
+	positions := make([]InputCheckpoint, 0, len(batch.Offsets))
 	for _, offset := range batch.Offsets {
-		positions = append(positions, LogPosition{Stream: offset.Topic, Partition: fmt.Sprint(offset.Partition), Sequence: offset.Next})
+		positions = append(positions, InputCheckpoint{Stream: offset.Topic, Partition: fmt.Sprint(offset.Partition), NextSequence: offset.Next})
 	}
 	if err := tx.CommitInputPosition(ctx, w.GroupID, positions); err != nil {
 		return err
