@@ -34,8 +34,9 @@ const (
 
 // Service manages domain configuration and service ruleset assignments.
 type Service struct {
-	repository ports.DomainServiceRepository
-	clock      ports.Clock
+	repository  ports.DomainServiceRepository
+	clock       ports.Clock
+	ruleService ports.RuleService
 }
 
 // NewService creates a new domain Service with the given repository and clock.
@@ -46,9 +47,18 @@ func NewService(repository ports.DomainServiceRepository, clock ports.Clock) *Se
 	return &Service{repository: repository, clock: clock}
 }
 
+// WithRuleService enables validation that Service assignments reference immutable ruleset revisions.
+func (s *Service) WithRuleService(ruleService ports.RuleService) *Service {
+	s.ruleService = ruleService
+	return s
+}
+
 // SaveDomain creates or updates a Domain configuration.
 func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
 	if err := normalizeAndValidateDomain(item, tenantID); err != nil {
+		return nil, err
+	}
+	if err := s.validateAssignedRulesets(ctx, item); err != nil {
 		return nil, err
 	}
 	if err := s.ensureDomainNameAvailable(ctx, item); err != nil {
@@ -64,6 +74,25 @@ func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.
 		return nil, err
 	}
 	return item, nil
+}
+
+func (s *Service) validateAssignedRulesets(ctx context.Context, item *domain.TenantDomain) error {
+	if s.ruleService == nil {
+		return nil
+	}
+	for _, service := range item.Deployments {
+		for _, assignment := range service.Rulesets {
+			revision, err := s.ruleService.GetRevision(ctx, domain.DomainConfigurationScope, assignment.RulesetID, assignment.Revision)
+			if err != nil {
+				return fmt.Errorf("%w: resolve ruleset %q revision %d: %w", ErrInvalidInput, assignment.RulesetID, assignment.Revision, err)
+			}
+			if revision == nil || revision.TenantScope != domain.DomainConfigurationScope ||
+				revision.RuleID != assignment.RulesetID || revision.Revision != assignment.Revision {
+				return fmt.Errorf("%w: ruleset %q revision %d is not available in global configuration", ErrInvalidInput, assignment.RulesetID, assignment.Revision)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Service) validateDeploymentRevisionChanges(ctx context.Context, tenantID string, item *domain.TenantDomain) error {
