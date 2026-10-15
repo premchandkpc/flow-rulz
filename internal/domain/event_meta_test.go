@@ -67,29 +67,55 @@ func TestEventEnvelopeUnmarshalsMetaAndPreservesUnknownMetadata(t *testing.T) {
 	}
 }
 
-func TestEventEnvelopeAcceptsLegacyIdentityDuringRollingUpgradeButWritesCanonicalMeta(t *testing.T) {
-	const legacy = `{"id":"evt-1","type":"orders.created","tenant_id":"merchant-42","partition_key":"order-1007","occurred_at":"2026-10-15T07:30:00Z","data":{}}`
-	var event EventEnvelope
-	if err := json.Unmarshal([]byte(legacy), &event); err != nil {
-		t.Fatalf("legacy Unmarshal() error = %v", err)
+func TestEventEnvelopeRejectsTopLevelRuntimeIdentity(t *testing.T) {
+	tests := []string{
+		`{"id":"evt-1","type":"orders.created","tenant_id":"merchant-42","occurred_at":"2026-10-15T07:30:00Z","data":{},"meta":{"partition_key":"order-1007","tenant_id":"merchant-42"}}`,
+		`{"id":"evt-1","type":"orders.created","partition_key":"order-1007","occurred_at":"2026-10-15T07:30:00Z","data":{},"meta":{"partition_key":"order-1007","tenant_id":"merchant-42"}}`,
+		`{"id":"evt-1","type":"orders.created","tenant_id":"merchant-42","partition_key":"order-1007","occurred_at":"2026-10-15T07:30:00Z","data":{}}`,
+	}
+	for _, payload := range tests {
+		var event EventEnvelope
+		if err := json.Unmarshal([]byte(payload), &event); err == nil {
+			t.Errorf("Unmarshal() accepted top-level runtime identity: %s", payload)
+		}
+	}
+}
+
+func TestEventEnvelopeMarshalsIdentityFromMetaWhenTypedFieldsAreUnset(t *testing.T) {
+	event := EventEnvelope{
+		ID: "evt-1", Type: "orders.created",
+		OccurredAt: time.Date(2026, 10, 15, 7, 30, 0, 0, time.UTC),
+		Data: json.RawMessage(`{}`),
+		Meta: map[string]any{
+			"tenant_id": "merchant-42",
+			"partition_key": "order-1007",
+			"future_context": map[string]any{"source": "checkout"},
+		},
 	}
 	raw, err := json.Marshal(event)
 	if err != nil {
-		t.Fatalf("canonical Marshal() error = %v", err)
+		t.Fatalf("Marshal() error = %v", err)
 	}
-	var wire map[string]any
-	if err := json.Unmarshal(raw, &wire); err != nil {
-		t.Fatal(err)
+	var roundTrip EventEnvelope
+	if err := json.Unmarshal(raw, &roundTrip); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if _, exists := wire["tenant_id"]; exists {
-		t.Fatalf("legacy tenant_id leaked to top level: %s", raw)
+	if roundTrip.TenantID != "merchant-42" || roundTrip.PartitionKey != "order-1007" {
+		t.Fatalf("runtime identity was not read from meta: %#v", roundTrip)
 	}
-	if _, exists := wire["partition_key"]; exists {
-		t.Fatalf("legacy partition_key leaked to top level: %s", raw)
+	if roundTrip.Meta["future_context"] == nil {
+		t.Fatalf("unknown metadata was not preserved: %#v", roundTrip.Meta)
 	}
-	meta, ok := wire["meta"].(map[string]any)
-	if !ok || meta["tenant_id"] != "merchant-42" || meta["partition_key"] != "order-1007" {
-		t.Fatalf("canonical meta identity missing: %#v", wire["meta"])
+}
+
+func TestEventEnvelopeRejectsConflictingTypedAndMetaIdentity(t *testing.T) {
+	event := EventEnvelope{
+		ID: "evt-1", Type: "orders.created", TenantID: "tenant-a", PartitionKey: "order-1",
+		OccurredAt: time.Date(2026, 10, 15, 7, 30, 0, 0, time.UTC), Data: json.RawMessage(`{}`),
+		Meta: map[string]any{"tenant_id": "tenant-b", "partition_key": "order-1"},
+	}
+	if _, err := json.Marshal(event); err == nil {
+		t.Fatal("Marshal() accepted conflicting tenant identity")
 	}
 }
 
