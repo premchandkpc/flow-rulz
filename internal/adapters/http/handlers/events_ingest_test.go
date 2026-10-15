@@ -19,7 +19,7 @@ type capturePublisher struct {
 	calls   int
 }
 
-func (p *capturePublisher) Publish(context.Context, string, []byte) error { return nil }
+func (p *capturePublisher) Publish(context.Context, string, []byte) error              { return nil }
 func (p *capturePublisher) PublishBatch(context.Context, []ports.PublishMessage) error { return nil }
 func (p *capturePublisher) PublishToShard(_ context.Context, subject string, shard uint32, payload []byte) error {
 	p.subject = subject
@@ -83,7 +83,7 @@ func TestEventIngestionPublishesExtensibleMetaEnvelopeToShard(t *testing.T) {
 	if err := json.Unmarshal(published["meta"], &meta); err != nil {
 		t.Fatalf("meta is invalid: %v", err)
 	}
-	for key, want := range map[string]string{"tenant_id":"tenant-a","partition_key":"order-1","correlation_id":"corr-1","source":"checkout-api"} {
+	for key, want := range map[string]string{"tenant_id": "tenant-a", "partition_key": "order-1", "correlation_id": "corr-1", "source": "checkout-api"} {
 		var got string
 		if err := json.Unmarshal(meta[key], &got); err != nil || got != want {
 			t.Fatalf("meta.%s = %q, want %q (err=%v)", key, got, want, err)
