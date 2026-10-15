@@ -102,6 +102,12 @@ func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
 	}
 	tenantID, hasTenant := wire.Meta["tenant_id"].(string)
 	partitionKey, hasPartition := wire.Meta["partition_key"].(string)
+	if _, present := wire.Meta["tenant_id"]; present && !hasTenant {
+		return fmt.Errorf("meta.tenant_id must be a string")
+	}
+	if _, present := wire.Meta["partition_key"]; present && !hasPartition {
+		return fmt.Errorf("meta.partition_key must be a string")
+	}
 	if !hasTenant {
 		tenantID = wire.TenantID
 	}
