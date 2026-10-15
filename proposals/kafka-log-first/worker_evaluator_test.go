@@ -11,6 +11,7 @@ type evaluatorResolver struct {
 	refs []RulesetRef
 	resolveErr error
 	compiled CompiledRuleset
+	compiledByRuleset map[string]CompiledRuleset
 	contentHash string
 	revisionErr error
 }
@@ -18,7 +19,10 @@ type evaluatorResolver struct {
 func (r evaluatorResolver) Resolve(context.Context, string, int64, EventEnvelope) ([]RulesetRef, error) {
 	return r.refs, r.resolveErr
 }
-func (r evaluatorResolver) GetRevision(context.Context, RulesetRef) (CompiledRuleset, string, error) {
+func (r evaluatorResolver) GetRevision(_ context.Context, ref RulesetRef) (CompiledRuleset, string, error) {
+	if compiled, ok := r.compiledByRuleset[ref.RulesetID]; ok {
+		return compiled, r.contentHash, r.revisionErr
+	}
 	return r.compiled, r.contentHash, r.revisionErr
 }
 
@@ -60,9 +64,14 @@ func TestRuleEvaluatorEvaluatesPinnedRulesAndRoutesOnce(t *testing.T) {
 				{TenantID: "tenant-a", RulesetID: "orders-created", Revision: 3},
 				{TenantID: "tenant-a", RulesetID: "orders-notify", Revision: 5},
 			},
-			compiled: evaluatorRuleset{effects: []Effect{{
-				IdempotencyKey: "effect-1", Destination: "flow.commands", PartitionKey: "order-1",
-			}}},
+			compiledByRuleset: map[string]CompiledRuleset{
+				"orders-created": evaluatorRuleset{effects: []Effect{{
+					IdempotencyKey: "effect-1", Destination: "flow.commands", PartitionKey: "order-1",
+				}}},
+				"orders-notify": evaluatorRuleset{effects: []Effect{{
+					IdempotencyKey: "effect-2", Destination: "flow.notifications", PartitionKey: "order-1",
+				}}},
+			},
 			contentHash: "sha256:rules",
 		},
 		Router: router, Now: func() time.Time { return now },
@@ -72,7 +81,7 @@ func TestRuleEvaluatorEvaluatesPinnedRulesAndRoutesOnce(t *testing.T) {
 	if len(effects) != 3 { t.Fatalf("effects = %d, want 3", len(effects)) }
 	if len(audits) != 2 { t.Fatalf("audits = %d, want 2", len(audits)) }
 	if router.calls != 1 { t.Fatalf("router calls = %d, want 1", router.calls) }
-	if effects[0].ID != "effect-1" || effects[2].ID != "delivery-1" { t.Fatalf("effect IDs not made deterministic: %#v", effects) }
+	if effects[0].ID != "effect-1" || effects[1].ID != "effect-2" || effects[2].ID != "delivery-1" { t.Fatalf("effect IDs not made deterministic: %#v", effects) }
 	if effects[0].TenantID != "tenant-a" || effects[0].CausationID != "event-1" || effects[0].Hop != 1 { t.Fatalf("rule effect metadata = %#v", effects[0]) }
 	for _, audit := range audits {
 		if audit.TenantID != "tenant-a" || audit.EventID != "event-1" || audit.ContentHash != "sha256:rules" || !audit.OccurredAt.Equal(now.UTC()) {
