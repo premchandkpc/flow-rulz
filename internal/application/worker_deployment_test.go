@@ -1,6 +1,7 @@
 package application
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
@@ -8,19 +9,19 @@ import (
 
 func TestValidateServiceDeploymentRequiresExactTargetAndRevision(t *testing.T) {
 	worker := &Worker{config: WorkerConfig{ServiceID: "tenant-a/orders-domain/orders-evaluator", DeploymentRevision: 4}}
-	event := &domain.EventEnvelope{Headers: map[string]string{
-		"flow.service_id":          "tenant-a/orders-domain/orders-evaluator",
-		"flow.deployment_revision": "4",
+	event := &domain.EventEnvelope{Meta: map[string]json.RawMessage{
+		"flow.service_id": json.RawMessage(`"tenant-a/orders-domain/orders-evaluator"`),
+		"flow.deployment_revision": json.RawMessage(`4`),
 	}}
 	if err := worker.validateServiceDeployment(event); err != nil {
 		t.Fatalf("matching deployment rejected: %v", err)
 	}
-	event.Headers["flow.service_id"] = "billing-evaluator"
+	event.Meta["flow.service_id"] = json.RawMessage(`"billing-evaluator"`)
 	if err := worker.validateServiceDeployment(event); err == nil {
 		t.Fatal("expected cross-service event to be rejected")
 	}
-	event.Headers["flow.service_id"] = "tenant-a/orders-domain/orders-evaluator"
-	event.Headers["flow.deployment_revision"] = "3"
+	event.Meta["flow.service_id"] = json.RawMessage(`"tenant-a/orders-domain/orders-evaluator"`)
+	event.Meta["flow.deployment_revision"] = json.RawMessage(`"3"`)
 	if err := worker.validateServiceDeployment(event); err == nil {
 		t.Fatal("expected stale deployment revision to be rejected")
 	}
