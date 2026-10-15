@@ -1,6 +1,11 @@
 package domain
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestShardHashUsesStableFNV1aValues(t *testing.T) {
 	tests := []struct {
@@ -64,4 +69,53 @@ func TestComputeChildEventIDIsTenantScoped(t *testing.T) {
 	if first == otherTenant {
 		t.Fatal("child event IDs must not collide across tenants")
 	}
+}
+
+func TestEventEnvelopeSerializesRuntimeIdentityInsideExtensibleMeta(t *testing.T) {
+	event := EventEnvelope{
+		ID: "evt-1", Type: "orders.created", TenantID: "merchant-42",
+		PartitionKey: "order-1007", OccurredAt: time.Date(2026, 10, 15, 7, 30, 0, 0, time.UTC),
+		Data: json.RawMessage(`{"order_id":"order-1007"}`),
+		Meta: map[string]json.RawMessage{"producer": json.RawMessage(`"checkout-api"`), "attempt": json.RawMessage(`2`)},
+		Headers: map[string]string{"x-request-id":"req-1"},
+	}
+	encoded, err := json.Marshal(event)
+	if err != nil { t.Fatalf("Marshal() error = %v", err) }
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &wire); err != nil { t.Fatal(err) }
+	if _, exists := wire["tenant_id"]; exists { t.Fatal("tenant_id must not be top-level") }
+	if _, exists := wire["partition_key"]; exists { t.Fatal("partition_key must not be top-level") }
+	var meta map[string]json.RawMessage
+	if err := json.Unmarshal(wire["meta"], &meta); err != nil { t.Fatal(err) }
+	for _, key := range []string{"tenant_id", "partition_key", "producer", "attempt", "headers"} {
+		if _, exists := meta[key]; !exists { t.Errorf("meta.%s missing from encoded event", key) }
+	}
+	if !strings.Contains(string(encoded), `"producer":"checkout-api"`) { t.Fatalf("unknown metadata not preserved: %s", encoded) }
+}
+
+func TestEventEnvelopeRoundTripsUnknownMetaFields(t *testing.T) {
+	input := []byte(`{
+		"id":"evt-1","type":"orders.created","occurred_at":"2026-10-15T07:30:00Z",
+		"contract":{"name":"OrderCreated","version":"v1","schema_hash":"abc"},
+		"data":{"order_id":"order-1"},
+		"meta":{"tenant_id":"merchant-42","partition_key":"order-1","producer":"checkout-api","future":{"flag":true}}
+	}`)
+	var event EventEnvelope
+	if err := json.Unmarshal(input, &event); err != nil { t.Fatalf("Unmarshal() error = %v", err) }
+	if event.TenantID != "merchant-42" || event.PartitionKey != "order-1" { t.Fatalf("decoded identity = %q/%q", event.TenantID, event.PartitionKey) }
+	encoded, err := json.Marshal(event)
+	if err != nil { t.Fatal(err) }
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &got); err != nil { t.Fatal(err) }
+	var meta map[string]json.RawMessage
+	if err := json.Unmarshal(got["meta"], &meta); err != nil { t.Fatal(err) }
+	if string(meta["producer"]) != `"checkout-api"` || string(meta["future"]) != `{"flag":true}` {
+		t.Fatalf("unknown meta fields were not preserved: %s", got["meta"])
+	}
+}
+
+func TestEventEnvelopeRejectsLegacyTopLevelRuntimeMetadata(t *testing.T) {
+	var event EventEnvelope
+	err := json.Unmarshal([]byte(`{"id":"evt-1","type":"orders.created","tenant_id":"merchant-42","partition_key":"order-1","occurred_at":"2026-10-15T07:30:00Z","data":{}}`), &event)
+	if err == nil { t.Fatal("expected legacy top-level tenant_id and partition_key to be rejected") }
 }
