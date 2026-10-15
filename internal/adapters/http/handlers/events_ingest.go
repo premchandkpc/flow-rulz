@@ -40,19 +40,21 @@ func (h *EventIngestionHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 type eventIngestionRequest struct {
-	ID            string              `json:"id"`
-	Type          string              `json:"type"`
-	TenantID      string              `json:"tenant_id"`
-	PartitionKey  string              `json:"partition_key"`
-	WorkflowID    string              `json:"workflow_id,omitempty"`
-	OccurredAt    time.Time           `json:"occurred_at"`
-	Data          []byte              `json:"data"`
-	Headers       map[string]string   `json:"headers,omitempty"`
-	CorrelationID string              `json:"correlation_id,omitempty"`
-	CausationID   string              `json:"causation_id,omitempty"`
-	SchemaVersion string              `json:"schema_version,omitempty"`
-	Contract      *domain.ContractRef `json:"contract,omitempty"`
-	MessageKind   string              `json:"message_kind,omitempty"`
+	ID            string                     `json:"id"`
+	Type          string                     `json:"type"`
+	OccurredAt    time.Time                  `json:"occurred_at"`
+	Data          json.RawMessage            `json:"data"`
+	Contract      *domain.ContractRef        `json:"contract,omitempty"`
+	Meta          map[string]json.RawMessage `json:"meta"`
+	// Legacy fields are accepted during migration but are never emitted.
+	TenantID      string            `json:"tenant_id,omitempty"`
+	PartitionKey  string            `json:"partition_key,omitempty"`
+	WorkflowID    string            `json:"workflow_id,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	CorrelationID string            `json:"correlation_id,omitempty"`
+	CausationID   string            `json:"causation_id,omitempty"`
+	SchemaVersion string            `json:"schema_version,omitempty"`
+	MessageKind   string            `json:"message_kind,omitempty"`
 }
 
 // PublishEvent handles POST /v1/events/{eventType} requests.
@@ -152,8 +154,16 @@ func validateEventIngestionRequest(
 		responses.WriteError(w, http.StatusUnauthorized, messageTenantRequired, responses.CodeTenantRequired)
 		return false
 	}
-	if request.TenantID != "" && request.TenantID != tenantID {
-		responses.WriteError(w, http.StatusForbidden, "tenant_id does not match request tenant", responses.CodeForbidden)
+	eventTenant := eventMetaString(request.Meta, "tenant_id")
+	if eventTenant == "" { eventTenant = request.TenantID }
+	if eventTenant != "" && eventTenant != tenantID {
+		responses.WriteError(w, http.StatusForbidden, "meta.tenant_id does not match authenticated event tenant", responses.CodeForbidden)
+		return false
+	}
+	partitionKey := eventMetaString(request.Meta, "partition_key")
+	if partitionKey == "" { partitionKey = request.PartitionKey }
+	if strings.TrimSpace(partitionKey) == "" {
+		responses.WriteError(w, http.StatusBadRequest, "meta.partition_key is required", responses.CodeValidationFailed)
 		return false
 	}
 	if len(request.Data) == 0 || !json.Valid(request.Data) {
@@ -168,29 +178,57 @@ func buildEventEnvelope(
 	eventType string,
 	tenantID string,
 ) *domain.EventEnvelope {
+	meta := cloneIngestionMeta(request.Meta)
+	if meta == nil { meta = make(map[string]json.RawMessage) }
+	meta["tenant_id"], _ = json.Marshal(tenantID)
+	meta["partition_key"], _ = json.Marshal(strings.TrimSpace(eventMetaString(request.Meta, "partition_key")))
+	if eventMetaString(request.Meta, "partition_key") == "" {
+		meta["partition_key"], _ = json.Marshal(strings.TrimSpace(request.PartitionKey))
+	}
+	if value := eventMetaString(request.Meta, "workflow_id"); value != "" { meta["workflow_id"], _ = json.Marshal(value) } else if request.WorkflowID != "" { meta["workflow_id"], _ = json.Marshal(request.WorkflowID) }
+	if value := eventMetaString(request.Meta, "message_kind"); value != "" { meta["message_kind"], _ = json.Marshal(value) } else if request.MessageKind != "" { meta["message_kind"], _ = json.Marshal(request.MessageKind) }
+	if value := eventMetaString(request.Meta, "correlation_id"); value != "" { meta["correlation_id"], _ = json.Marshal(value) } else if request.CorrelationID != "" { meta["correlation_id"], _ = json.Marshal(request.CorrelationID) }
+	if value := eventMetaString(request.Meta, "causation_id"); value != "" { meta["causation_id"], _ = json.Marshal(value) } else if request.CausationID != "" { meta["causation_id"], _ = json.Marshal(request.CausationID) }
+	if len(request.Headers) > 0 {
+		meta["headers"], _ = json.Marshal(request.Headers)
+	}
 	headers := buildEventHeaders(request)
 	return &domain.EventEnvelope{
 		ID: strings.TrimSpace(request.ID), Type: eventType, TenantID: tenantID,
-		PartitionKey: strings.TrimSpace(request.PartitionKey), WorkflowID: request.WorkflowID,
-		OccurredAt: request.OccurredAt, Data: json.RawMessage(request.Data), Headers: headers,
-		Contract: request.Contract, MessageKind: request.MessageKind, CorrelationID: request.CorrelationID, CausationID: request.CausationID,
+		PartitionKey: strings.TrimSpace(eventMetaString(meta, "partition_key")),
+		WorkflowID: eventMetaString(meta, "workflow_id"), OccurredAt: request.OccurredAt,
+		Data: append(json.RawMessage(nil), request.Data...), Headers: headers,
+		Contract: request.Contract, MessageKind: eventMetaString(meta, "message_kind"),
+		CorrelationID: eventMetaString(meta, "correlation_id"), CausationID: eventMetaString(meta, "causation_id"),
+		Meta: meta,
 	}
+}
+
+func eventMetaString(meta map[string]json.RawMessage, key string) string {
+	var value string
+	_ = json.Unmarshal(meta[key], &value)
+	return value
+}
+
+func cloneIngestionMeta(input map[string]json.RawMessage) map[string]json.RawMessage {
+	if input == nil { return nil }
+	out := make(map[string]json.RawMessage, len(input))
+	for key, value := range input { out[key] = append(json.RawMessage(nil), value...) }
+	return out
 }
 
 func buildEventHeaders(request eventIngestionRequest) map[string]string {
 	headers := make(map[string]string, len(request.Headers)+3)
-	for key, value := range request.Headers {
-		headers[key] = value
+	for key, value := range request.Headers { headers[key] = value }
+	if raw := request.Meta["headers"]; len(raw) > 0 {
+		var metaHeaders map[string]string
+		if json.Unmarshal(raw, &metaHeaders) == nil {
+			for key, value := range metaHeaders { headers[key] = value }
+		}
 	}
-	if request.CorrelationID != "" {
-		headers["Correlation-ID"] = request.CorrelationID
-	}
-	if request.CausationID != "" {
-		headers["Causation-ID"] = request.CausationID
-	}
-	if request.SchemaVersion != "" {
-		headers["Schema-Version"] = request.SchemaVersion
-	}
+	if value := eventMetaString(request.Meta, "correlation_id"); value != "" { headers["Correlation-ID"] = value } else if request.CorrelationID != "" { headers["Correlation-ID"] = request.CorrelationID }
+	if value := eventMetaString(request.Meta, "causation_id"); value != "" { headers["Causation-ID"] = value } else if request.CausationID != "" { headers["Causation-ID"] = request.CausationID }
+	if request.SchemaVersion != "" { headers["Schema-Version"] = request.SchemaVersion }
 	return headers
 }
 
