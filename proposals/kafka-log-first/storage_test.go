@@ -41,10 +41,16 @@ func (s *memoryLogStore) Append(ctx context.Context, record LogRecord) (LogPosit
 		_ = tx.Abort(context.Background())
 		return LogPosition{}, err
 	}
-	for i := len(s.records) - 1; i >= 0; i-- {
-		if s.records[i].Kind == record.Kind && s.records[i].PartitionKey == record.PartitionKey {
-			return LogPosition{Stream: record.Kind, Partition: record.PartitionKey, Sequence: int64(i)}, nil
+	var sequence int64
+	var found bool
+	for _, existing := range s.records {
+		if existing.Kind == record.Kind && existing.PartitionKey == record.PartitionKey {
+			found = true
+			sequence++
 		}
+	}
+	if found {
+		return LogPosition{Stream: record.Kind, Partition: record.PartitionKey, Sequence: sequence - 1}, nil
 	}
 	return LogPosition{}, errors.New("record was not committed")
 }
