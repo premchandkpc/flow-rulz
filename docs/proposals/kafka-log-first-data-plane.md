@@ -12,7 +12,7 @@ This removes PostgreSQL from the worker hot path, but it does **not** make state
 
 - Workers are stateless with respect to ownership: no shard leases, no replica-count assumptions, and no correctness-critical in-memory state.
 - Rule evaluation is pure and domain-agnostic. Workers understand event envelopes, immutable rule revisions, contracts, and generic effects, not service-specific business behavior.
-- **A Domain contains Services; each Service is a deployment boundary that declares which rulesets/revisions its worker pool runs.** A worker is configured for one service deployment and loads only that deployment's assigned rules. It must not load every tenant ruleset and decide at runtime which service owns it.
+- **A Domain contains Services; each Service is a deployment boundary that declares which rulesets/revisions its worker pool runs.** A worker is configured for one service deployment and loads only that deployment's assigned rules. It must not load every ruleset and decide at runtime which service owns it.
 - Keep execution-service deployment separate from subscriber/receiver registration. A service deployment owns ruleset assignments and worker capacity; a subscriber registration expresses interest in delivered events. Do not overload one registry record to mean both.
 - Subscriber fan-out remains a generic routing stage. It emits one deterministic effect per active subscriber matching the event type; it is not folded into rule evaluation.
 - Same-key ordering is provided by a stable Kafka key and partition assignment. A hot key is still limited to one partition's throughput.
@@ -122,7 +122,7 @@ Requirements:
 }
 ```
 
-Revisions are immutable. Key the cache by tenant, ruleset ID, revision, and compiler/runtime compatibility version. Verify the content hash before caching. Activation points to a revision; it must never mutate an existing revision. Record the exact revision and content hash in every execution audit record.
+Revisions are immutable. Key the cache by ruleset ID, revision, and compiler/runtime compatibility version. Verify the content hash before caching. Activation points to a revision; it must never mutate an existing revision. Record the exact revision and content hash in every execution audit record.
 
 ### DomainServiceDeployment v1
 
