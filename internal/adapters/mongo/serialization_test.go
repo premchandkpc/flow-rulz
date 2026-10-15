@@ -27,7 +27,7 @@ func TestJSONPayloadDocumentsRoundTripThroughBSON(t *testing.T) {
 			ID: "evt-1", TenantID: "tenant-a", Type: "order.created", PartitionKey: "order-1",
 			OccurredAt: time.Now().UTC(), Data: json.RawMessage(`{"amount":42,"nested":{"ok":true}}`),
 			Headers: map[string]string{"trace-id": "trace-1"},
-			Meta: map[string]json.RawMessage{"source": json.RawMessage(`"checkout-api"`), "producer_sequence": json.RawMessage(`1042`)},
+			Meta:    map[string]json.RawMessage{"source": json.RawMessage(`"checkout-api"`), "producer_sequence": json.RawMessage(`1042`)},
 		}
 		var stored EventDoc
 		mongoBSONRoundTrip(t, EventDocFromDomain(source), &stored)
