@@ -367,30 +367,54 @@ mod tests {
     }
 
     #[test]
-    fn event_envelope_round_trip_preserves_go_metadata() {
+    fn event_envelope_round_trip_preserves_extensible_meta() {
         let input = json!({
             "id": "event-1",
             "type": "orders.created",
-            "tenant_id": "tenant-a",
-            "partition_key": "order-1",
             "occurred_at": "2026-10-14T00:00:00Z",
             "data": {"amount": 12},
             "contract": {"name": "orders.created", "version": "1", "schema_hash": "schema-hash"},
-            "message_kind": "event",
-            "correlation_id": "correlation-1",
-            "causation_id": "causation-1",
-            "headers": {"source": "test"}
+            "meta": {
+                "tenant_id": "tenant-a",
+                "partition_key": "order-1",
+                "message_kind": "event",
+                "correlation_id": "correlation-1",
+                "causation_id": "causation-1",
+                "headers": {"source": "test"},
+                "producer_sequence": 42,
+                "custom": {"region": "ap-south-1"}
+            }
         });
         let event: EventEnvelope = serde_json::from_value(input).unwrap();
+        assert_eq!(event.tenant_id, "tenant-a");
+        assert_eq!(event.partition_key, "order-1");
         let encoded = serde_json::to_value(event).unwrap();
 
+        assert!(encoded.get("tenant_id").is_none());
+        assert!(encoded.get("partition_key").is_none());
         assert_eq!(encoded["contract"]["name"], "orders.created");
-        assert_eq!(encoded["contract"]["version"], "1");
-        assert_eq!(encoded["contract"]["schema_hash"], "schema-hash");
-        assert_eq!(encoded["message_kind"], "event");
-        assert_eq!(encoded["correlation_id"], "correlation-1");
-        assert_eq!(encoded["causation_id"], "causation-1");
-        assert_eq!(encoded["headers"]["source"], "test");
+        assert_eq!(encoded["meta"]["tenant_id"], "tenant-a");
+        assert_eq!(encoded["meta"]["partition_key"], "order-1");
+        assert_eq!(encoded["meta"]["message_kind"], "event");
+        assert_eq!(encoded["meta"]["correlation_id"], "correlation-1");
+        assert_eq!(encoded["meta"]["causation_id"], "causation-1");
+        assert_eq!(encoded["meta"]["headers"]["source"], "test");
+        assert_eq!(encoded["meta"]["producer_sequence"], 42);
+        assert_eq!(encoded["meta"]["custom"]["region"], "ap-south-1");
+    }
+
+    #[test]
+    fn legacy_event_metadata_is_read_and_normalized() {
+        let legacy = json!({
+            "id":"event-old","type":"orders.created","tenant_id":"tenant-old","partition_key":"order-old",
+            "occurred_at":"2026-10-14T00:00:00Z","data":{}
+        });
+        let event: EventEnvelope = serde_json::from_value(legacy).unwrap();
+        assert_eq!(event.tenant_id, "tenant-old");
+        let encoded = serde_json::to_value(event).unwrap();
+        assert!(encoded.get("tenant_id").is_none());
+        assert_eq!(encoded["meta"]["tenant_id"], "tenant-old");
+        assert_eq!(encoded["meta"]["partition_key"], "order-old");
     }
 
 }
