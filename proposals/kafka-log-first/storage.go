@@ -67,9 +67,11 @@ type LogTransaction interface {
 	Abort(context.Context) error
 }
 
-// LogStore is the application port for durable append and replay. The initial
-// deployment may use an in-process adapter, while a future remote storage
-// service can implement the same contract without changing use cases.
+// LogStore is the application port for durable append and replay. Append must
+// return only after the adapter meets its configured durability policy. ReadFrom
+// starts at the inclusive fromSequence and returns stable entry positions. The
+// initial deployment may use one adapter, while a future remote storage service
+// can implement the same contract without changing use cases.
 type LogStore interface {
 	Begin(context.Context) (LogTransaction, error)
 	Append(context.Context, LogRecord) (LogPosition, error)
