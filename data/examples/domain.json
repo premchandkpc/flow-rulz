@@ -7,8 +7,14 @@
       "revision": 1,
       "active": true,
       "rulesets": [
-        { "ruleset_id": "order-review", "revision": 3 },
-        { "ruleset_id": "order-notification", "revision": 7 }
+        {
+          "ruleset_id": "order-review",
+          "revision": 3
+        },
+        {
+          "ruleset_id": "order-notification",
+          "revision": 7
+        }
       ],
       "worker_profile": {
         "min_replicas": 1,
@@ -22,7 +28,14 @@
       "revision": 1,
       "active": true,
       "rulesets": [
-        { "ruleset_id": "payment-risk", "revision": 2 }
+        {
+          "ruleset_id": "payment-risk",
+          "revision": 2
+        },
+        {
+          "ruleset_id": "payment-notification",
+          "revision": 1
+        }
       ],
       "worker_profile": {
         "min_replicas": 1,
