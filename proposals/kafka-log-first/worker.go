@@ -20,27 +20,101 @@ var (
 	ErrMissingRuleset = errors.New("active ruleset revision is unavailable")
 )
 
-// EventEnvelope is the versioned, tenant-scoped event consumed by the worker.
+// EventEnvelope uses the same stable public wire shape as the API and production workers.
+// SchemaVersion is an internal compatibility guard carried in meta when explicitly set.
 type EventEnvelope struct {
-	SchemaVersion int             `json:"schema_version"`
-	ID            string          `json:"id"`
-	TenantID      string          `json:"tenant_id"`
-	EventType     string          `json:"event_type"`
-	PartitionKey  string          `json:"partition_key"`
-	OccurredAt    time.Time       `json:"occurred_at"`
-	Payload       json.RawMessage `json:"payload"`
-	Metadata      EventMetadata   `json:"metadata"`
+	SchemaVersion int             `json:"-"`
+	ID            string          `json:"-"`
+	TenantID      string          `json:"-"`
+	EventType     string          `json:"-"`
+	PartitionKey  string          `json:"-"`
+	OccurredAt    time.Time       `json:"-"`
+	Payload       json.RawMessage `json:"-"`
+	Contract      *EventContract  `json:"-"`
+	Metadata      EventMetadata   `json:"-"`
 }
 
-// EventMetadata carries correlation and event-chain metadata.
+type EventContract struct {
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	SchemaHash string `json:"schema_hash,omitempty"`
+}
+
+// EventMetadata contains known runtime fields and preserves future keys in Extra.
 type EventMetadata struct {
-	CorrelationID      string `json:"correlation_id,omitempty"`
-	CausationID        string `json:"causation_id,omitempty"`
-	BatchID            string `json:"batch_id,omitempty"`
-	Hop                int    `json:"hop"`
-	RequestedRulesetID string `json:"requested_ruleset_id,omitempty"`
-	TargetServiceID    string `json:"target_service_id,omitempty"`
-	DeploymentRevision int64  `json:"deployment_revision,omitempty"`
+	TenantID           string                     `json:"tenant_id,omitempty"`
+	PartitionKey       string                     `json:"partition_key,omitempty"`
+	WorkflowID         string                     `json:"workflow_id,omitempty"`
+	MessageKind        string                     `json:"message_kind,omitempty"`
+	CorrelationID      string                     `json:"correlation_id,omitempty"`
+	CausationID        string                     `json:"causation_id,omitempty"`
+	BatchID            string                     `json:"batch_id,omitempty"`
+	Hop                int                        `json:"hop"`
+	RequestedRulesetID string                     `json:"requested_ruleset_id,omitempty"`
+	TargetServiceID    string                     `json:"flow.service_id,omitempty"`
+	DeploymentRevision int64                      `json:"flow.deployment_revision,omitempty"`
+	SchemaVersion      int                        `json:"schema_version,omitempty"`
+	Traceparent        string                     `json:"traceparent,omitempty"`
+	Headers            map[string]string          `json:"headers,omitempty"`
+	Extra              map[string]json.RawMessage `json:"-"`
+}
+
+type eventMetadataAlias EventMetadata
+
+type eventEnvelopeWire struct {
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	OccurredAt time.Time       `json:"occurred_at"`
+	Data       json.RawMessage `json:"data"`
+	Contract   *EventContract  `json:"contract,omitempty"`
+	Meta       EventMetadata   `json:"meta"`
+}
+
+func (m EventMetadata) MarshalJSON() ([]byte, error) {
+	encoded, err := json.Marshal(eventMetadataAlias(m))
+	if err != nil { return nil, err }
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil { return nil, err }
+	for key, value := range m.Extra {
+		if _, known := fields[key]; !known { fields[key] = append(json.RawMessage(nil), value...) }
+	}
+	return json.Marshal(fields)
+}
+
+func (m *EventMetadata) UnmarshalJSON(data []byte) error {
+	var known eventMetadataAlias
+	if err := json.Unmarshal(data, &known); err != nil { return err }
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(data, &all); err != nil { return err }
+	for _, key := range []string{"tenant_id","partition_key","workflow_id","message_kind","correlation_id","causation_id","batch_id","hop","requested_ruleset_id","flow.service_id","flow.deployment_revision","schema_version","traceparent","headers"} {
+		delete(all, key)
+	}
+	*m = EventMetadata(known)
+	m.Extra = all
+	return nil
+}
+
+func (e EventEnvelope) MarshalJSON() ([]byte, error) {
+	meta := e.Metadata
+	if e.TenantID != "" { meta.TenantID = e.TenantID }
+	if e.PartitionKey != "" { meta.PartitionKey = e.PartitionKey }
+	if e.SchemaVersion > 0 { meta.SchemaVersion = e.SchemaVersion }
+	return json.Marshal(eventEnvelopeWire{ID:e.ID, Type:e.EventType, OccurredAt:e.OccurredAt, Data:e.Payload, Contract:e.Contract, Meta:meta})
+}
+
+func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(data, &top); err != nil { return err }
+	allowed := map[string]bool{"id":true,"type":true,"occurred_at":true,"data":true,"contract":true,"meta":true}
+	for key := range top { if !allowed[key] { return fmt.Errorf("unknown event envelope field %q; runtime metadata belongs inside meta", key) } }
+	var wire eventEnvelopeWire
+	if err := json.Unmarshal(data, &wire); err != nil { return err }
+	if len(wire.Meta.TenantID)==0 || len(wire.Meta.PartitionKey)==0 { return errors.New("meta.tenant_id and meta.partition_key are required") }
+	version := wire.Meta.SchemaVersion
+	if version == 0 { version = 1 }
+	*e = EventEnvelope{SchemaVersion:version, ID:wire.ID, TenantID:wire.Meta.TenantID, EventType:wire.Type,
+		PartitionKey:wire.Meta.PartitionKey, OccurredAt:wire.OccurredAt, Payload:wire.Data, Contract:wire.Contract, Metadata:wire.Meta}
+	return nil
 }
 
 // Record is an input record with its source stream position.
