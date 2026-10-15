@@ -369,9 +369,9 @@ Given the same compiled revision and event, it **always** produces the same deci
 
 ### Subscriber Routing Boundary
 
-The rules evaluator is deterministic and side-effect-free. The event transaction persists only the effects produced by the selected ruleset; it must not invent service-delivery effects by querying the tenant subscriber registry.
+The rules evaluator is deterministic and side-effect-free. It does not query the tenant subscriber registry and does not implement subscriber-specific behavior.
 
-Tenant domains and service/subscriber registrations are control-plane configuration. Subscription-driven fan-out is a separate routing concern and should be implemented by a generic router with explicit tenant authorization, event matching, durable delivery intents, retry semantics, and tests. In the current worker branch, that automatic fan-out is not implemented: registering a subscriber alone does not cause delivery. Explicit `service_event` actions remain normal ruleset-declared effects and use the generic outbox/dispatcher path.
+Tenant domains and service/subscriber registrations are control-plane configuration. A separate generic subscriber router applies the platform routing policy: match the event type to active subscriptions within the event's tenant, enforce the fan-out limit, and produce stable delivery intents. The router runs in the event transaction after a successful active-ruleset execution, so its intents commit atomically with the execution and outbox. The dispatcher publishes those intents through NATS JetStream. Events with no active ruleset do not trigger subscriber delivery. Explicit `service_event` actions remain ruleset-declared effects and are dispatched through the same outbox infrastructure.
 
 Keep these two contracts distinct:
 - **Ruleset effects:** outputs produced by evaluating a ruleset.
