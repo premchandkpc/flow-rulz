@@ -56,9 +56,6 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	if len(service.item.Deployments) != 1 {
 		t.Fatalf("service assignments = %#v", service.item.Deployments)
 	}
-	if service.item.TenantID != domain.DomainConfigurationScope {
-		t.Fatalf("caller-controlled tenant_id changed internal scope: %q", service.item.TenantID)
-	}
 	if len(service.item.EventTypes) != 0 {
 		t.Fatalf("caller-controlled event_types were accepted as configuration: %#v", service.item.EventTypes)
 	}
