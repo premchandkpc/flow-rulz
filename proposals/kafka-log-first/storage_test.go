@@ -118,7 +118,7 @@ func (tx *memoryLogTx) CommitInputPosition(_ context.Context, group string, posi
 	if tx.store.positionErr != nil {
 		return tx.store.positionErr
 	}
-	if group == ""
+	if group == "" {
 		return errors.New("consumer group is required")
 	}
 	tx.group = group
