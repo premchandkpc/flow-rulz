@@ -109,7 +109,7 @@ Apply pending migrations:
 make migrate-up
 ~~~
 
-The migration CLI currently supports only `up`. There are no supported `down` or `status` commands. Do not edit an applied migration; add a new numbered migration and verify both upgrade behavior and the resulting schema. Migration files currently have a numbering gap, which should not be backfilled by renumbering applied files.
+Migration 024 consolidates ruleset revisions, activations, and contract bindings into the global configuration scope. It deliberately fails if legacy scopes contain conflicting ruleset content, active revisions, or binding policies; reconcile those conflicts before retrying. The migration CLI currently supports only `up`. There are no supported `down` or `status` commands. Do not edit an applied migration; add a new numbered migration and verify both upgrade behavior and the resulting schema. Migration files currently have a numbering gap, which should not be backfilled by renumbering applied files.
 
 PostgreSQL is the default transactional backend. MongoDB is optional, but must be deployed as a replica set or sharded cluster for transactions. Do not assume full adapter equivalence from the current in-memory contract tests.
 
