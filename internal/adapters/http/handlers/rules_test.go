@@ -76,6 +76,9 @@ rules:
 	if document["rule_set"] != "order.created" {
 		t.Fatalf("normalized rule_set = %v", document["rule_set"])
 	}
+	if strings.Contains(response.Body.String(), "tenant_scope") {
+		t.Fatalf("public ruleset response leaked internal configuration scope: %s", response.Body.String())
+	}
 }
 
 func TestCreateRevisionRejectsMismatchedRuleSet(t *testing.T) {
