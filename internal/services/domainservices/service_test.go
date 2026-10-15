@@ -32,12 +32,6 @@ func cloneTenantDomain(item *domain.TenantDomain) *domain.TenantDomain {
 	cloned.Deployments = append([]domain.ServiceDeployment(nil), item.Deployments...)
 	for i := range cloned.Deployments {
 		cloned.Deployments[i].Rulesets = append([]domain.RulesetAssignment(nil), item.Deployments[i].Rulesets...)
-		for j := range cloned.Deployments[i].Rulesets {
-			if contract := item.Deployments[i].Rulesets[j].Contract; contract != nil {
-				contractCopy := *contract
-				cloned.Deployments[i].Rulesets[j].Contract = &contractCopy
-			}
-		}
 	}
 	return &cloned
 }
