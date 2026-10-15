@@ -88,7 +88,7 @@ func normalizeAndValidateDomain(item *domain.TenantDomain, tenantID string) erro
 	return nil
 }
 
-func validateDeployments(deployments []domain.DomainServiceDeployment) error {
+func validateDeployments(deployments []domain.ServiceDeployment) error {
 	serviceIDs := make(map[string]struct{}, len(deployments))
 	serviceNames := make(map[string]struct{}, len(deployments))
 	for _, deployment := range deployments {
