@@ -125,6 +125,9 @@ type RuleEvaluator struct {
 // Evaluate is pure with respect to external side effects: it builds outputs in
 // memory. The transaction adapter persists these outputs atomically with offsets.
 func (e *RuleEvaluator) Evaluate(ctx context.Context, env EventEnvelope) ([]Effect, []ExecutionAudit, error) {
+	if e == nil || e.Resolver == nil {
+		return nil, nil, errors.New("ruleset resolver is not configured")
+	}
 	if env.SchemaVersion != 1 {
 		return nil, nil, ErrUnsupportedSchema
 	}
