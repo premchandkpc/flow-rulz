@@ -6,7 +6,7 @@ A contract is identified by `(name, version)`; its canonical `schema_hash` ident
 
 ## Message envelope and child contracts
 
-The event envelope carries `id`, `type`, runtime `tenant_id`, `partition_key`, `occurred_at`, `data`, and optional `contract`, `message_kind`, `correlation_id`, and `causation_id`. Tenant identity and partition key belong to each event, never to Domain/Service/ruleset configuration. Event, command, and effect payloads are independently versioned child contracts. The parent envelope explicitly lists allowed child contract identities. A receiver declares accepted contract identities and versions; matching a subject alone is not authorization or schema acceptance.
+The event envelope carries `id`, `type`, `occurred_at`, `data`, and optional `contract`, `message_kind`, `correlation_id`, and `causation_id`. Runtime identity (`tenant_id`, `partition_key`) and extensible runtime context live under the event's `meta` object. These values belong to each event, never to Domain/Service/ruleset configuration. Event, command, and effect payloads are independently versioned child contracts. The parent envelope explicitly lists allowed child contract identities. A receiver declares accepted contract identities and versions; matching a subject alone is not authorization or schema acceptance.
 
 ## Routing
 

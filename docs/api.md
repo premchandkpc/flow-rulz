@@ -47,6 +47,6 @@ Rule and Domain configuration use the global configuration scope. Runtime event 
 
 ## Runtime events
 
-The event envelope contains `tenant_id` and `partition_key`. Those values are data on each event, not query parameters for Domain configuration. The authenticated ingress path may still enforce producer authorization; authentication is not a reason to copy tenant identity into Domain configuration.
+The event envelope carries `meta.tenant_id` and `meta.partition_key`, plus any future runtime context under `meta`. These are event data, not Domain configuration or query parameters. Ingress still checks `meta.tenant_id` against the authenticated producer identity; authentication is not a reason to copy tenant identity into Domain configuration. See [the canonical event example](../data/examples/event.json) and [event schema](../contracts/schemas/event-envelope.schema.json).
 
 See [event.md](event.md), [domain.md](domain.md), and [the sample files](../data/examples/).

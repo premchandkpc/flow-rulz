@@ -2,7 +2,8 @@
 //! This module intentionally uses the existing PostgreSQL schema and event contract.
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashMap;
 use self::rules::{Effect, RuleRevision};
 
 mod lease;
@@ -14,28 +15,120 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct EventEnvelope {
     pub id: String,
-    #[serde(rename = "type")]
     pub event_type: String,
     pub tenant_id: String,
     pub partition_key: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_id: Option<String>,
     pub occurred_at: DateTime<Utc>,
-    #[serde(default)]
     pub data: Value,
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub headers: std::collections::HashMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: HashMap<String, String>,
     pub contract: Option<ContractRef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_kind: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correlation_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub causation_id: Option<String>,
+    /// Unknown event metadata is preserved across deserialize/serialize cycles.
+    pub meta: HashMap<String, Value>,
+}
+
+#[derive(Serialize)]
+struct EventEnvelopeWireRef<'a> {
+    id: &'a str,
+    #[serde(rename = "type")]
+    event_type: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workflow_id: &'a Option<String>,
+    occurred_at: DateTime<Utc>,
+    data: &'a Value,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    headers: &'a HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    contract: &'a Option<ContractRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message_kind: &'a Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    correlation_id: &'a Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    causation_id: &'a Option<String>,
+    meta: HashMap<String, Value>,
+}
+
+impl Serialize for EventEnvelope {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where S: Serializer {
+        let mut meta = self.meta.clone();
+        meta.insert("tenant_id".into(), Value::String(self.tenant_id.clone()));
+        meta.insert("partition_key".into(), Value::String(self.partition_key.clone()));
+        EventEnvelopeWireRef {
+            id: &self.id,
+            event_type: &self.event_type,
+            workflow_id: &self.workflow_id,
+            occurred_at: self.occurred_at,
+            data: &self.data,
+            headers: &self.headers,
+            contract: &self.contract,
+            message_kind: &self.message_kind,
+            correlation_id: &self.correlation_id,
+            causation_id: &self.causation_id,
+            meta,
+        }.serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EventEnvelopeWire {
+    id: String,
+    #[serde(rename = "type")]
+    event_type: String,
+    #[serde(default)]
+    tenant_id: Option<String>,
+    #[serde(default)]
+    partition_key: Option<String>,
+    #[serde(default)]
+    workflow_id: Option<String>,
+    occurred_at: DateTime<Utc>,
+    #[serde(default)]
+    data: Value,
+    #[serde(default)]
+    headers: HashMap<String, String>,
+    #[serde(default)]
+    contract: Option<ContractRef>,
+    #[serde(default)]
+    message_kind: Option<String>,
+    #[serde(default)]
+    correlation_id: Option<String>,
+    #[serde(default)]
+    causation_id: Option<String>,
+    #[serde(default)]
+    meta: HashMap<String, Value>,
+}
+
+impl<'de> Deserialize<'de> for EventEnvelope {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let wire = EventEnvelopeWire::deserialize(deserializer)?;
+        let tenant_id = wire.meta.get("tenant_id").and_then(Value::as_str)
+            .map(str::to_owned).or(wire.tenant_id)
+            .ok_or_else(|| serde::de::Error::custom("meta.tenant_id is required"))?;
+        let partition_key = wire.meta.get("partition_key").and_then(Value::as_str)
+            .map(str::to_owned).or(wire.partition_key)
+            .ok_or_else(|| serde::de::Error::custom("meta.partition_key is required"))?;
+        if wire.meta.get("tenant_id").is_some_and(|v| !v.is_string()) {
+            return Err(serde::de::Error::custom("meta.tenant_id must be a string"));
+        }
+        if wire.meta.get("partition_key").is_some_and(|v| !v.is_string()) {
+            return Err(serde::de::Error::custom("meta.partition_key must be a string"));
+        }
+        Ok(Self {
+            id: wire.id, event_type: wire.event_type, tenant_id, partition_key,
+            workflow_id: wire.workflow_id, occurred_at: wire.occurred_at, data: wire.data,
+            headers: wire.headers, contract: wire.contract, message_kind: wire.message_kind,
+            correlation_id: wire.correlation_id, causation_id: wire.causation_id, meta: wire.meta,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -225,7 +318,7 @@ mod tests {
             id: "e".into(), event_type: "orders.created".into(), tenant_id: "tenant-a".into(),
             partition_key: "p".into(), workflow_id: None, occurred_at: Utc::now(),
             data: json!({}), headers: Default::default(), contract: None, message_kind: None,
-            correlation_id: None, causation_id: None,
+            correlation_id: None, causation_id: None, meta: Default::default(),
         };
         assert!(validate_contract_support(&revision, &event).is_err());
     }
@@ -259,7 +352,7 @@ mod tests {
     #[test]
     fn rejects_empty_partition_key_for_child_event() {
         let revision = RuleRevision { tenant_scope:"t".into(), rule_id:"r".into(), revision:1, content_hash:"h".into(), match_mode:"all_matches".into(), input_contract: None, compiled:vec![] };
-        let event = EventEnvelope { id:"e".into(), event_type:"r".into(), tenant_id:"t".into(), partition_key:"p".into(), workflow_id:None, occurred_at:Utc::now(), data:json!({}), headers:Default::default(), contract:None, message_kind:None, correlation_id:None, causation_id:None };
+        let event = EventEnvelope { id:"e".into(), event_type:"r".into(), tenant_id:"t".into(), partition_key:"p".into(), workflow_id:None, occurred_at:Utc::now(), data:json!({}), headers:Default::default(), contract:None, message_kind:None, correlation_id:None, causation_id:None, meta:Default::default() };
         let action: Action = serde_json::from_value(json!({"emit_event":{"type":"child","partition_key_policy":"from_data","partition_key_path":"$.missing","data":{}}})).unwrap();
         assert!(build_effect(&revision, &event, "rule", 0, &action).is_err());
     }
@@ -268,7 +361,7 @@ mod tests {
         let event = EventEnvelope { id: "e".into(), event_type: "orders".into(), tenant_id: "t".into(),
             partition_key: "p".into(), workflow_id: None, occurred_at: Utc::now(),
             data: json!({"amount": 12, "customer": {"name": "Ada"}}), headers: Default::default(),
-            contract: None, message_kind: None, correlation_id: None, causation_id: None };
+            contract: None, message_kind: None, correlation_id: None, causation_id: None, meta: Default::default() };
         assert_eq!(expand_template("{{$.amount}}", &event, "child-1"), json!(12));
         assert_eq!(expand_template("amount={{$.amount}} for {{$.customer.name}}", &event, "child-1"), json!("amount=12 for Ada"));
         assert_eq!(expand_template("{{new_id}}", &event, "child-1"), json!("child-1"));
@@ -281,12 +374,37 @@ mod tests {
     }
 
     #[test]
+    fn event_envelope_rejects_invalid_or_missing_meta_identity() {
+        for input in [
+            json!({"id":"e","type":"orders.created","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"partition_key":"p"}}),
+            json!({"id":"e","type":"orders.created","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":42,"partition_key":"p"}}),
+            json!({"id":"e","type":"orders.created","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":"t","partition_key":false}}),
+            json!({"id":"e","type":"orders.created","occurred_at":"2026-10-14T00:00:00Z","data":{},"meta":{"tenant_id":"t","partition_key":"p"},"unknown_top_level":true}),
+        ] {
+            assert!(serde_json::from_value::<EventEnvelope>(input).is_err());
+        }
+    }
+
+    #[test]
+    fn event_envelope_reads_legacy_identity_but_serializes_canonical_meta() {
+        let input = json!({
+            "id":"e","type":"orders.created","tenant_id":"t","partition_key":"p",
+            "occurred_at":"2026-10-14T00:00:00Z","data":{}
+        });
+        let event: EventEnvelope = serde_json::from_value(input).unwrap();
+        let encoded = serde_json::to_value(event).unwrap();
+        assert_eq!(encoded["meta"]["tenant_id"], "t");
+        assert_eq!(encoded["meta"]["partition_key"], "p");
+        assert!(encoded.get("tenant_id").is_none());
+        assert!(encoded.get("partition_key").is_none());
+    }
+
+    #[test]
     fn event_envelope_round_trip_preserves_go_metadata() {
         let input = json!({
             "id": "event-1",
             "type": "orders.created",
-            "tenant_id": "tenant-a",
-            "partition_key": "order-1",
+            "meta": {"tenant_id": "tenant-a", "partition_key": "order-1", "region": "ap-south-1"},
             "occurred_at": "2026-10-14T00:00:00Z",
             "data": {"amount": 12},
             "contract": {"name": "orders.created", "version": "1", "schema_hash": "schema-hash"},
@@ -305,6 +423,11 @@ mod tests {
         assert_eq!(encoded["correlation_id"], "correlation-1");
         assert_eq!(encoded["causation_id"], "causation-1");
         assert_eq!(encoded["headers"]["source"], "test");
+        assert_eq!(encoded["meta"]["tenant_id"], "tenant-a");
+        assert_eq!(encoded["meta"]["partition_key"], "order-1");
+        assert_eq!(encoded["meta"]["region"], "ap-south-1");
+        assert!(encoded.get("tenant_id").is_none());
+        assert!(encoded.get("partition_key").is_none());
     }
 
 }

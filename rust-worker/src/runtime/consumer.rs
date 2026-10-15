@@ -112,17 +112,16 @@ fn validate_message_routing(envelope: &EventEnvelope, config: &Config, shard: u3
         bail!("message routed to shard {shard} but envelope hashes to {computed_shard}");
     }
     if let Some(expected_service_id) = &config.service_id {
-        let target_service_id = envelope.headers.get("flow.service_id")
-            .ok_or_else(|| anyhow!("service deployment routing header flow.service_id is required"))?;
+        let target_service_id = envelope.meta.get("target_service_id").and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow!("meta.target_service_id is required for a configured service deployment"))?;
         if target_service_id != expected_service_id {
             bail!("message targets service deployment {target_service_id}, not this worker's {expected_service_id}");
         }
         let expected_revision = config.deployment_revision
             .ok_or_else(|| anyhow!("worker deployment revision is not configured"))?;
-        let target_revision = envelope.headers.get("flow.deployment_revision")
-            .ok_or_else(|| anyhow!("service deployment routing header flow.deployment_revision is required"))?
-            .parse::<i64>()
-            .map_err(|_| anyhow!("flow.deployment_revision must be an integer"))?;
+        let target_revision = envelope.meta.get("deployment_revision")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or_else(|| anyhow!("meta.deployment_revision must be an integer"))?;
         if target_revision != expected_revision {
             bail!("message targets deployment revision {target_revision}, not this worker's {expected_revision}");
         }
@@ -264,7 +263,19 @@ mod deployment_routing_tests {
         }
     }
 
-    fn event(headers: HashMap<String, String>) -> EventEnvelope {
+    fn event(route_meta: HashMap<String, String>) -> EventEnvelope {
+        let mut meta = HashMap::from([
+            ("tenant_id".into(), json!("tenant-a")),
+            ("partition_key".into(), json!("order-1")),
+        ]);
+        for (key, value) in route_meta {
+            let value = if key == "deployment_revision" {
+                match value.parse::<i64>() { Ok(revision) => json!(revision), Err(_) => json!(value) }
+            } else {
+                json!(value)
+            };
+            meta.insert(key, value);
+        }
         EventEnvelope {
             id: "event-1".into(),
             event_type: "orders.created".into(),
@@ -273,7 +284,8 @@ mod deployment_routing_tests {
             workflow_id: None,
             occurred_at: "2026-10-15T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
             data: json!({"order_id":"order-1"}),
-            headers,
+            headers: HashMap::new(),
+            meta,
             contract: Some(ContractRef {
                 name: "orders.created".into(),
                 version: "v1".into(),
@@ -289,8 +301,8 @@ mod deployment_routing_tests {
     fn accepts_exact_service_and_deployment_revision() {
         let cfg = config(Some("domain-a/orders"), Some(3));
         let env = event(HashMap::from([
-            ("flow.service_id".into(), "domain-a/orders".into()),
-            ("flow.deployment_revision".into(), "3".into()),
+            ("target_service_id".into(), "domain-a/orders".into()),
+            ("deployment_revision".into(), "3".into()),
         ]));
         let shard = env.virtual_shard(cfg.num_shards).unwrap();
         assert!(validate_message_routing(&env, &cfg, shard).is_ok());
@@ -303,8 +315,8 @@ mod deployment_routing_tests {
         assert!(validate_message_routing(&event(HashMap::new()), &cfg, shard).is_err());
 
         let env = event(HashMap::from([
-            ("flow.service_id".into(), "domain-a/billing".into()),
-            ("flow.deployment_revision".into(), "3".into()),
+            ("target_service_id".into(), "domain-a/billing".into()),
+            ("deployment_revision".into(), "3".into()),
         ]));
         let shard = env.virtual_shard(cfg.num_shards).unwrap();
         assert!(validate_message_routing(&env, &cfg, shard).is_err());
@@ -314,9 +326,9 @@ mod deployment_routing_tests {
     fn rejects_missing_malformed_and_stale_deployment_revision() {
         let cfg = config(Some("domain-a/orders"), Some(3));
         for revision in [None, Some("not-a-number"), Some("2")] {
-            let mut headers = HashMap::from([("flow.service_id".into(), "domain-a/orders".into())]);
+            let mut headers = HashMap::from([("target_service_id".into(), "domain-a/orders".into())]);
             if let Some(value) = revision {
-                headers.insert("flow.deployment_revision".into(), value.into());
+                headers.insert("deployment_revision".into(), value.into());
             }
             let env = event(headers);
             let shard = env.virtual_shard(cfg.num_shards).unwrap();
@@ -328,8 +340,8 @@ mod deployment_routing_tests {
     fn rejects_wrong_shard_even_when_service_matches() {
         let cfg = config(Some("domain-a/orders"), Some(3));
         let env = event(HashMap::from([
-            ("flow.service_id".into(), "domain-a/orders".into()),
-            ("flow.deployment_revision".into(), "3".into()),
+            ("target_service_id".into(), "domain-a/orders".into()),
+            ("deployment_revision".into(), "3".into()),
         ]));
         let correct = env.virtual_shard(cfg.num_shards).unwrap();
         let wrong = (correct + 1) % cfg.num_shards;

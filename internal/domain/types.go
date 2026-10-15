@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,8 +21,8 @@ func (SystemClock) Now() time.Time { return time.Now().UTC() }
 type EventEnvelope struct {
 	ID            string            `json:"id"`
 	Type          string            `json:"type"`
-	TenantID      string            `json:"tenant_id"`
-	PartitionKey  string            `json:"partition_key"`
+	TenantID      string            `json:"-"`
+	PartitionKey  string            `json:"-"`
 	WorkflowID    string            `json:"workflow_id,omitempty"`
 	OccurredAt    time.Time         `json:"occurred_at"`
 	Data          json.RawMessage   `json:"data"`
@@ -31,6 +32,101 @@ type EventEnvelope struct {
 	CausationID   string            `json:"causation_id,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
 	Meta          map[string]any    `json:"meta,omitempty"`
+}
+
+// MarshalJSON keeps runtime identity and extensible event metadata inside the meta object.
+func (e EventEnvelope) MarshalJSON() ([]byte, error) {
+	type wireEvent struct {
+		ID            string            `json:"id"`
+		Type          string            `json:"type"`
+		WorkflowID    string            `json:"workflow_id,omitempty"`
+		OccurredAt    time.Time         `json:"occurred_at"`
+		Data          json.RawMessage   `json:"data"`
+		Contract      *ContractRef      `json:"contract,omitempty"`
+		MessageKind   string            `json:"message_kind,omitempty"`
+		CorrelationID string            `json:"correlation_id,omitempty"`
+		CausationID   string            `json:"causation_id,omitempty"`
+		Headers       map[string]string `json:"headers,omitempty"`
+		Meta          map[string]any    `json:"meta"`
+	}
+	meta := make(map[string]any, len(e.Meta)+2)
+	for key, value := range e.Meta {
+		meta[key] = value
+	}
+	meta["tenant_id"] = e.TenantID
+	meta["partition_key"] = e.PartitionKey
+	return json.Marshal(wireEvent{
+		ID: e.ID, Type: e.Type, WorkflowID: e.WorkflowID, OccurredAt: e.OccurredAt,
+		Data: e.Data, Contract: e.Contract, MessageKind: e.MessageKind,
+		CorrelationID: e.CorrelationID, CausationID: e.CausationID, Headers: e.Headers, Meta: meta,
+	})
+}
+
+// UnmarshalJSON reads the canonical meta-based envelope and accepts the former top-level identity fields for rolling upgrades.
+func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	allowed := map[string]bool{
+		"id": true, "type": true, "tenant_id": true, "partition_key": true, "occurred_at": true,
+		"workflow_id": true, "data": true, "contract": true, "message_kind": true,
+		"correlation_id": true, "causation_id": true, "headers": true, "meta": true,
+	}
+	for key := range fields {
+		if !allowed[key] {
+			return fmt.Errorf("unknown event envelope field %q", key)
+		}
+	}
+	type wireEvent struct {
+		ID            string            `json:"id"`
+		Type          string            `json:"type"`
+		TenantID      string            `json:"tenant_id"`
+		PartitionKey  string            `json:"partition_key"`
+		WorkflowID    string            `json:"workflow_id"`
+		OccurredAt    time.Time         `json:"occurred_at"`
+		Data          json.RawMessage   `json:"data"`
+		Contract      *ContractRef      `json:"contract"`
+		MessageKind   string            `json:"message_kind"`
+		CorrelationID string            `json:"correlation_id"`
+		CausationID   string            `json:"causation_id"`
+		Headers       map[string]string `json:"headers"`
+		Meta          map[string]any    `json:"meta"`
+	}
+	var wire wireEvent
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if wire.Meta == nil {
+		wire.Meta = make(map[string]any)
+	}
+	tenantID, hasTenant := wire.Meta["tenant_id"].(string)
+	partitionKey, hasPartition := wire.Meta["partition_key"].(string)
+	if _, present := wire.Meta["tenant_id"]; present && !hasTenant {
+		return fmt.Errorf("meta.tenant_id must be a string")
+	}
+	if _, present := wire.Meta["partition_key"]; present && !hasPartition {
+		return fmt.Errorf("meta.partition_key must be a string")
+	}
+	if !hasTenant {
+		tenantID = wire.TenantID
+	}
+	if !hasPartition {
+		partitionKey = wire.PartitionKey
+	}
+	if strings.TrimSpace(tenantID) == "" && hasTenant {
+		return fmt.Errorf("meta.tenant_id must be a non-empty string")
+	}
+	if strings.TrimSpace(partitionKey) == "" && hasPartition {
+		return fmt.Errorf("meta.partition_key must be a non-empty string")
+	}
+	*e = EventEnvelope{
+		ID: wire.ID, Type: wire.Type, TenantID: tenantID, PartitionKey: partitionKey,
+		WorkflowID: wire.WorkflowID, OccurredAt: wire.OccurredAt, Data: wire.Data,
+		Contract: wire.Contract, MessageKind: wire.MessageKind, CorrelationID: wire.CorrelationID,
+		CausationID: wire.CausationID, Headers: wire.Headers, Meta: wire.Meta,
+	}
+	return nil
 }
 
 // VirtualShard provides the virtual shard.

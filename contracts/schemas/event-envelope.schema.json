@@ -1,10 +1,11 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://flow-rulz.io/schemas/event-envelope-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowrulz.dev/schemas/event-envelope.schema.json",
   "title": "FlowRulz Event Envelope",
+  "description": "Runtime event envelope. Runtime identity and extensible event metadata live under meta; Domain configuration contains no tenant or partition fields.",
   "type": "object",
-  "required": ["id", "type", "tenant_id", "partition_key", "occurred_at", "data"],
   "additionalProperties": false,
+  "required": ["id", "type", "occurred_at", "data", "meta"],
   "properties": {
     "id": {
       "type": "string",
@@ -17,18 +18,6 @@
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[a-z][a-z0-9.]*[a-z0-9]$"
-    },
-    "tenant_id": {
-      "description": "Runtime event identity only; never a Domain or Service configuration field.",
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 64,
-      "pattern": "^[a-z][a-z0-9-]*[a-z0-9]$"
-    },
-    "partition_key": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 256
     },
     "occurred_at": {
       "type": "string",
@@ -54,8 +43,24 @@
     },
     "headers": {
       "type": "object",
-      "additionalProperties": {
-        "type": "string"
+      "additionalProperties": { "type": "string" }
+    },
+    "meta": {
+      "type": "object",
+      "description": "Extensible runtime metadata. tenant_id and partition_key are required; future runtime metadata can be added without changing the envelope schema.",
+      "required": ["tenant_id", "partition_key"],
+      "additionalProperties": true,
+      "properties": {
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "partition_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
       }
     }
   }
