@@ -39,6 +39,7 @@ const (
 type Service struct {
 	repository ports.DomainServiceRepository
 	clock      ports.Clock
+	rules      ports.RuleService
 }
 
 // NewService creates a new domain Service with the given repository and clock.
@@ -49,9 +50,18 @@ func NewService(repository ports.DomainServiceRepository, clock ports.Clock) *Se
 	return &Service{repository: repository, clock: clock}
 }
 
+// WithRuleService enables tenant-scoped verification of immutable ruleset revisions.
+func (s *Service) WithRuleService(ruleService ports.RuleService) *Service {
+	s.rules = ruleService
+	return s
+}
+
 // SaveDomain creates or updates a tenant domain.
 func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
 	if err := normalizeAndValidateDomain(item, tenantID); err != nil {
+		return nil, err
+	}
+	if err := s.validateAssignedRevisions(ctx, tenantID, item.Deployments); err != nil {
 		return nil, err
 	}
 	if err := s.ensureDomainNameAvailable(ctx, item); err != nil {
@@ -64,6 +74,30 @@ func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.
 		return nil, err
 	}
 	return item, nil
+}
+
+func (s *Service) validateAssignedRevisions(ctx context.Context, tenantID string, deployments []domain.ServiceDeployment) error {
+	if s.rules == nil {
+		return nil // Unit tests and migration tooling may validate shape without a live rule registry.
+	}
+	for _, deployment := range deployments {
+		for _, assignment := range deployment.Rulesets {
+			revision, err := s.rules.GetRevision(ctx, tenantID, assignment.RulesetID, assignment.Revision)
+			if err != nil {
+				return fmt.Errorf("%w: ruleset %q revision %d is not available in this tenant: %v", ErrInvalidInput, assignment.RulesetID, assignment.Revision, err)
+			}
+			if revision == nil || revision.TenantScope != tenantID || revision.RuleID != assignment.RulesetID || revision.Revision != assignment.Revision {
+				return fmt.Errorf("%w: ruleset %q revision %d does not match the requested tenant-scoped revision", ErrInvalidInput, assignment.RulesetID, assignment.Revision)
+			}
+			if assignment.Contract != nil {
+				if revision.InputContract == nil || revision.InputContract.Name != assignment.Contract.Name || revision.InputContract.Version != assignment.Contract.Version ||
+					(assignment.Contract.SchemaHash != "" && revision.InputContract.SchemaHash != assignment.Contract.SchemaHash) {
+					return fmt.Errorf("%w: deployment contract does not match ruleset %q revision %d", ErrInvalidInput, assignment.RulesetID, assignment.Revision)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func normalizeAndValidateDomain(item *domain.TenantDomain, tenantID string) error {
