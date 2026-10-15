@@ -34,6 +34,8 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	handler.RegisterRoutes(mux)
 	body := `{
 		"name":"orders",
+		"tenant_id":"attacker-controlled",
+		"event_types":["not.configuration"],
 		"services":[{
 			"service_id":"order-worker",
 			"name":"order-worker",
@@ -54,7 +56,13 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 		t.Fatalf("SaveDomain called=%t scope=%q", service.called, service.scope)
 	}
 	if len(service.item.Deployments) != 1 {
-		t.Fatalf("deployment assignments = %#v", service.item.Deployments)
+		t.Fatalf("service assignments = %#v", service.item.Deployments)
+	}
+	if service.item.TenantID != domain.DomainConfigurationScope {
+		t.Fatalf("caller-controlled tenant_id changed internal scope: %q", service.item.TenantID)
+	}
+	if len(service.item.EventTypes) != 0 {
+		t.Fatalf("caller-controlled event_types were accepted as configuration: %#v", service.item.EventTypes)
 	}
 	deployment := service.item.Deployments[0]
 	if deployment.ServiceID != "order-worker" || deployment.Revision != 3 ||
