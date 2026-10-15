@@ -40,15 +40,15 @@ func TestEventIngestionPublishesValidatedEnvelopeToShard(t *testing.T) {
 	server := middleware.TenantExtractor(mux)
 
 	body, err := json.Marshal(struct {
-		ID           string            `json:"id"`
-		Type         string            `json:"type"`
+		ID         string          `json:"id"`
+		Type       string          `json:"type"`
 		OccurredAt time.Time       `json:"occurred_at"`
 		Data       json.RawMessage `json:"data"`
 		Meta       map[string]any  `json:"meta"`
 	}{
 		ID: "evt-1", Type: "order.created", OccurredAt: time.Now().UTC(),
 		Data: json.RawMessage(`{"order_id":"order-1"}`),
-		Meta: map[string]any{"tenant_id":"tenant-a", "partition_key":"order-1", "traceparent":"00-0123456789abcdef0123456789abcdef-0123456789abcdef-01", "producer":"test"},
+		Meta: map[string]any{"tenant_id": "tenant-a", "partition_key": "order-1", "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01", "producer": "test"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -70,8 +70,8 @@ func TestEventIngestionPublishesValidatedEnvelopeToShard(t *testing.T) {
 		t.Fatalf("subject = %q, want events", publisher.subject)
 	}
 	var published struct {
-		ID string `json:"id"`
-		Type string `json:"type"`
+		ID   string                     `json:"id"`
+		Type string                     `json:"type"`
 		Meta map[string]json.RawMessage `json:"meta"`
 	}
 	if err := json.Unmarshal(publisher.payload, &published); err != nil {
@@ -95,14 +95,14 @@ func TestEventIngestionRejectsTenantMismatch(t *testing.T) {
 	server := middleware.TenantExtractor(mux)
 
 	body, err := json.Marshal(struct {
-		ID           string    `json:"id"`
-		Type         string    `json:"type"`
+		ID         string          `json:"id"`
+		Type       string          `json:"type"`
 		OccurredAt time.Time       `json:"occurred_at"`
 		Data       json.RawMessage `json:"data"`
 		Meta       map[string]any  `json:"meta"`
 	}{
 		ID: "evt-1", Type: "order.created", OccurredAt: time.Now().UTC(), Data: json.RawMessage(`{}`),
-		Meta: map[string]any{"tenant_id":"tenant-victim", "partition_key":"order-1"},
+		Meta: map[string]any{"tenant_id": "tenant-victim", "partition_key": "order-1"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -156,15 +156,19 @@ func TestEventIngestionRejectsProducerSuppliedInternalRoutingMeta(t *testing.T) 
 			mux := http.NewServeMux()
 			handler.RegisterRoutes(mux)
 			server := middleware.TenantExtractor(mux)
-			meta, err := json.Marshal(map[string]any{"tenant_id":"tenant-a", "partition_key":"order-1", key:"attacker-controlled"})
-			if err != nil { t.Fatal(err) }
+			meta, err := json.Marshal(map[string]any{"tenant_id": "tenant-a", "partition_key": "order-1", key: "attacker-controlled"})
+			if err != nil {
+				t.Fatal(err)
+			}
 			body := map[string]json.RawMessage{
 				"id": json.RawMessage(`"evt-1"`), "type": json.RawMessage(`"order.created"`),
 				"occurred_at": json.RawMessage(`"2026-10-15T07:30:00Z"`), "data": json.RawMessage(`{}`),
 				"meta": meta,
 			}
 			encoded, err := json.Marshal(body)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			req := httptest.NewRequest(http.MethodPost, "/v1/events/order.created", bytes.NewReader(encoded))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Tenant-ID", "tenant-a")
@@ -173,7 +177,9 @@ func TestEventIngestionRejectsProducerSuppliedInternalRoutingMeta(t *testing.T) 
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
 			}
-			if publisher.calls != 0 { t.Fatal("event with producer-supplied internal routing metadata was published") }
+			if publisher.calls != 0 {
+				t.Fatal("event with producer-supplied internal routing metadata was published")
+			}
 		})
 	}
 }

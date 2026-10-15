@@ -10,7 +10,7 @@ import (
 func TestValidateServiceDeploymentRequiresExactTargetAndRevision(t *testing.T) {
 	worker := &Worker{config: WorkerConfig{ServiceID: "tenant-a/orders-domain/orders-evaluator", DeploymentRevision: 4}}
 	event := &domain.EventEnvelope{Meta: map[string]json.RawMessage{
-		"flow.service_id": json.RawMessage(`"tenant-a/orders-domain/orders-evaluator"`),
+		"flow.service_id":          json.RawMessage(`"tenant-a/orders-domain/orders-evaluator"`),
 		"flow.deployment_revision": json.RawMessage(`4`),
 	}}
 	if err := worker.validateServiceDeployment(event); err != nil {

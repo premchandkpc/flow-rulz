@@ -64,7 +64,9 @@ func validateEventMetadata(meta map[string]json.RawMessage) error {
 	stringFields := []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "traceparent"}
 	for _, key := range stringFields {
 		raw, exists := meta[key]
-		if !exists { continue }
+		if !exists {
+			continue
+		}
 		var value string
 		if err := json.Unmarshal(raw, &value); err != nil {
 			return fmt.Errorf("meta.%s must be a string", key)
@@ -221,10 +223,10 @@ func buildEventEnvelope(
 	headers := buildEventHeaders(request)
 	return &domain.EventEnvelope{
 		ID: strings.TrimSpace(request.ID), Type: eventType,
-		TenantID: strings.TrimSpace(request.metaString("tenant_id")),
+		TenantID:     strings.TrimSpace(request.metaString("tenant_id")),
 		PartitionKey: strings.TrimSpace(request.metaString("partition_key")),
-		WorkflowID: request.metaString("workflow_id"),
-		OccurredAt: request.OccurredAt, Data: append(json.RawMessage(nil), request.Data...),
+		WorkflowID:   request.metaString("workflow_id"),
+		OccurredAt:   request.OccurredAt, Data: append(json.RawMessage(nil), request.Data...),
 		Headers: headers, Meta: unknownEventMetadata(request.Meta),
 		Contract: request.Contract, MessageKind: request.metaString("message_kind"),
 		CorrelationID: request.metaString("correlation_id"), CausationID: request.metaString("causation_id"),
@@ -233,7 +235,9 @@ func buildEventEnvelope(
 
 func unknownEventMetadata(source map[string]json.RawMessage) map[string]json.RawMessage {
 	clone := make(map[string]json.RawMessage, len(source))
-	for key, value := range source { clone[key] = append(json.RawMessage(nil), value...) }
+	for key, value := range source {
+		clone[key] = append(json.RawMessage(nil), value...)
+	}
 	for _, key := range []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "headers"} {
 		delete(clone, key)
 	}
@@ -243,11 +247,21 @@ func unknownEventMetadata(source map[string]json.RawMessage) map[string]json.Raw
 func buildEventHeaders(request eventIngestionRequest) map[string]string {
 	metaHeaders := request.metaHeaders()
 	headers := make(map[string]string, len(metaHeaders)+3)
-	for key, value := range metaHeaders { headers[key] = value }
-	if value := request.metaString("traceparent"); value != "" { headers["traceparent"] = value }
-	if value := request.metaString("correlation_id"); value != "" { headers["Correlation-ID"] = value }
-	if value := request.metaString("causation_id"); value != "" { headers["Causation-ID"] = value }
-	if value := request.metaString("schema_version"); value != "" { headers["Schema-Version"] = value }
+	for key, value := range metaHeaders {
+		headers[key] = value
+	}
+	if value := request.metaString("traceparent"); value != "" {
+		headers["traceparent"] = value
+	}
+	if value := request.metaString("correlation_id"); value != "" {
+		headers["Correlation-ID"] = value
+	}
+	if value := request.metaString("causation_id"); value != "" {
+		headers["Causation-ID"] = value
+	}
+	if value := request.metaString("schema_version"); value != "" {
+		headers["Schema-Version"] = value
+	}
 	return headers
 }
 

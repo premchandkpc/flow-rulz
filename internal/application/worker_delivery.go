@@ -223,7 +223,9 @@ func (w *Worker) validateServiceDeployment(env *domain.EventEnvelope) error {
 			return fmt.Errorf("event target deployment revision is missing or invalid")
 		}
 		parsed, parseErr := strconv.ParseInt(revisionText, 10, 64)
-		if parseErr != nil { return fmt.Errorf("event target deployment revision is invalid") }
+		if parseErr != nil {
+			return fmt.Errorf("event target deployment revision is invalid")
+		}
 		targetRevision = parsed
 	}
 	if targetRevision != revision {

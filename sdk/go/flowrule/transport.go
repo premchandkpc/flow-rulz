@@ -49,39 +49,78 @@ type envelopeWire struct {
 // MarshalJSON serializes the envelope with runtime metadata nested under meta.
 func (e Envelope) MarshalJSON() ([]byte, error) {
 	meta := make(map[string]json.RawMessage, len(e.Meta)+8)
-	for key, value := range e.Meta { meta[key] = append(json.RawMessage(nil), value...) }
-	for key, value := range map[string]string{
-		"tenant_id":e.TenantID, "partition_key":e.PartitionKey, "workflow_id":e.WorkflowID,
-		"correlation_id":e.CorrelationID, "causation_id":e.CausationID,
-		"message_kind":e.MessageKind, "schema_version":e.SchemaVersion,
-	} {
-		if value == "" { continue }
-		encoded, err := json.Marshal(value); if err != nil { return nil, err }; meta[key] = encoded
+	for key, value := range e.Meta {
+		meta[key] = append(json.RawMessage(nil), value...)
 	}
-	if len(e.Headers)>0 { encoded,err:=json.Marshal(e.Headers); if err!=nil{return nil,err}; meta["headers"]=encoded }
-	return json.Marshal(envelopeWire{ID:e.ID,Type:e.Type,OccurredAt:e.OccurredAt,Data:e.Data,Contract:e.Contract,Meta:meta})
+	for key, value := range map[string]string{
+		"tenant_id": e.TenantID, "partition_key": e.PartitionKey, "workflow_id": e.WorkflowID,
+		"correlation_id": e.CorrelationID, "causation_id": e.CausationID,
+		"message_kind": e.MessageKind, "schema_version": e.SchemaVersion,
+	} {
+		if value == "" {
+			continue
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		meta[key] = encoded
+	}
+	if len(e.Headers) > 0 {
+		encoded, err := json.Marshal(e.Headers)
+		if err != nil {
+			return nil, err
+		}
+		meta["headers"] = encoded
+	}
+	return json.Marshal(envelopeWire{ID: e.ID, Type: e.Type, OccurredAt: e.OccurredAt, Data: e.Data, Contract: e.Contract, Meta: meta})
 }
 
 // UnmarshalJSON decodes the envelope and preserves unknown metadata fields.
 func (e *Envelope) UnmarshalJSON(data []byte) error {
 	var top map[string]json.RawMessage
-	if err:=json.Unmarshal(data,&top);err!=nil{return err}
-	allowed:=map[string]bool{"id":true,"type":true,"occurred_at":true,"data":true,"contract":true,"meta":true}
-	for key:=range top { if !allowed[key] { return fmt.Errorf("unknown event envelope field %q; put runtime metadata inside meta",key) } }
-	var wire envelopeWire
-	if err:=json.Unmarshal(data,&wire);err!=nil{return err}
-	if wire.Meta==nil{return fmt.Errorf("meta is required")}
-	*e=Envelope{ID:wire.ID,Type:wire.Type,OccurredAt:wire.OccurredAt,Data:wire.Data,Contract:wire.Contract,Meta:wire.Meta}
-	readString:=func(key string,target *string)error{
-		raw,ok:=e.Meta[key];if !ok{return nil}
-		if err:=json.Unmarshal(raw,target);err!=nil{return fmt.Errorf("meta.%s must be a string: %w",key,err)}
-		delete(e.Meta,key);return nil
+	if err := json.Unmarshal(data, &top); err != nil {
+		return err
 	}
-	for key,target:=range map[string]*string{
-		"tenant_id":&e.TenantID,"partition_key":&e.PartitionKey,"workflow_id":&e.WorkflowID,
-		"correlation_id":&e.CorrelationID,"causation_id":&e.CausationID,"message_kind":&e.MessageKind,"schema_version":&e.SchemaVersion,
-	}{if err:=readString(key,target);err!=nil{return err}}
-	if raw,ok:=e.Meta["headers"];ok{if err:=json.Unmarshal(raw,&e.Headers);err!=nil{return fmt.Errorf("meta.headers must be an object of strings: %w",err)};delete(e.Meta,"headers")}
+	allowed := map[string]bool{"id": true, "type": true, "occurred_at": true, "data": true, "contract": true, "meta": true}
+	for key := range top {
+		if !allowed[key] {
+			return fmt.Errorf("unknown event envelope field %q; put runtime metadata inside meta", key)
+		}
+	}
+	var wire envelopeWire
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if wire.Meta == nil {
+		return fmt.Errorf("meta is required")
+	}
+	*e = Envelope{ID: wire.ID, Type: wire.Type, OccurredAt: wire.OccurredAt, Data: wire.Data, Contract: wire.Contract, Meta: wire.Meta}
+	readString := func(key string, target *string) error {
+		raw, ok := e.Meta[key]
+		if !ok {
+			return nil
+		}
+		if err := json.Unmarshal(raw, target); err != nil {
+			return fmt.Errorf("meta.%s must be a string: %w", key, err)
+		}
+		delete(e.Meta, key)
+		return nil
+	}
+	for key, target := range map[string]*string{
+		"tenant_id": &e.TenantID, "partition_key": &e.PartitionKey, "workflow_id": &e.WorkflowID,
+		"correlation_id": &e.CorrelationID, "causation_id": &e.CausationID, "message_kind": &e.MessageKind, "schema_version": &e.SchemaVersion,
+	} {
+		if err := readString(key, target); err != nil {
+			return err
+		}
+	}
+	if raw, ok := e.Meta["headers"]; ok {
+		if err := json.Unmarshal(raw, &e.Headers); err != nil {
+			return fmt.Errorf("meta.headers must be an object of strings: %w", err)
+		}
+		delete(e.Meta, "headers")
+	}
 	return nil
 }
 

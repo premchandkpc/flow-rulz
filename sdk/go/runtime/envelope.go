@@ -10,8 +10,8 @@ import (
 
 // ContractRef identifies an immutable payload contract.
 type ContractRef struct {
-	Name string `json:"name"`
-	Version string `json:"version"`
+	Name       string `json:"name"`
+	Version    string `json:"version"`
 	SchemaHash string `json:"schema_hash,omitempty"`
 }
 
@@ -48,45 +48,67 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 	for key, value := range map[string]string{
 		"tenant_id": e.TenantID, "partition_key": e.PartitionKey, "workflow_id": e.WorkflowID,
 	} {
-		if value == "" { continue }
+		if value == "" {
+			continue
+		}
 		encoded, err := json.Marshal(value)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		meta[key] = encoded
 	}
 	if len(e.Headers) > 0 {
 		encoded, err := json.Marshal(e.Headers)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		meta["headers"] = encoded
 	}
-	return json.Marshal(envelopeWire{ID:e.ID, Type:e.Type, OccurredAt:e.OccurredAt, Data:e.Data, Contract:e.Contract, Meta:meta})
+	return json.Marshal(envelopeWire{ID: e.ID, Type: e.Type, OccurredAt: e.OccurredAt, Data: e.Data, Contract: e.Contract, Meta: meta})
 }
 
 // UnmarshalJSON decodes the envelope and preserves unknown metadata fields.
 func (e *Envelope) UnmarshalJSON(data []byte) error {
 	var top map[string]json.RawMessage
-	if err := json.Unmarshal(data, &top); err != nil { return err }
-	allowed := map[string]bool{"id":true, "type":true, "occurred_at":true, "data":true, "contract":true, "meta":true}
+	if err := json.Unmarshal(data, &top); err != nil {
+		return err
+	}
+	allowed := map[string]bool{"id": true, "type": true, "occurred_at": true, "data": true, "contract": true, "meta": true}
 	for key := range top {
-		if !allowed[key] { return fmt.Errorf("unknown event envelope field %q; put runtime metadata inside meta", key) }
+		if !allowed[key] {
+			return fmt.Errorf("unknown event envelope field %q; put runtime metadata inside meta", key)
+		}
 	}
 	var wire envelopeWire
-	if err := json.Unmarshal(data, &wire); err != nil { return err }
-	if wire.Meta == nil { return fmt.Errorf("meta is required") }
-	*e = Envelope{ID:wire.ID, Type:wire.Type, OccurredAt:wire.OccurredAt, Data:wire.Data, Contract:wire.Contract, Meta:wire.Meta}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if wire.Meta == nil {
+		return fmt.Errorf("meta is required")
+	}
+	*e = Envelope{ID: wire.ID, Type: wire.Type, OccurredAt: wire.OccurredAt, Data: wire.Data, Contract: wire.Contract, Meta: wire.Meta}
 	readString := func(key string, target *string) error {
 		raw, ok := e.Meta[key]
-		if !ok { return nil }
-		if err := json.Unmarshal(raw, target); err != nil { return fmt.Errorf("meta.%s must be a string: %w", key, err) }
+		if !ok {
+			return nil
+		}
+		if err := json.Unmarshal(raw, target); err != nil {
+			return fmt.Errorf("meta.%s must be a string: %w", key, err)
+		}
 		delete(e.Meta, key)
 		return nil
 	}
 	for key, target := range map[string]*string{
 		"tenant_id": &e.TenantID, "partition_key": &e.PartitionKey, "workflow_id": &e.WorkflowID,
 	} {
-		if err := readString(key, target); err != nil { return err }
+		if err := readString(key, target); err != nil {
+			return err
+		}
 	}
 	if raw, ok := e.Meta["headers"]; ok {
-		if err := json.Unmarshal(raw, &e.Headers); err != nil { return fmt.Errorf("meta.headers must be an object of strings: %w", err) }
+		if err := json.Unmarshal(raw, &e.Headers); err != nil {
+			return fmt.Errorf("meta.headers must be an object of strings: %w", err)
+		}
 		delete(e.Meta, "headers")
 	}
 	return nil
@@ -95,7 +117,9 @@ func (e *Envelope) UnmarshalJSON(data []byte) error {
 // NewEnvelope creates a new envelope with a generated ID and current timestamp.
 func NewEnvelope(eventType, tenantID, partitionKey string, payload any) (*Envelope, error) {
 	data, err := json.Marshal(payload)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	return &Envelope{
 		ID: uuid.New().String(), Type: eventType, TenantID: tenantID,
 		PartitionKey: partitionKey, OccurredAt: time.Now().UTC(), Data: data,
@@ -122,6 +146,9 @@ func ComputeShard(tenantID, partitionKey string, numShards uint32) uint32 {
 
 func fnv32a(s string) uint32 {
 	h := uint32(2166136261)
-	for i := 0; i < len(s); i++ { h ^= uint32(s[i]); h *= 16777619 }
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
 	return h
 }

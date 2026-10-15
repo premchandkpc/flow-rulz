@@ -36,8 +36,8 @@ type EventEnvelope struct {
 
 // EventContract identifies the immutable payload contract used by an event.
 type EventContract struct {
-	Name      string `json:"name"`
-	Version   string `json:"version"`
+	Name       string `json:"name"`
+	Version    string `json:"version"`
 	SchemaHash string `json:"schema_hash,omitempty"`
 }
 
@@ -74,14 +74,20 @@ type eventEnvelopeWire struct {
 // MarshalJSON writes known and extension metadata into one extensible JSON object.
 func (m EventMetadata) MarshalJSON() ([]byte, error) {
 	encoded, err := json.Marshal(eventMetadataAlias(m))
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(encoded, &fields); err != nil { return nil, err }
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		return nil, err
+	}
 	if m.SchemaVersion > 0 {
 		fields["schema_version"], _ = json.Marshal(m.SchemaVersion)
 	}
 	for key, value := range m.Extra {
-		if _, known := fields[key]; !known { fields[key] = append(json.RawMessage(nil), value...) }
+		if _, known := fields[key]; !known {
+			fields[key] = append(json.RawMessage(nil), value...)
+		}
 	}
 	return json.Marshal(fields)
 }
@@ -89,9 +95,13 @@ func (m EventMetadata) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON decodes known metadata and retains all unknown keys in Extra.
 func (m *EventMetadata) UnmarshalJSON(data []byte) error {
 	var known eventMetadataAlias
-	if err := json.Unmarshal(data, &known); err != nil { return err }
+	if err := json.Unmarshal(data, &known); err != nil {
+		return err
+	}
 	var all map[string]json.RawMessage
-	if err := json.Unmarshal(data, &all); err != nil { return err }
+	if err := json.Unmarshal(data, &all); err != nil {
+		return err
+	}
 	if raw, exists := all["schema_version"]; exists {
 		var version int
 		if err := json.Unmarshal(raw, &version); err == nil && version > 0 {
@@ -99,7 +109,7 @@ func (m *EventMetadata) UnmarshalJSON(data []byte) error {
 			delete(all, "schema_version")
 		}
 	}
-	for _, key := range []string{"tenant_id","partition_key","workflow_id","message_kind","correlation_id","causation_id","batch_id","hop","requested_ruleset_id","flow.service_id","flow.deployment_revision","traceparent","headers"} {
+	for _, key := range []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "batch_id", "hop", "requested_ruleset_id", "flow.service_id", "flow.deployment_revision", "traceparent", "headers"} {
 		delete(all, key)
 	}
 	*m = EventMetadata(known)
@@ -110,25 +120,43 @@ func (m *EventMetadata) UnmarshalJSON(data []byte) error {
 // MarshalJSON serializes the stable envelope and nests runtime metadata under meta.
 func (e EventEnvelope) MarshalJSON() ([]byte, error) {
 	meta := e.Metadata
-	if e.TenantID != "" { meta.TenantID = e.TenantID }
-	if e.PartitionKey != "" { meta.PartitionKey = e.PartitionKey }
-	if e.SchemaVersion > 0 && meta.Extra["schema_version"] == nil { meta.SchemaVersion = e.SchemaVersion }
-	return json.Marshal(eventEnvelopeWire{ID:e.ID, Type:e.EventType, OccurredAt:e.OccurredAt, Data:e.Payload, Contract:e.Contract, Meta:meta})
+	if e.TenantID != "" {
+		meta.TenantID = e.TenantID
+	}
+	if e.PartitionKey != "" {
+		meta.PartitionKey = e.PartitionKey
+	}
+	if e.SchemaVersion > 0 && meta.Extra["schema_version"] == nil {
+		meta.SchemaVersion = e.SchemaVersion
+	}
+	return json.Marshal(eventEnvelopeWire{ID: e.ID, Type: e.EventType, OccurredAt: e.OccurredAt, Data: e.Payload, Contract: e.Contract, Meta: meta})
 }
 
 // UnmarshalJSON reads the stable envelope and rejects top-level runtime metadata.
 func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
 	var top map[string]json.RawMessage
-	if err := json.Unmarshal(data, &top); err != nil { return err }
-	allowed := map[string]bool{"id":true,"type":true,"occurred_at":true,"data":true,"contract":true,"meta":true}
-	for key := range top { if !allowed[key] { return fmt.Errorf("unknown event envelope field %q; runtime metadata belongs inside meta", key) } }
+	if err := json.Unmarshal(data, &top); err != nil {
+		return err
+	}
+	allowed := map[string]bool{"id": true, "type": true, "occurred_at": true, "data": true, "contract": true, "meta": true}
+	for key := range top {
+		if !allowed[key] {
+			return fmt.Errorf("unknown event envelope field %q; runtime metadata belongs inside meta", key)
+		}
+	}
 	var wire eventEnvelopeWire
-	if err := json.Unmarshal(data, &wire); err != nil { return err }
-	if len(wire.Meta.TenantID)==0 || len(wire.Meta.PartitionKey)==0 { return errors.New("meta.tenant_id and meta.partition_key are required") }
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if len(wire.Meta.TenantID) == 0 || len(wire.Meta.PartitionKey) == 0 {
+		return errors.New("meta.tenant_id and meta.partition_key are required")
+	}
 	version := wire.Meta.SchemaVersion
-	if version == 0 { version = 1 }
-	*e = EventEnvelope{SchemaVersion:version, ID:wire.ID, TenantID:wire.Meta.TenantID, EventType:wire.Type,
-		PartitionKey:wire.Meta.PartitionKey, OccurredAt:wire.OccurredAt, Payload:wire.Data, Contract:wire.Contract, Metadata:wire.Meta}
+	if version == 0 {
+		version = 1
+	}
+	*e = EventEnvelope{SchemaVersion: version, ID: wire.ID, TenantID: wire.Meta.TenantID, EventType: wire.Type,
+		PartitionKey: wire.Meta.PartitionKey, OccurredAt: wire.OccurredAt, Payload: wire.Data, Contract: wire.Contract, Metadata: wire.Meta}
 	return nil
 }
 

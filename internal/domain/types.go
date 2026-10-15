@@ -55,42 +55,72 @@ func (e EventEnvelope) MarshalJSON() ([]byte, error) {
 			return nil
 		}
 		encoded, err := json.Marshal(value)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		meta[key] = encoded
 		return nil
 	}
-	if err := putString("tenant_id", e.TenantID); err != nil { return nil, err }
-	if err := putString("partition_key", e.PartitionKey); err != nil { return nil, err }
-	if err := putString("workflow_id", e.WorkflowID); err != nil { return nil, err }
-	if err := putString("message_kind", e.MessageKind); err != nil { return nil, err }
-	if err := putString("correlation_id", e.CorrelationID); err != nil { return nil, err }
-	if err := putString("causation_id", e.CausationID); err != nil { return nil, err }
+	if err := putString("tenant_id", e.TenantID); err != nil {
+		return nil, err
+	}
+	if err := putString("partition_key", e.PartitionKey); err != nil {
+		return nil, err
+	}
+	if err := putString("workflow_id", e.WorkflowID); err != nil {
+		return nil, err
+	}
+	if err := putString("message_kind", e.MessageKind); err != nil {
+		return nil, err
+	}
+	if err := putString("correlation_id", e.CorrelationID); err != nil {
+		return nil, err
+	}
+	if err := putString("causation_id", e.CausationID); err != nil {
+		return nil, err
+	}
 	if len(e.Headers) > 0 {
 		encoded, err := json.Marshal(e.Headers)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		meta["headers"] = encoded
 	}
-	if len(meta) == 0 { meta = nil }
-	return json.Marshal(eventEnvelopeWire{ID:e.ID, Type:e.Type, OccurredAt:e.OccurredAt, Data:e.Data, Contract:e.Contract, Meta:meta})
+	if len(meta) == 0 {
+		meta = nil
+	}
+	return json.Marshal(eventEnvelopeWire{ID: e.ID, Type: e.Type, OccurredAt: e.OccurredAt, Data: e.Data, Contract: e.Contract, Meta: meta})
 }
 
 // UnmarshalJSON rejects legacy top-level identity fields but accepts arbitrary
 // additional keys inside "meta" for forward-compatible event metadata.
 func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
 	var top map[string]json.RawMessage
-	if err := json.Unmarshal(data, &top); err != nil { return err }
-	allowed := map[string]bool{"id":true, "type":true, "occurred_at":true, "data":true, "contract":true, "meta":true}
+	if err := json.Unmarshal(data, &top); err != nil {
+		return err
+	}
+	allowed := map[string]bool{"id": true, "type": true, "occurred_at": true, "data": true, "contract": true, "meta": true}
 	for key := range top {
-		if !allowed[key] { return fmt.Errorf("unknown event envelope field %q; runtime metadata belongs inside meta", key) }
+		if !allowed[key] {
+			return fmt.Errorf("unknown event envelope field %q; runtime metadata belongs inside meta", key)
+		}
 	}
 	var wire eventEnvelopeWire
-	if err := json.Unmarshal(data, &wire); err != nil { return err }
-	if len(wire.Meta) == 0 { return fmt.Errorf("meta is required") }
-	*e = EventEnvelope{ID:wire.ID, Type:wire.Type, OccurredAt:wire.OccurredAt, Data:wire.Data, Contract:wire.Contract, Meta:wire.Meta}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if len(wire.Meta) == 0 {
+		return fmt.Errorf("meta is required")
+	}
+	*e = EventEnvelope{ID: wire.ID, Type: wire.Type, OccurredAt: wire.OccurredAt, Data: wire.Data, Contract: wire.Contract, Meta: wire.Meta}
 	readString := func(key string, target *string) error {
 		raw, ok := e.Meta[key]
-		if !ok { return nil }
-		if err := json.Unmarshal(raw, target); err != nil { return fmt.Errorf("meta.%s must be a string: %w", key, err) }
+		if !ok {
+			return nil
+		}
+		if err := json.Unmarshal(raw, target); err != nil {
+			return fmt.Errorf("meta.%s must be a string: %w", key, err)
+		}
 		delete(e.Meta, key)
 		return nil
 	}
@@ -99,10 +129,14 @@ func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
 		"workflow_id": &e.WorkflowID, "message_kind": &e.MessageKind,
 		"correlation_id": &e.CorrelationID, "causation_id": &e.CausationID,
 	} {
-		if err := readString(key, target); err != nil { return err }
+		if err := readString(key, target); err != nil {
+			return err
+		}
 	}
 	if raw, ok := e.Meta["headers"]; ok {
-		if err := json.Unmarshal(raw, &e.Headers); err != nil { return fmt.Errorf("meta.headers must be an object of strings: %w", err) }
+		if err := json.Unmarshal(raw, &e.Headers); err != nil {
+			return fmt.Errorf("meta.headers must be an object of strings: %w", err)
+		}
 		delete(e.Meta, "headers")
 	}
 	return nil

@@ -123,44 +123,44 @@ func (r *EventRepository) GetUnprocessed(ctx context.Context, tenantID string, l
 
 // EventDoc is the MongoDB representation of an event envelope.
 type EventDoc struct {
-	EventID      string            `bson:"event_id"`
-	TenantID     string            `bson:"tenant_id"`
-	Type         string            `bson:"type"`
-	PartitionKey string            `bson:"partition_key"`
-	WorkflowID   string            `bson:"workflow_id,omitempty"`
-	OccurredAt   time.Time         `bson:"occurred_at"`
-	ScheduledAt  *time.Time        `bson:"scheduled_at,omitempty"`
-	Data         []byte            `bson:"data"`
-	Headers      map[string]string `bson:"headers,omitempty"`
-	Meta         map[string]any    `bson:"meta,omitempty"`
-	Contract     *domain.ContractRef `bson:"contract,omitempty"`
-	MessageKind  string            `bson:"message_kind,omitempty"`
-	CorrelationID string           `bson:"correlation_id,omitempty"`
-	CausationID  string            `bson:"causation_id,omitempty"`
-	Processed    bool              `bson:"processed"`
-	ExecutionID  string            `bson:"execution_id,omitempty"`
-	ProcessedAt  *time.Time        `bson:"processed_at,omitempty"`
-	CreatedAt    time.Time         `bson:"created_at"`
+	EventID       string              `bson:"event_id"`
+	TenantID      string              `bson:"tenant_id"`
+	Type          string              `bson:"type"`
+	PartitionKey  string              `bson:"partition_key"`
+	WorkflowID    string              `bson:"workflow_id,omitempty"`
+	OccurredAt    time.Time           `bson:"occurred_at"`
+	ScheduledAt   *time.Time          `bson:"scheduled_at,omitempty"`
+	Data          []byte              `bson:"data"`
+	Headers       map[string]string   `bson:"headers,omitempty"`
+	Meta          map[string]any      `bson:"meta,omitempty"`
+	Contract      *domain.ContractRef `bson:"contract,omitempty"`
+	MessageKind   string              `bson:"message_kind,omitempty"`
+	CorrelationID string              `bson:"correlation_id,omitempty"`
+	CausationID   string              `bson:"causation_id,omitempty"`
+	Processed     bool                `bson:"processed"`
+	ExecutionID   string              `bson:"execution_id,omitempty"`
+	ProcessedAt   *time.Time          `bson:"processed_at,omitempty"`
+	CreatedAt     time.Time           `bson:"created_at"`
 }
 
 // EventDocFromDomain converts a domain event envelope to a MongoDB document.
 func EventDocFromDomain(event *domain.EventEnvelope) *EventDoc {
 	return &EventDoc{
-		EventID:      event.ID,
-		TenantID:     event.TenantID,
-		Type:         event.Type,
-		PartitionKey: event.PartitionKey,
-		WorkflowID:   event.WorkflowID,
-		OccurredAt:   event.OccurredAt,
-		Data:         append([]byte(nil), event.Data...),
-		Headers:      event.Headers,
-		Meta:         rawMetadataToBSON(event.Meta),
-		Contract:     event.Contract,
-		MessageKind:  event.MessageKind,
+		EventID:       event.ID,
+		TenantID:      event.TenantID,
+		Type:          event.Type,
+		PartitionKey:  event.PartitionKey,
+		WorkflowID:    event.WorkflowID,
+		OccurredAt:    event.OccurredAt,
+		Data:          append([]byte(nil), event.Data...),
+		Headers:       event.Headers,
+		Meta:          rawMetadataToBSON(event.Meta),
+		Contract:      event.Contract,
+		MessageKind:   event.MessageKind,
 		CorrelationID: event.CorrelationID,
-		CausationID:  event.CausationID,
-		Processed:    false,
-		CreatedAt:    time.Now().UTC(),
+		CausationID:   event.CausationID,
+		Processed:     false,
+		CreatedAt:     time.Now().UTC(),
 	}
 }
 
@@ -172,37 +172,45 @@ func (d *EventDoc) ToDomain() *domain.EventEnvelope {
 	}
 
 	return &domain.EventEnvelope{
-		ID:           d.EventID,
-		Type:         d.Type,
-		TenantID:     d.TenantID,
-		PartitionKey: d.PartitionKey,
-		WorkflowID:   d.WorkflowID,
-		OccurredAt:   d.OccurredAt,
-		Data:         data,
-		Headers:      d.Headers,
-		Meta:         bsonMetadataToRaw(d.Meta),
-		Contract:     d.Contract,
-		MessageKind:  d.MessageKind,
+		ID:            d.EventID,
+		Type:          d.Type,
+		TenantID:      d.TenantID,
+		PartitionKey:  d.PartitionKey,
+		WorkflowID:    d.WorkflowID,
+		OccurredAt:    d.OccurredAt,
+		Data:          data,
+		Headers:       d.Headers,
+		Meta:          bsonMetadataToRaw(d.Meta),
+		Contract:      d.Contract,
+		MessageKind:   d.MessageKind,
 		CorrelationID: d.CorrelationID,
-		CausationID:  d.CausationID,
+		CausationID:   d.CausationID,
 	}
 }
 
 func rawMetadataToBSON(meta map[string]json.RawMessage) map[string]any {
-	if len(meta) == 0 { return nil }
+	if len(meta) == 0 {
+		return nil
+	}
 	result := make(map[string]any, len(meta))
 	for key, raw := range meta {
 		var value any
-		if json.Unmarshal(raw, &value) == nil { result[key] = value }
+		if json.Unmarshal(raw, &value) == nil {
+			result[key] = value
+		}
 	}
 	return result
 }
 
 func bsonMetadataToRaw(meta map[string]any) map[string]json.RawMessage {
-	if len(meta) == 0 { return nil }
+	if len(meta) == 0 {
+		return nil
+	}
 	result := make(map[string]json.RawMessage, len(meta))
 	for key, value := range meta {
-		if raw, err := json.Marshal(normalizeBSONMetadata(value)); err == nil { result[key] = raw }
+		if raw, err := json.Marshal(normalizeBSONMetadata(value)); err == nil {
+			result[key] = raw
+		}
 	}
 	return result
 }
@@ -211,23 +219,33 @@ func normalizeBSONMetadata(value any) any {
 	switch typed := value.(type) {
 	case bson.D:
 		result := make(map[string]any, len(typed))
-		for _, element := range typed { result[element.Key] = normalizeBSONMetadata(element.Value) }
+		for _, element := range typed {
+			result[element.Key] = normalizeBSONMetadata(element.Value)
+		}
 		return result
 	case bson.M:
 		result := make(map[string]any, len(typed))
-		for key, item := range typed { result[key] = normalizeBSONMetadata(item) }
+		for key, item := range typed {
+			result[key] = normalizeBSONMetadata(item)
+		}
 		return result
 	case bson.A:
 		result := make([]any, len(typed))
-		for i, item := range typed { result[i] = normalizeBSONMetadata(item) }
+		for i, item := range typed {
+			result[i] = normalizeBSONMetadata(item)
+		}
 		return result
 	case []any:
 		result := make([]any, len(typed))
-		for i, item := range typed { result[i] = normalizeBSONMetadata(item) }
+		for i, item := range typed {
+			result[i] = normalizeBSONMetadata(item)
+		}
 		return result
 	case map[string]any:
 		result := make(map[string]any, len(typed))
-		for key, item := range typed { result[key] = normalizeBSONMetadata(item) }
+		for key, item := range typed {
+			result[key] = normalizeBSONMetadata(item)
+		}
 		return result
 	default:
 		return value

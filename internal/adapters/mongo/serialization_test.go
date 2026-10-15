@@ -26,10 +26,10 @@ func TestJSONPayloadDocumentsRoundTripThroughBSON(t *testing.T) {
 		source := &domain.EventEnvelope{
 			ID: "evt-1", TenantID: "tenant-a", Type: "order.created", PartitionKey: "order-1",
 			OccurredAt: time.Now().UTC(), Data: json.RawMessage(`{"amount":42,"nested":{"ok":true}}`),
-			Headers: map[string]string{"trace-id": "trace-1"},
-			Meta: map[string]json.RawMessage{"producer": json.RawMessage(`"checkout-api"`), "future": json.RawMessage(`{"flag":true}`)},
-			Contract: &domain.ContractRef{Name:"OrderCreated", Version:"v1", SchemaHash:"hash"},
-			MessageKind: "event", CorrelationID:"corr-1", CausationID:"parent-1",
+			Headers:     map[string]string{"trace-id": "trace-1"},
+			Meta:        map[string]json.RawMessage{"producer": json.RawMessage(`"checkout-api"`), "future": json.RawMessage(`{"flag":true}`)},
+			Contract:    &domain.ContractRef{Name: "OrderCreated", Version: "v1", SchemaHash: "hash"},
+			MessageKind: "event", CorrelationID: "corr-1", CausationID: "parent-1",
 		}
 		var stored EventDoc
 		mongoBSONRoundTrip(t, EventDocFromDomain(source), &stored)
