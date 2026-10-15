@@ -95,7 +95,8 @@ func TestWorkerRejectsCrossTenantEffectAndAudit(t *testing.T) {
 	}
 	for _,tt:=range tests{t.Run(tt.name,func(t *testing.T){
 		store:=newMemoryLogStore()
-		if err:=workerTest(t,store,tt.evaluator,jsonCodec{}).ProcessBatch(context.Background(),workerTestBatch(t));err==nil{t.Fatal("expected identity validation error")}
+		worker := workerTest(t, store, tt.evaluator, jsonCodec{})
+		if err := worker.ProcessBatch(context.Background(), workerTestBatch(t)); err == nil { t.Fatal("expected identity validation error") }
 		if len(store.records)!=0{t.Fatalf("records committed: %#v",store.records)}
 		if _,ok:=store.checkpoints["orders-workers"];ok{t.Fatal("checkpoint advanced")}
 	})}
@@ -112,7 +113,8 @@ func TestWorkerRejectsCheckpointThatCouldSkipInput(t *testing.T) {
 	for _,tt:=range tests{t.Run(tt.name,func(t *testing.T){
 		store:=newMemoryLogStore()
 		batch:=workerTestBatch(t);batch.Offsets=tt.offsets
-		if err:=workerTest(t,store,fixedEvaluator{},jsonCodec{}).ProcessBatch(context.Background(),batch);err==nil{t.Fatal("expected invalid checkpoint error")}
+		worker := workerTest(t, store, fixedEvaluator{}, jsonCodec{})
+		if err := worker.ProcessBatch(context.Background(), batch); err == nil { t.Fatal("expected invalid checkpoint error") }
 		if len(store.records)!=0{t.Fatalf("records committed: %#v",store.records)}
 	})}
 }
