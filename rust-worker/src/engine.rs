@@ -65,7 +65,7 @@ impl Serialize for EventEnvelope {
             id: &self.id,
             event_type: &self.event_type,
             workflow_id: &self.workflow_id,
-            occurred_at: self.occurred_at.clone(),
+            occurred_at: self.occurred_at,
             data: &self.data,
             headers: &self.headers,
             contract: &self.contract,
