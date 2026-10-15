@@ -421,7 +421,7 @@ mod tests {
     #[test]
     fn first_match_uses_descending_priority_with_deterministic_ties() {
         let revision = revision(
-            "tenant-a",
+            "__domain_configuration__",
             "first_match",
             vec![matching_rule("low", 1), matching_rule("high", 100)],
         );
@@ -431,9 +431,16 @@ mod tests {
     }
 
     #[test]
-    fn evaluation_rejects_cross_tenant_rule_revisions() {
+    fn global_rule_revision_can_process_events_from_different_tenants() {
+        let revision = revision("__domain_configuration__", "all_matches", vec![matching_rule("rule-1", 1)]);
+        assert!(evaluate(&revision, &event("tenant-a")).is_ok());
+        assert!(evaluate(&revision, &event("tenant-b")).is_ok());
+    }
+
+    #[test]
+    fn evaluation_rejects_non_global_configuration_scope() {
         let revision = revision("tenant-a", "all_matches", vec![matching_rule("rule-1", 1)]);
-        assert!(evaluate(&revision, &event("tenant-b")).is_err());
+        assert!(evaluate(&revision, &event("tenant-a")).is_err());
     }
     #[test]
     fn child_event_preserves_workflow_correlation_and_causation() {
