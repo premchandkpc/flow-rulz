@@ -209,3 +209,31 @@ func TestValidateAllowsUnlimitedNATSMaxDeliver(t *testing.T) {
 		t.Fatalf("Validate() error = %v, want unlimited NATS delivery limit to be accepted", err)
 	}
 }
+
+func TestValidateRequiresPairedServiceDeploymentIdentity(t *testing.T) {
+	tests := []struct {
+		name string
+		serviceID string
+		revision int64
+		wantError bool
+	}{
+		{name: "legacy mode", wantError: false},
+		{name: "service without revision", serviceID: "orders-worker", wantError: true},
+		{name: "revision without service", revision: 2, wantError: true},
+		{name: "pinned deployment", serviceID: "orders-worker", revision: 2, wantError: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForTest()
+			cfg.Worker.ServiceID = tt.serviceID
+			cfg.Worker.DeploymentRevision = tt.revision
+			err := cfg.Validate()
+			if tt.wantError && err == nil {
+				t.Fatal("Validate() error = nil, want deployment identity error")
+			}
+			if !tt.wantError && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+		})
+	}
+}
