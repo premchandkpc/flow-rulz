@@ -153,7 +153,7 @@ func (h *EventIngestionHandler) PublishEvent(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		event.Contract = &domain.ContractRef{Name: schema.Name, Version: schema.Version, SchemaHash: schema.SchemaHash}
-		event.MessageKind = request.MessageKind
+		event.MessageKind = request.metaString("message_kind")
 		if event.MessageKind == "" {
 			event.MessageKind = "event"
 		}
