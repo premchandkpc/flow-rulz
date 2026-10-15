@@ -13,7 +13,7 @@ BEGIN
         JOIN rule_revisions b
           ON a.rule_id = b.rule_id
          AND a.revision = b.revision
-         AND a.ctid < b.ctid
+         AND a.tenant_scope < b.tenant_scope
         WHERE a.content_hash IS DISTINCT FROM b.content_hash
            OR a.source IS DISTINCT FROM b.source
            OR a.compiled IS DISTINCT FROM b.compiled
@@ -35,6 +35,20 @@ BEGIN
     ) THEN
         RAISE EXCEPTION
             'Cannot globalize rulesets: a rule_set has different active revisions across configuration scopes';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM contract_bindings a
+        JOIN contract_bindings b
+          ON a.contract_name = b.contract_name
+         AND a.contract_version = b.contract_version
+         AND a.rule_set = b.rule_set
+         AND a.id < b.id
+        WHERE a.contract_hash IS DISTINCT FROM b.contract_hash
+    ) THEN
+        RAISE EXCEPTION
+            'Cannot globalize contract bindings: a contract version has different schema hashes across configuration scopes';
     END IF;
 
     IF EXISTS (
