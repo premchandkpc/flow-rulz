@@ -1,0 +1,79 @@
+{
+  "name": "ecommerce",
+  "services": [
+    {
+      "service_id": "order-processing",
+      "name": "order-processing",
+      "revision": 1,
+      "active": true,
+      "rulesets": [
+        {
+          "ruleset_id": "order.created",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "order.delivered",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "order.delivering",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "order.delivery_failed",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "order.payment_failed",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "order.payment_pending",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "order.payment_success",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "order.processed",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "order.processing",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "order.refund_initiated",
+          "revision": 1
+        }
+      ],
+      "worker_profile": {
+        "min_replicas": 1,
+        "max_replicas": 6,
+        "concurrency": 8
+      }
+    },
+    {
+      "service_id": "payment-risk",
+      "name": "payment-risk",
+      "revision": 1,
+      "active": true,
+      "rulesets": [
+        {
+          "ruleset_id": "payment.completed",
+          "revision": 1
+        },
+        {
+          "ruleset_id": "fraud.result",
+          "revision": 1
+        }
+      ],
+      "worker_profile": {
+        "min_replicas": 1,
+        "max_replicas": 4,
+        "concurrency": 4
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "banking",
+  "services": [
+    {
+      "service_id": "transaction-processing",
+      "name": "transaction-processing",
+      "revision": 1,
+      "active": true,
+      "rulesets": [
+        { "ruleset_id": "transaction.initiated", "revision": 2 },
+        { "ruleset_id": "transaction.authorized", "revision": 1 },
+        { "ruleset_id": "transaction.blocked", "revision": 1 }
+      ],
+      "worker_profile": { "min_replicas": 1, "max_replicas": 4, "concurrency": 8 }
+    },
+    {
+      "service_id": "risk-compliance",
+      "name": "risk-compliance",
+      "revision": 1,
+      "active": true,
+      "rulesets": [
+        { "ruleset_id": "compliance.result", "revision": 2 },
+        { "ruleset_id": "fraud.screening_result", "revision": 1 }
+      ],
+      "worker_profile": { "min_replicas": 1, "max_replicas": 2, "concurrency": 4 }
+    }
+  ]
+}

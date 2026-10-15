@@ -1,43 +1,62 @@
-#!/bin/bash
-# Deploy banking domain contracts and rules
+#!/usr/bin/env bash
+# Deploy banking contracts, immutable ruleset revisions, and Domain assignments.
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 API_URL="${FLOWRULZ_API:-http://localhost:8080}"
-TENANT_ID="${FLOWRULZ_TENANT:-development-tenant}"
-
-echo "Deploying banking example to $API_URL"
-
-# Generated code lives in ./builds/go (make generate-domain); deploy only registers contracts and rules.
-
-echo "Registering contracts..."
-for f in contracts/*.yaml; do
-  echo "  Registering $f"
-  curl --fail-with-body -sS -X POST "$API_URL/v1/contracts" \
-    -H "X-Tenant-ID: $TENANT_ID" -H "Content-Type: application/yaml" \
-    --data-binary @"$f" | jq .
-done
-
-echo "Deploying rules..."
-for f in rules/*.yaml; do
-  ruleSet=$(basename "$f" .yaml)
-  echo "  Deploying $ruleSet"
-  curl --fail-with-body -sS -X POST "$API_URL/v1/rules/$ruleSet/revisions" \
-    -H "X-Tenant-ID: $TENANT_ID" -H "Content-Type: application/yaml" \
-    --data-binary @"$f" | jq .
-done
-
-echo "Registering domain..."
-event_types=$(for f in contracts/*.yaml; do basename "$f" .yaml; done | jq -R . | jq -sc .)
-domain_id=$(curl -sS "$API_URL/v1/domains" -H "X-Tenant-ID: $TENANT_ID" | jq -r '.data.domains[] | select(.name=="banking") | .id')
-if [ -n "$domain_id" ]; then
-  curl --fail-with-body -sS -X PUT "$API_URL/v1/domains/$domain_id" -H "X-Tenant-ID: $TENANT_ID" -H "Content-Type: application/json" \
-    -d "{\"name\":\"banking\",\"event_types\":$event_types}" | jq -c .data.event_types
-else
-  curl --fail-with-body -sS -X POST "$API_URL/v1/domains" -H "X-Tenant-ID: $TENANT_ID" -H "Content-Type: application/json" \
-    -d "{\"name\":\"banking\",\"event_types\":$event_types}" | jq -c .data.event_types
+DOMAIN_FILE="$SCRIPT_DIR/domain.json"
+AUTH_ARGS=()
+if [[ -n "${FLOWRULZ_TRUSTED_PROXY_TOKEN:-}" ]]; then
+  AUTH_ARGS=(-H "X-Proxy-Auth: ${FLOWRULZ_TRUSTED_PROXY_TOKEN}")
 fi
 
-# Workflow definitions (workflows/*.yaml) are reference files: the tenant API does not expose workflow mutation.
+command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+test -f "$DOMAIN_FILE" || { echo "Missing Domain configuration: $DOMAIN_FILE" >&2; exit 1; }
 
-echo "Banking deployment complete!"
+echo "Deploying banking configuration to $API_URL"
+
+echo "Registering contracts..."
+for file in "$SCRIPT_DIR"/contracts/*.yaml; do
+  [[ -e "$file" ]] || continue
+  echo "  Registering $(basename "$file")"
+  curl --fail-with-body -sS -X POST "$API_URL/v1/contracts" \
+    "${AUTH_ARGS[@]}" \
+    -H "Content-Type: application/yaml" \
+    --data-binary @"$file" | jq .
+done
+
+echo "Publishing ruleset revisions..."
+for file in "$SCRIPT_DIR"/rules/*.yaml; do
+  [[ -e "$file" ]] || continue
+  rule_set="$(basename "$file" .yaml)"
+  echo "  Publishing $rule_set"
+  curl --fail-with-body -sS -X POST "$API_URL/v1/rules/$rule_set/revisions" \
+    "${AUTH_ARGS[@]}" \
+    -H "Content-Type: application/yaml" \
+    --data-binary @"$file" | jq .
+done
+
+domain_name="$(jq -r '.name' "$DOMAIN_FILE")"
+domain_id="$(
+  curl --fail-with-body -sS "$API_URL/v1/domains" "${AUTH_ARGS[@]}" |
+    jq -r --arg name "$domain_name" '[.data.domains[]? | select(.name == $name) | .id][0] // empty'
+)"
+
+echo "Applying Domain -> Services -> ruleset assignments..."
+if [[ -n "$domain_id" && "$domain_id" != "null" ]]; then
+  curl --fail-with-body -sS -X PUT "$API_URL/v1/domains/$domain_id" \
+    "${AUTH_ARGS[@]}" \
+    -H "Content-Type: application/json" \
+    --data-binary @"$DOMAIN_FILE" | jq .
+else
+  curl --fail-with-body -sS -X POST "$API_URL/v1/domains" \
+    "${AUTH_ARGS[@]}" \
+    -H "Content-Type: application/json" \
+    --data-binary @"$DOMAIN_FILE" | jq .
+fi
+
+echo "banking deployment configuration complete."

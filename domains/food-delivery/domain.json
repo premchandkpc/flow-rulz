@@ -1,0 +1,17 @@
+{
+  "name": "food-delivery",
+  "services": [
+    {
+      "service_id": "order-fulfillment",
+      "name": "order-fulfillment",
+      "revision": 1,
+      "active": true,
+      "rulesets": [
+        { "ruleset_id": "order.placed", "revision": 1 },
+        { "ruleset_id": "food.prepared", "revision": 1 },
+        { "ruleset_id": "delivered", "revision": 1 }
+      ],
+      "worker_profile": { "min_replicas": 1, "max_replicas": 4, "concurrency": 8 }
+    }
+  ]
+}
