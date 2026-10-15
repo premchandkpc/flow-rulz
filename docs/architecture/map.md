@@ -110,7 +110,7 @@ The event transaction contains fencing validation, inbox deduplication, ruleset 
 - N is EventEnvelope.VirtualShard(NUM_SHARDS).
 - EventEnvelope.Type carries business event type such as payment.requested; it is not part of the configured broker subject.
 - The effect router and scheduler must use the same base subject and shard count as the stream/consumer. A publish to a different topic does not reach consumers if it is outside the stream subject filter.
-- Generic emitted effects, commands, and tenant-service deliveries publish through NATS JetStream to `effects.<topic>`, `commands.<destination>.<name>`, and each service's unique `services.<tenant-hash>.<service-hash>` subject. Receivers deduplicate by the stable effect ID.
+- Generic emitted effects and commands publish through NATS JetStream to `effects.<topic>` and `commands.<destination>.<name>`. Explicit ruleset-declared `service_event` effects publish to the configured tenant-scoped `services.<tenant-hash>.<service-hash>` subject. Subscriber registrations do not currently create deliveries automatically. Receivers deduplicate by the stable effect ID.
 - Delivery is at-least-once. Receiver idempotency depends on durable consumer configuration and deduplication by stable effect ID; the overall system must not be described as exactly-once.
 
 ## Package and file responsibilities
