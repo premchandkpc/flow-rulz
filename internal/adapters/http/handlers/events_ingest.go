@@ -40,19 +40,24 @@ func (h *EventIngestionHandler) RegisterRoutes(mux *http.ServeMux) {
 }
 
 type eventIngestionRequest struct {
-	ID            string              `json:"id"`
-	Type          string              `json:"type"`
-	TenantID      string              `json:"tenant_id"`
-	PartitionKey  string              `json:"partition_key"`
-	WorkflowID    string              `json:"workflow_id,omitempty"`
-	OccurredAt    time.Time           `json:"occurred_at"`
-	Data          []byte              `json:"data"`
-	Headers       map[string]string   `json:"headers,omitempty"`
-	CorrelationID string              `json:"correlation_id,omitempty"`
-	CausationID   string              `json:"causation_id,omitempty"`
-	SchemaVersion string              `json:"schema_version,omitempty"`
-	Contract      *domain.ContractRef `json:"contract,omitempty"`
-	MessageKind   string              `json:"message_kind,omitempty"`
+	ID         string                     `json:"id"`
+	Type       string                     `json:"type"`
+	OccurredAt time.Time                  `json:"occurred_at"`
+	Data       json.RawMessage            `json:"data"`
+	Contract   *domain.ContractRef        `json:"contract,omitempty"`
+	Meta       map[string]json.RawMessage `json:"meta"`
+}
+
+func (r eventIngestionRequest) metaString(key string) string {
+	var value string
+	_ = json.Unmarshal(r.Meta[key], &value)
+	return value
+}
+
+func (r eventIngestionRequest) metaHeaders() map[string]string {
+	var headers map[string]string
+	_ = json.Unmarshal(r.Meta["headers"], &headers)
+	return headers
 }
 
 // PublishEvent handles POST /v1/events/{eventType} requests.
@@ -152,8 +157,17 @@ func validateEventIngestionRequest(
 		responses.WriteError(w, http.StatusUnauthorized, messageTenantRequired, responses.CodeTenantRequired)
 		return false
 	}
-	if request.TenantID != "" && request.TenantID != tenantID {
-		responses.WriteError(w, http.StatusForbidden, "tenant_id does not match request tenant", responses.CodeForbidden)
+	eventTenantID := request.metaString("tenant_id")
+	if eventTenantID == "" {
+		responses.WriteError(w, http.StatusBadRequest, "meta.tenant_id is required", responses.CodeValidationFailed)
+		return false
+	}
+	if request.metaString("partition_key") == "" {
+		responses.WriteError(w, http.StatusBadRequest, "meta.partition_key is required", responses.CodeValidationFailed)
+		return false
+	}
+	if eventTenantID != tenantID {
+		responses.WriteError(w, http.StatusForbidden, "meta.tenant_id does not match authenticated event scope", responses.CodeForbidden)
 		return false
 	}
 	if len(request.Data) == 0 || !json.Valid(request.Data) {
@@ -170,27 +184,31 @@ func buildEventEnvelope(
 ) *domain.EventEnvelope {
 	headers := buildEventHeaders(request)
 	return &domain.EventEnvelope{
-		ID: strings.TrimSpace(request.ID), Type: eventType, TenantID: tenantID,
-		PartitionKey: strings.TrimSpace(request.PartitionKey), WorkflowID: request.WorkflowID,
-		OccurredAt: request.OccurredAt, Data: json.RawMessage(request.Data), Headers: headers,
-		Contract: request.Contract, MessageKind: request.MessageKind, CorrelationID: request.CorrelationID, CausationID: request.CausationID,
+		ID: strings.TrimSpace(request.ID), Type: eventType,
+		TenantID: strings.TrimSpace(request.metaString("tenant_id")),
+		PartitionKey: strings.TrimSpace(request.metaString("partition_key")),
+		WorkflowID: request.metaString("workflow_id"),
+		OccurredAt: request.OccurredAt, Data: append(json.RawMessage(nil), request.Data...),
+		Headers: headers, Meta: cloneRawMetadata(request.Meta),
+		Contract: request.Contract, MessageKind: request.metaString("message_kind"),
+		CorrelationID: request.metaString("correlation_id"), CausationID: request.metaString("causation_id"),
 	}
 }
 
+func cloneRawMetadata(source map[string]json.RawMessage) map[string]json.RawMessage {
+	clone := make(map[string]json.RawMessage, len(source))
+	for key, value := range source { clone[key] = append(json.RawMessage(nil), value...) }
+	return clone
+}
+
 func buildEventHeaders(request eventIngestionRequest) map[string]string {
-	headers := make(map[string]string, len(request.Headers)+3)
-	for key, value := range request.Headers {
-		headers[key] = value
-	}
-	if request.CorrelationID != "" {
-		headers["Correlation-ID"] = request.CorrelationID
-	}
-	if request.CausationID != "" {
-		headers["Causation-ID"] = request.CausationID
-	}
-	if request.SchemaVersion != "" {
-		headers["Schema-Version"] = request.SchemaVersion
-	}
+	metaHeaders := request.metaHeaders()
+	headers := make(map[string]string, len(metaHeaders)+3)
+	for key, value := range metaHeaders { headers[key] = value }
+	if value := request.metaString("traceparent"); value != "" { headers["traceparent"] = value }
+	if value := request.metaString("correlation_id"); value != "" { headers["Correlation-ID"] = value }
+	if value := request.metaString("causation_id"); value != "" { headers["Causation-ID"] = value }
+	if value := request.metaString("schema_version"); value != "" { headers["Schema-Version"] = value }
 	return headers
 }
 
