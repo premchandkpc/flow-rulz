@@ -1,0 +1,16 @@
+{
+  "domain_id": "commerce",
+  "service_id": "order-worker",
+  "deployment_revision": 1,
+  "worker_profile": {
+    "min_replicas": 1,
+    "max_replicas": 4,
+    "concurrency": 8
+  },
+  "runtime": {
+    "transport": "nats-jetstream",
+    "state_store": "postgresql",
+    "nats_stream": "flowrulz",
+    "nats_consumer": "commerce-order-worker"
+  }
+}
