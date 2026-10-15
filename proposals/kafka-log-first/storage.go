@@ -37,6 +37,14 @@ type LogPosition struct {
 	Sequence  int64
 }
 
+// InputCheckpoint records the next input sequence to consume for a consumer group.
+// This is deliberately distinct from LogPosition, which identifies an existing entry.
+type InputCheckpoint struct {
+	Stream       string
+	Partition    string
+	NextSequence int64
+}
+
 // LogEntry couples a record with its durable position so callers can replay
 // without reconstructing offsets from record contents or list indexes.
 type LogEntry struct {
@@ -50,7 +58,7 @@ type LogEntry struct {
 // interface by silently weakening the semantics.
 type LogTransaction interface {
 	Append(context.Context, LogRecord) error
-	CommitInputPosition(context.Context, string, []LogPosition) error
+	CommitInputPosition(context.Context, string, []InputCheckpoint) error
 	Commit(context.Context) error
 	Abort(context.Context) error
 }
