@@ -16,21 +16,105 @@ type SystemClock struct{}
 // Now provides the now.
 func (SystemClock) Now() time.Time { return time.Now().UTC() }
 
-// EventEnvelope represents the event envelope.
+// EventEnvelope is the stable public event envelope. Runtime metadata is nested
+// under meta so producers can add metadata without changing the envelope schema.
+// TenantID, PartitionKey, and the typed metadata fields remain convenient internal
+// accessors; custom JSON methods always serialize them inside meta.
 type EventEnvelope struct {
-	ID            string            `json:"id"`
-	Type          string            `json:"type"`
-	TenantID      string            `json:"tenant_id"`
-	PartitionKey  string            `json:"partition_key"`
+	ID            string                     `json:"id"`
+	Type          string                     `json:"type"`
+	TenantID      string                     `json:"-"`
+	PartitionKey  string                     `json:"-"`
+	WorkflowID    string                     `json:"-"`
+	OccurredAt    time.Time                  `json:"occurred_at"`
+	Data          json.RawMessage            `json:"data"`
+	Contract      *ContractRef               `json:"contract,omitempty"`
+	MessageKind   string                     `json:"-"`
+	CorrelationID string                     `json:"-"`
+	CausationID   string                     `json:"-"`
+	Headers       map[string]string          `json:"-"`
+	Meta          map[string]json.RawMessage `json:"-"`
+}
+
+type eventEnvelopeWire struct {
+	ID            string                     `json:"id"`
+	Type          string                     `json:"type"`
+	OccurredAt    time.Time                  `json:"occurred_at"`
+	Data          json.RawMessage            `json:"data"`
+	Contract      *ContractRef               `json:"contract,omitempty"`
+	Meta          map[string]json.RawMessage `json:"meta"`
+	// Legacy top-level fields are read-only compatibility for events already in the stream.
+	TenantID      string            `json:"tenant_id,omitempty"`
+	PartitionKey  string            `json:"partition_key,omitempty"`
 	WorkflowID    string            `json:"workflow_id,omitempty"`
-	OccurredAt    time.Time         `json:"occurred_at"`
-	Data          json.RawMessage   `json:"data"`
-	Contract      *ContractRef      `json:"contract,omitempty"`
 	MessageKind   string            `json:"message_kind,omitempty"`
 	CorrelationID string            `json:"correlation_id,omitempty"`
 	CausationID   string            `json:"causation_id,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
-	Meta          map[string]any    `json:"meta,omitempty"`
+}
+
+// MarshalJSON writes every runtime metadata field into the extensible meta object.
+func (e EventEnvelope) MarshalJSON() ([]byte, error) {
+	meta := cloneEventMeta(e.Meta)
+	setMetaString(meta, "tenant_id", e.TenantID)
+	setMetaString(meta, "partition_key", e.PartitionKey)
+	setMetaString(meta, "workflow_id", e.WorkflowID)
+	setMetaString(meta, "message_kind", e.MessageKind)
+	setMetaString(meta, "correlation_id", e.CorrelationID)
+	setMetaString(meta, "causation_id", e.CausationID)
+	if len(e.Headers) > 0 {
+		value, err := json.Marshal(e.Headers)
+		if err != nil { return nil, err }
+		meta["headers"] = value
+	}
+	return json.Marshal(eventEnvelopeWire{
+		ID: e.ID, Type: e.Type, OccurredAt: e.OccurredAt, Data: e.Data,
+		Contract: e.Contract, Meta: meta,
+	})
+}
+
+// UnmarshalJSON reads the new meta object and accepts legacy top-level metadata
+// only for backward compatibility with messages already published before v1.
+func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
+	var wire eventEnvelopeWire
+	if err := json.Unmarshal(data, &wire); err != nil { return err }
+	e.ID, e.Type, e.OccurredAt, e.Data, e.Contract = wire.ID, wire.Type, wire.OccurredAt, wire.Data, wire.Contract
+	e.Meta = cloneEventMeta(wire.Meta)
+	e.TenantID = metaString(e.Meta, "tenant_id")
+	e.PartitionKey = metaString(e.Meta, "partition_key")
+	e.WorkflowID = metaString(e.Meta, "workflow_id")
+	e.MessageKind = metaString(e.Meta, "message_kind")
+	e.CorrelationID = metaString(e.Meta, "correlation_id")
+	e.CausationID = metaString(e.Meta, "causation_id")
+	if raw := e.Meta["headers"]; len(raw) > 0 {
+		if err := json.Unmarshal(raw, &e.Headers); err != nil { return fmt.Errorf("meta.headers: %w", err) }
+	}
+	if e.TenantID == "" { e.TenantID = wire.TenantID }
+	if e.PartitionKey == "" { e.PartitionKey = wire.PartitionKey }
+	if e.WorkflowID == "" { e.WorkflowID = wire.WorkflowID }
+	if e.MessageKind == "" { e.MessageKind = wire.MessageKind }
+	if e.CorrelationID == "" { e.CorrelationID = wire.CorrelationID }
+	if e.CausationID == "" { e.CausationID = wire.CausationID }
+	if e.Headers == nil { e.Headers = wire.Headers }
+	return nil
+}
+
+func cloneEventMeta(input map[string]json.RawMessage) map[string]json.RawMessage {
+	out := make(map[string]json.RawMessage, len(input)+8)
+	for key, value := range input { out[key] = append(json.RawMessage(nil), value...) }
+	return out
+}
+
+func setMetaString(meta map[string]json.RawMessage, key, value string) {
+	if value == "" { return }
+	encoded, _ := json.Marshal(value)
+	meta[key] = encoded
+}
+
+func metaString(meta map[string]json.RawMessage, key string) string {
+	var value string
+	_ = json.Unmarshal(meta[key], &value)
+	return value
 }
 
 // VirtualShard provides the virtual shard.
