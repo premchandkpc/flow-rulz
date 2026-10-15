@@ -170,10 +170,10 @@ func (e *EventEnvelope) Validate() error {
 	if e.Type == "" {
 		return ErrEventTypeRequired
 	}
-	if e.TenantID == "" {
+	if strings.TrimSpace(e.TenantID) == "" {
 		return ErrTenantIDRequired
 	}
-	if e.PartitionKey == "" {
+	if strings.TrimSpace(e.PartitionKey) == "" {
 		return ErrPartitionKeyRequired
 	}
 	if e.OccurredAt.IsZero() {
