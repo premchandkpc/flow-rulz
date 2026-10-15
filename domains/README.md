@@ -1,17 +1,22 @@
-# Domains
+# Domain configuration examples
 
-Each directory is one platform domain. Clients (tenants) subscribe to a domain; the example services under `examples/` consume it through FlowRulz.
+Each directory is an example Domain configuration package. A Domain contains execution Services, and each Service pins one or more immutable ruleset revisions. Runtime events provide their own `tenant_id` and `partition_key`; neither belongs in these configuration files.
 
-```
+```text
 domains/<domain>/
-├── contracts/   # event contracts (YAML) – source for code generation
-├── rules/       # rule sets (YAML)
-├── workflows/   # workflow definitions (reference only; the tenant API does not expose workflow mutation)
-├── deploy.sh    # registers contracts and rules with a running API
+├── domain.json # Domain -> Services -> pinned ruleset revisions
+├── contracts/  # versioned event contracts (YAML)
+├── rules/      # immutable ruleset source (YAML)
+├── workflows/  # reference definitions; not currently managed by the HTTP API
+├── deploy.sh   # registers contracts/rules and applies domain.json
 └── builds/
-    └── go/      # generated Go code (its own module, depends on sdk/go/flowrulz)
+    └── go/     # generated Go code, in its own module
 ```
 
-Generated output is organised per target language under `builds/<lang>`. Only `go` is written into the repository today (`make generate-domain DOMAIN=<domain>`, which reads the contracts stored in the database). Java, Protobuf and JSON Schema targets exist in `cmd/codegen` but this script does not write them here.
+Run a deploy script from any directory; it resolves files relative to its own location. Set `FLOWRULZ_API` to the API base URL. For production control-plane authentication, set `FLOWRULZ_TRUSTED_PROXY_TOKEN` to the value configured by the API and the script will send it as `X-Proxy-Auth`. Development/test mode can use the API's configured development authentication behavior.
 
-`sdk/` stays at the repository root: it is the domain-independent client runtime that every generated build imports.
+The deployment script publishes contracts and rulesets first, then creates or replaces the Domain using `domain.json`. The Domain payload contains only `name` and `services`; it does not contain event tenant identity, partition keys, or event-type lists.
+
+Generated output is organized under `builds/<lang>`. Only Go is currently checked in (`make generate-domain DOMAIN=<domain>`). Java, Protobuf, and JSON Schema targets exist in `cmd/codegen`, but this script does not write them here.
+
+The root `sdk/` directory contains the domain-independent client runtime used by generated builds.
