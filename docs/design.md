@@ -40,7 +40,7 @@ At-least-once broker delivery
 
 | Context | Aggregate | Key Invariant | State |
 |---------|-----------|---------------|-------|
-| Rule management | RuleRevision | One active revision per (tenant_scope, rule_set) | Immutable once saved |
+| Rule management | RuleRevision | One active revision per (internal configuration scope, rule_set) | Immutable once saved |
 | Event intake | InboxEntry | One execution per (tenant_id, event_id) | processing → committed |
 | Decisioning | Execution | Immutable decision hash, pinned revision | pending → completed/failed/quarantined |
 | Effect delivery | OutboxEffect | At-least-once with idempotent effect_id | pending → claimed → delivered/quarantined |
@@ -294,7 +294,7 @@ Effect IDs are deterministic and are sent as idempotency keys to destinations:
 effect_id = sha256(tenant_id + "|" + event_id + "|" + rule_set + "|" + revision + "|" + rule_id + "|" + action_index)
 ```
 
-This formula is intended to make effect IDs stable for the same tenant, event, rule revision, rule, and action position. The destination must persistently deduplicate the key for at least the supported retry/replay horizon. Execution IDs are derived from the tenant, event ID, rule set, and selected revision. This makes identity stable for the same event/revision tuple, but does not itself implement a replay API or define whether replay should use the original or a newer revision.
+This formula is intended to make effect IDs stable for the same event tenant, event, rule revision, rule, and action position. The destination must persistently deduplicate the key for at least the supported retry/replay horizon. Execution IDs are derived from the tenant, event ID, rule set, and selected revision. This makes identity stable for the same event/revision tuple, but does not itself implement a replay API or define whether replay should use the original or a newer revision.
 
 ### Decision Hash
 
@@ -420,3 +420,7 @@ Paths use dot notation starting with `$`:
 - No array indexing (`$.items[0]` not supported)
 - No recursive queries
 - Dots only (no bracket notation)
+
+## Global configuration scope
+
+The Domain API and ruleset management API do not accept tenant identity as configuration. They use the fixed internal scope `__domain_configuration__` for legacy persistence columns named `tenant_scope`. That column name is a storage compatibility detail, not a public API field. The event service reads `tenant_id` and `partition_key` from each runtime event and uses them for shard routing, inbox deduplication, execution identity, and tenant isolation. Never use event tenant identity as the namespace for global Domain or ruleset configuration.
