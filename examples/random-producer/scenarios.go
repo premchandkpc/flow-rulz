@@ -115,10 +115,10 @@ func newScenarioEvent(scenario Scenario, tenantID, clientID string, sequence int
 		return domain.EventEnvelope{}, fmt.Errorf("marshal %s payload: %w", scenario, err)
 	}
 	metaJSON, err := json.Marshal(map[string]any{
-		"tenant_id": tenantID,
+		"tenant_id":     tenantID,
 		"partition_key": partitionKey,
-		"client_id": clientID,
-		"scenario": string(scenario),
+		"client_id":     clientID,
+		"scenario":      string(scenario),
 	})
 	if err != nil {
 		return domain.EventEnvelope{}, fmt.Errorf("marshal event metadata: %w", err)
