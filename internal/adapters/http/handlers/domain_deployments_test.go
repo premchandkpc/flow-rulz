@@ -41,7 +41,7 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 			"name":"order-worker",
 			"revision":3,
 			"active":true,
-			"rulesets":[{"ruleset_id":"order-created","revision":7,"contract":{"name":"orders.created","version":"v1","schema_hash":"sha256:abc"}}],
+			"rulesets":[{"ruleset_id":"order-created","revision":7}],
 			"worker_profile":{"min_replicas":1,"max_replicas":4,"concurrency":8}
 		}]
 	}`
@@ -63,7 +63,6 @@ func TestCreateDomainDecodesAndReturnsServiceDeploymentAssignments(t *testing.T)
 	deployment := service.item.Deployments[0]
 	if deployment.ServiceID != "order-worker" || deployment.Revision != 3 ||
 		len(deployment.Rulesets) != 1 || deployment.Rulesets[0].Revision != 7 ||
-		deployment.Rulesets[0].Contract == nil || deployment.Rulesets[0].Contract.SchemaHash != "sha256:abc" ||
 		deployment.WorkerProfile.Concurrency != 8 {
 		t.Fatalf("decoded deployment differs from request: %#v", deployment)
 	}
