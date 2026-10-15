@@ -131,7 +131,7 @@ func TestTenantExtractorUsesJWTTenantWithoutProxyFallback(t *testing.T) {
 }
 
 func TestGlobalConfigurationRoutesDoNotRequireTenantIdentity(t *testing.T) {
-	t.Setenv("APP_ENV", "production")
+	t.Setenv("APP_ENV", "development")
 	t.Setenv(trustedProxyTokenEnv, "")
 	for _, path := range []string{
 		"/v1/domains",
@@ -152,5 +152,35 @@ func TestGlobalConfigurationRoutesDoNotRequireTenantIdentity(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
 			}
 		})
+	}
+}
+
+func TestGlobalConfigurationRoutesRequireTrustedAuthButNotTenantHeader(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv(trustedProxyTokenEnv, "proxy-secret")
+	req := httptest.NewRequest(http.MethodPost, "/v1/domains", nil)
+	req.Header.Set(trustedProxyTokenHeader, "proxy-secret")
+	rec := httptest.NewRecorder()
+	TenantExtractor(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := GetTenantID(r.Context()); got != "" {
+			t.Fatalf("global configuration unexpectedly received tenant %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestGlobalConfigurationRoutesFailClosedWithoutControlPlaneAuth(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
+	t.Setenv(trustedProxyTokenEnv, "")
+	req := httptest.NewRequest(http.MethodPost, "/v1/domains", nil)
+	rec := httptest.NewRecorder()
+	TenantExtractor(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("global configuration handler must not run without control-plane authentication")
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
