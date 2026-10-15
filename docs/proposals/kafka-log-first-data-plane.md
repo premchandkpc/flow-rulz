@@ -73,35 +73,39 @@ Do not claim that merely writing to two topics makes activation atomic.
 
 ## Versioned schemas
 
-Use a schema registry or a checked-in schema compatibility pipeline. Every envelope has `schema_version`; reject unsupported major versions to a quarantine/DLQ path. The examples below are normative field intent, not a complete JSON Schema document.
+Use a schema registry or a checked-in schema compatibility pipeline. Every envelope has `schema_version`; reject unsupported major versions to a quarantine/DLQ path. The examples below are normative field intent, not a complete JSON Schema document. Runtime event identity belongs under `meta`; configuration records contain no tenant identity.
 
-### EventEnvelope v1
+### EventEnvelope v2
 
 ```json
 {
-  "schema_version": 1,
   "id": "stable-producer-event-id",
-  "tenant_id": "tenant-123",
-  "event_type": "orders.created",
-  "partition_key": "order-42",
+  "type": "orders.created",
   "occurred_at": "2026-10-15T05:00:00Z",
-  "payload": {"order_id": "order-42"},
-  "metadata": {
+  "contract": {"name": "OrderCreated", "version": "v1", "schema_hash": "sha256:..."},
+  "data": {"order_id": "order-42"},
+  "meta": {
+    "tenant_id": "merchant-42",
+    "partition_key": "order-42",
     "correlation_id": "corr-1",
     "causation_id": "event-parent",
-    "batch_id": null,
+    "batch_id": "batch-7",
     "hop": 0,
-    "requested_ruleset_id": null
+    "producer": "checkout-api",
+    "traceparent": "00-...",
+    "custom_future_field": {"enabled": true}
   }
 }
 ```
 
 Requirements:
-- `id` is stable across producer retries. If the producer cannot provide a stable ID, the API must issue one before publishing and return it.
-- `tenant_id`, `event_type`, and `partition_key` are required and validated before enqueue.
-- `payload` is a JSON object validated against the contract selected for this event.
-- Increment `metadata.hop` on child events and quarantine at the configured maximum to prevent cycles.
-- Batch is a producer-side splitter that publishes independent envelopes with stable IDs and a shared `batch_id`; it is not an alternate in-worker execution path.
+- `id` is stable across producer retries. If the producer cannot provide a stable ID, the ingress layer must issue one before publishing and return it.
+- `id`, `type`, `occurred_at`, and `data` are stable top-level envelope fields. `contract` is an optional top-level immutable payload-contract reference.
+- `meta.tenant_id` and `meta.partition_key` are required runtime identity and ordering fields.
+- `meta` accepts unknown fields and must preserve them through decode/encode, replay, and child-event creation. Unknown top-level fields remain invalid.
+- `data` is a JSON object validated against the contract selected for this event.
+- Increment `meta.hop` on child events and quarantine at the configured maximum to prevent cycles.
+- Batch is a producer-side splitter that publishes independent envelopes with stable IDs and a shared `meta.batch_id`; it is not an alternate in-worker execution path.
 - Scheduled events use the same envelope shape and deterministic IDs derived from schedule ID plus scheduled occurrence.
 
 ### RulesetRevision v1
@@ -109,7 +113,6 @@ Requirements:
 ```json
 {
   "schema_version": 1,
-  "tenant_id": "tenant-123",
   "ruleset_id": "orders-risk",
   "revision": 7,
   "contract_id": "orders.created",
@@ -131,7 +134,6 @@ A domain service is the deployment target for a set of rulesets. The deployment 
 ```json
 {
   "schema_version": 1,
-  "tenant_id": "tenant-123",
   "domain_id": "orders",
   "service_id": "risk-engine",
   "deployment_revision": 4,
@@ -149,12 +151,14 @@ The deployment resolver validates that every referenced immutable ruleset revisi
 
 ### Routed event metadata
 
-The producer-facing event envelope does not choose an internal worker deployment. After validating the event, the router resolves the global Domain → Service deployment mapping and writes a routed copy to the target service work stream. Tenant identity and partition key are taken from the event envelope and are not part of Domain configuration. The routed copy adds trusted internal metadata:
+The producer-facing event envelope does not choose an internal worker deployment. After validating the event, the router resolves the global Domain → Service deployment mapping and writes a routed copy to the target service work stream. `meta.tenant_id` and `meta.partition_key` are taken from each event and are not part of Domain configuration. The routed copy adds trusted internal metadata:
 
 ```json
 {
-  "target_service_id": "risk-engine",
-  "deployment_revision": 4
+  "meta": {
+    "flow.service_id": "orders/risk-engine",
+    "flow.deployment_revision": 4
+  }
 }
 ```
 
@@ -165,7 +169,6 @@ Workers reject a routed record if these fields do not match the deployment ident
 ```json
 {
   "schema_version": 1,
-  "tenant_id": "tenant-123",
   "ruleset_id": "orders-risk",
   "active_revision": 7,
   "activation_id": "activation-uuid",
@@ -181,15 +184,17 @@ Workers reject a routed record if these fields do not match the deployment ident
   "schema_version": 1,
   "effect_id": "stable-hash-of-execution-and-effect-index",
   "idempotency_key": "stable-effect-id",
-  "tenant_id": "tenant-123",
   "execution_id": "execution-uuid",
   "effect_type": "emit_event",
   "destination": "flow.events",
   "name": "risk.review_requested",
-  "partition_key": "order-42",
-  "causation_id": "source-event-id",
-  "hop": 1,
-  "payload": {"order_id": "order-42"}
+  "payload": {"order_id": "order-42"},
+  "meta": {
+    "tenant_id": "merchant-42",
+    "partition_key": "order-42",
+    "causation_id": "source-event-id",
+    "hop": 1
+  }
 }
 ```
 
@@ -200,7 +205,6 @@ Effect IDs must be deterministic for the same input event, ruleset revision, and
 ```json
 {
   "schema_version": 1,
-  "tenant_id": "tenant-123",
   "schedule_id": "schedule-42",
   "revision": 3,
   "due_at": "2026-10-15T06:00:00Z",
@@ -213,7 +217,7 @@ A key's latest record represents its current schedule state; a tombstone removes
 
 ## Domain → Service → worker deployment routing
 
-1. A tenant owns a Domain; a Domain contains one or more Services.
+1. A Domain contains one or more Services; each Service owns only its explicit ruleset revision assignments. Runtime event metadata does not select the configuration namespace.
 2. Each Service declares the immutable ruleset revisions assigned to that worker deployment. Contract-to-ruleset bindings are independent records; the router intersects active contract bindings with the target deployment’s assignments. Never rely on a global "all active rules" list.
 3. A generic ingress router resolves the domain/service mapping and writes a routed copy to that service deployment's work stream. This router is an application module/role, not necessarily another microservice. If an event is explicitly bound to multiple services, it creates one deterministic routed copy per target service.
 4. Each worker process is configured for exactly one deployment identity and consumes only that deployment's work stream. It validates the target service/deployment ID and resolves rulesets only from that deployment's manifest.
