@@ -1,25 +1,39 @@
 # Events
 
-An event is a runtime fact, not configuration. It carries its own tenant identity and partition key.
+An event is a runtime fact, not configuration. The event envelope separates stable envelope fields from extensible runtime metadata.
 
-## Required envelope fields
+## Envelope fields
 
 - `id`: stable event ID used for deduplication.
 - `type`: event type, such as `orders.created`.
-- `tenant_id`: runtime identity supplied with the event. It is not a Domain or Service configuration field.
-- `partition_key`: business key used to preserve same-key processing order.
 - `occurred_at`: event occurrence timestamp.
 - `data`: payload validated against the declared contract when one is present.
+- `contract`: immutable contract name, version, and schema hash.
+- `headers`: transport/tracing headers such as `traceparent`.
+- `meta`: extensible runtime metadata. It must contain `tenant_id` and `partition_key`; additional metadata is allowed.
 
-Optional metadata includes `contract`, `workflow_id`, `message_kind`, `correlation_id`, `causation_id`, and `headers`.
+## Runtime metadata
+
+Example:
+
+```json
+{
+  "meta": {
+    "tenant_id": "merchant-42",
+    "partition_key": "order-1007",
+    "source_system": "checkout-api",
+    "region": "ap-south-1"
+  }
+}
+```
+
+`tenant_id` identifies the runtime tenant and `partition_key` is the business key used to preserve same-key processing order. Future runtime context belongs inside `meta`; the envelope schema intentionally permits additional keys there. Do not add those runtime fields to Domain, Service, ruleset, or contract configuration. Unknown top-level envelope fields remain invalid, so extensibility stays scoped to `meta` and the event payload `data`.
 
 ## Partitioning and ordering
 
-The current Go and Rust runtimes compute the virtual shard from `tenant_id + ":" + partition_key`. Therefore, events with the same pair are routed to the same virtual shard. Different tenants using the same business key remain isolated in the shard hash input.
+The current Go and Rust runtimes compute the virtual shard from `meta.tenant_id + ":" + meta.partition_key` on the wire. Internally, the Go and Rust execution models may expose these values as typed fields for efficient routing. Events with the same pair are routed to the same virtual shard; identical business keys from different tenants remain isolated.
 
-Keep `tenant_id` and `partition_key` on the event envelope. Do not configure either one on the Domain, Service, worker deployment, or ruleset. A worker's configured identity is the Domain/Service deployment identity and revision, not a tenant.
-
-## Example
+## Example and schema
 
 See [event.json](../data/examples/event.json) and [the event schema](../contracts/schemas/event-envelope.schema.json).
 
@@ -28,12 +42,12 @@ See [event.json](../data/examples/event.json) and [the event schema](../contract
 ```text
 Event
   -> validate envelope + contract
-  -> derive tenant/partition shard key
-  -> resolve applicable Service deployment and assigned rulesets
+  -> derive tenant/partition shard key from meta
+  -> resolve Domain/Service deployment and assigned rulesets
   -> deduplicate and evaluate rules
   -> persist execution, audit, and effects atomically
   -> acknowledge input after durable commit
-  -> deliver effects/receptor subscriptions separately
+  -> deliver effects/subscriber notifications separately
 ```
 
 The current runtime transport is NATS JetStream with PostgreSQL-backed transactional state. The Kafka/Redpanda log-first path remains a proposal until its adapters and integration tests are implemented.
