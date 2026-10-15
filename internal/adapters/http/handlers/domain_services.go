@@ -11,8 +11,6 @@ import (
 )
 
 // DomainServiceHandler exposes domain configuration. Services and rulesets are nested under each domain.
-const domainConfigurationScope = "__domain_configuration__"
-
 type DomainServiceHandler struct {
 	service ports.DomainServiceUseCase
 }
@@ -42,7 +40,7 @@ func (h *DomainServiceHandler) ListDomains(w http.ResponseWriter, r *http.Reques
 	if !h.ready(w, r) {
 		return
 	}
-	items, err := h.service.ListDomains(r.Context(), domainConfigurationScope)
+	items, err := h.service.ListDomains(r.Context(), domain.DomainConfigurationScope)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -59,7 +57,7 @@ func (h *DomainServiceHandler) CreateDomain(w http.ResponseWriter, r *http.Reque
 	if !h.ready(w, r) {
 		return
 	}
-	saved, err := h.service.SaveDomain(r.Context(), domainConfigurationScope, &item)
+	saved, err := h.service.SaveDomain(r.Context(), domain.DomainConfigurationScope, &item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -72,7 +70,7 @@ func (h *DomainServiceHandler) GetDomain(w http.ResponseWriter, r *http.Request)
 	if !h.ready(w, r) {
 		return
 	}
-	item, err := h.service.GetDomain(r.Context(), domainConfigurationScope, r.PathValue("domainID"))
+	item, err := h.service.GetDomain(r.Context(), domain.DomainConfigurationScope, r.PathValue("domainID"))
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -90,7 +88,7 @@ func (h *DomainServiceHandler) UpdateDomain(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	item.ID = r.PathValue("domainID")
-	saved, err := h.service.SaveDomain(r.Context(), domainConfigurationScope, &item)
+	saved, err := h.service.SaveDomain(r.Context(), domain.DomainConfigurationScope, &item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -103,7 +101,7 @@ func (h *DomainServiceHandler) DeleteDomain(w http.ResponseWriter, r *http.Reque
 	if !h.ready(w, r) {
 		return
 	}
-	if err := h.service.DeleteDomain(r.Context(), domainConfigurationScope, r.PathValue("domainID")); err != nil {
+	if err := h.service.DeleteDomain(r.Context(), domain.DomainConfigurationScope, r.PathValue("domainID")); err != nil {
 		writeDomainServiceError(w, err)
 		return
 	}
@@ -115,7 +113,7 @@ func (h *DomainServiceHandler) ListServices(w http.ResponseWriter, r *http.Reque
 	if !h.ready(w, r) {
 		return
 	}
-	items, err := h.service.ListServices(r.Context(), domainConfigurationScope)
+	items, err := h.service.ListServices(r.Context(), domain.DomainConfigurationScope)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -132,7 +130,7 @@ func (h *DomainServiceHandler) CreateService(w http.ResponseWriter, r *http.Requ
 	if !h.ready(w, r) {
 		return
 	}
-	saved, err := h.service.SaveService(r.Context(), domainConfigurationScope, &item)
+	saved, err := h.service.SaveService(r.Context(), domain.DomainConfigurationScope, &item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -145,7 +143,7 @@ func (h *DomainServiceHandler) GetService(w http.ResponseWriter, r *http.Request
 	if !h.ready(w, r) {
 		return
 	}
-	item, err := h.service.GetService(r.Context(), domainConfigurationScope, r.PathValue("serviceID"))
+	item, err := h.service.GetService(r.Context(), domain.DomainConfigurationScope, r.PathValue("serviceID"))
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -163,7 +161,7 @@ func (h *DomainServiceHandler) UpdateService(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	item.ID = r.PathValue("serviceID")
-	saved, err := h.service.SaveService(r.Context(), domainConfigurationScope, &item)
+	saved, err := h.service.SaveService(r.Context(), domain.DomainConfigurationScope, &item)
 	if err != nil {
 		writeDomainServiceError(w, err)
 		return
@@ -176,7 +174,7 @@ func (h *DomainServiceHandler) DeleteService(w http.ResponseWriter, r *http.Requ
 	if !h.ready(w, r) {
 		return
 	}
-	if err := h.service.DeleteService(r.Context(), domainConfigurationScope, r.PathValue("serviceID")); err != nil {
+	if err := h.service.DeleteService(r.Context(), domain.DomainConfigurationScope, r.PathValue("serviceID")); err != nil {
 		writeDomainServiceError(w, err)
 		return
 	}
@@ -188,7 +186,7 @@ func (h *DomainServiceHandler) ready(w http.ResponseWriter, r *http.Request) boo
 		responses.WriteError(w, http.StatusServiceUnavailable, "domain configuration is not configured", responses.CodeInternalError)
 		return false
 	}
-	if domainConfigurationScope == "" {
+	if domain.DomainConfigurationScope == "" {
 		responses.WriteError(w, http.StatusUnauthorized, "authenticated tenant identity is required", responses.CodeTenantRequired)
 		return false
 	}
