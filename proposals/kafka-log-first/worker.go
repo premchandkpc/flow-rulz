@@ -309,6 +309,9 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 		if err != nil {
 			return fmt.Errorf("decode %s[%d]@%d: %w", record.Topic, record.Partition, record.Offset, err)
 		}
+		if env.Metadata.TargetServiceID != w.DeploymentID || env.Metadata.DeploymentRevision != w.DeploymentRevision {
+			return fmt.Errorf("event %q target does not match worker deployment %q revision %d", env.ID, w.DeploymentID, w.DeploymentRevision)
+		}
 		effects, audits, err := w.Evaluator.Evaluate(ctx, w.DeploymentID, w.DeploymentRevision, env)
 		if err != nil {
 			// Production code must classify permanent errors into a DLQ transaction.
