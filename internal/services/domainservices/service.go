@@ -116,7 +116,9 @@ func (s *Service) validateDeploymentRevisionChanges(ctx context.Context, tenantI
 	for _, deployment := range existing.Deployments {
 		previous[deployment.ServiceID] = deployment
 	}
+	currentIDs := make(map[string]struct{}, len(item.Deployments))
 	for _, deployment := range item.Deployments {
+		currentIDs[deployment.ServiceID] = struct{}{}
 		old, found := previous[deployment.ServiceID]
 		if !found {
 			continue
@@ -129,6 +131,11 @@ func (s *Service) validateDeploymentRevisionChanges(ctx context.Context, tenantI
 		current.Revision = 0
 		if !reflect.DeepEqual(old, current) && deployment.Revision <= previous[deployment.ServiceID].Revision {
 			return fmt.Errorf("%w: changing deployment %q assignments or worker profile requires a higher revision", ErrInvalidInput, deployment.ServiceID)
+		}
+	}
+	for serviceID, old := range previous {
+		if _, present := currentIDs[serviceID]; !present && old.Active {
+			return fmt.Errorf("%w: active deployment %q must be deactivated with a higher revision before removal", ErrInvalidInput, serviceID)
 		}
 	}
 	return nil
