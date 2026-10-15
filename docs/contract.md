@@ -10,6 +10,7 @@ A **contract** defines the payload shape for a named message version. Its identi
 - An event declares the contract it conforms to.
 - Validate the event payload against the registered contract before rule evaluation.
 - Contract configuration is global configuration and does not contain `tenant_id` or `partition_key`.
+- Runtime events place tenant identity, partition keys, tracing, and other runtime context inside extensible `meta`; these fields are not part of the payload contract unless the business payload itself explicitly defines them.
 
 ## Contract document
 
