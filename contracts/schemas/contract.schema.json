@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flowrulz.dev/schemas/contract.schema.json",
+  "title": "FlowRulz Contract",
+  "description": "Versioned message payload contract. Runtime event identity is carried by the event envelope, not by contract configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "version", "fields"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "namespace": { "type": "string", "maxLength": 128 },
+    "description": { "type": "string", "maxLength": 2048 },
+    "kind": { "type": "string", "enum": ["envelope", "event", "command", "effect"], "default": "event" },
+    "parent": { "$ref": "#/$defs/contractRef" },
+    "allowed_children": { "type": "array", "items": { "$ref": "#/$defs/contractRef" } },
+    "fields": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/field" }
+    },
+    "compatibility": { "type": "string", "maxLength": 64 },
+    "owner": { "type": "string", "maxLength": 128 },
+    "deprecated": { "type": "boolean" }
+  },
+  "$defs": {
+    "contractRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "schema_hash": { "type": "string", "minLength": 1 }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["string", "number", "integer", "boolean", "object", "array", "null"] },
+        "description": { "type": "string" },
+        "required": { "type": "boolean" },
+        "default": {},
+        "enum": { "type": "array" },
+        "format": { "type": "string" },
+        "items": { "$ref": "#/$defs/field" },
+        "properties": { "type": "object", "additionalProperties": { "$ref": "#/$defs/field" } }
+      }
+    }
+  }
+}
