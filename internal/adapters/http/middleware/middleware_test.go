@@ -8,9 +8,9 @@ import (
 	"github.com/flowrulz/flow-rulz/internal/auth"
 )
 
-func TestTenantExtractorDevelopmentUsesTenantHeader(t *testing.T) {
+func TestTenantExtractorDevelopmentUsesEventTenantHeader(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
-	req := httptest.NewRequest(http.MethodGet, "/v1/rules/active", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
 	req.Header.Set("X-Tenant-ID", "tenant-a")
 	rec := httptest.NewRecorder()
 
@@ -26,10 +26,10 @@ func TestTenantExtractorDevelopmentUsesTenantHeader(t *testing.T) {
 	}
 }
 
-func TestTenantExtractorMissingAppEnvFailsClosed(t *testing.T) {
+func TestTenantExtractorMissingAppEnvFailsClosedForRuntimeRoute(t *testing.T) {
 	t.Setenv("APP_ENV", "")
 	t.Setenv(trustedProxyTokenEnv, "")
-	req := httptest.NewRequest(http.MethodGet, "/v1/rules/active", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
 	req.Header.Set("X-Tenant-ID", "attacker-selected-tenant")
 	rec := httptest.NewRecorder()
 
@@ -42,10 +42,10 @@ func TestTenantExtractorMissingAppEnvFailsClosed(t *testing.T) {
 	}
 }
 
-func TestTenantExtractorProductionRejectsCallerTenantHeader(t *testing.T) {
+func TestTenantExtractorProductionRejectsCallerTenantHeaderForRuntimeRoute(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv(trustedProxyTokenEnv, "proxy-secret")
-	req := httptest.NewRequest(http.MethodGet, "/v1/rules/active", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
 	req.Header.Set("X-Tenant-ID", "victim")
 	rec := httptest.NewRecorder()
 
@@ -58,10 +58,10 @@ func TestTenantExtractorProductionRejectsCallerTenantHeader(t *testing.T) {
 	}
 }
 
-func TestTenantExtractorProductionUsesTrustedTenantHeader(t *testing.T) {
+func TestTenantExtractorProductionUsesTrustedTenantHeaderForRuntimeRoute(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv(trustedProxyTokenEnv, "proxy-secret")
-	req := httptest.NewRequest(http.MethodGet, "/v1/rules/active", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
 	req.Header.Set(trustedProxyTokenHeader, "proxy-secret")
 	req.Header.Set(trustedTenantHeader, "tenant-a")
 	req.Header.Set("X-Tenant-ID", "attacker-selected-tenant")
@@ -79,10 +79,10 @@ func TestTenantExtractorProductionUsesTrustedTenantHeader(t *testing.T) {
 	}
 }
 
-func TestTenantExtractorProductionFailsClosedWhenProxyNotConfigured(t *testing.T) {
+func TestTenantExtractorProductionFailsClosedWhenRuntimeTenantAuthNotConfigured(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv(trustedProxyTokenEnv, "")
-	req := httptest.NewRequest(http.MethodGet, "/v1/rules/active", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
 	rec := httptest.NewRecorder()
 
 	TenantExtractor(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -94,10 +94,10 @@ func TestTenantExtractorProductionFailsClosedWhenProxyNotConfigured(t *testing.T
 	}
 }
 
-func TestTenantExtractorJWTClaimOverridesCallerTenant(t *testing.T) {
+func TestTenantExtractorJWTClaimOverridesCallerTenantForRuntimeRoute(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv(trustedProxyTokenEnv, "")
-	req := httptest.NewRequest(http.MethodGet, "/v1/rules/active", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
 	req = req.WithContext(auth.ContextWithTenant(req.Context(), "tenant-authenticated"))
 	req.Header.Set("X-Tenant-ID", "tenant-attacker")
 	rec := httptest.NewRecorder()
@@ -111,10 +111,10 @@ func TestTenantExtractorJWTClaimOverridesCallerTenant(t *testing.T) {
 	}
 }
 
-func TestTenantExtractorUsesJWTTenantWithoutProxyFallback(t *testing.T) {
+func TestTenantExtractorUsesJWTTenantWithoutProxyFallbackForRuntimeRoute(t *testing.T) {
 	t.Setenv("APP_ENV", "production")
 	t.Setenv(trustedProxyTokenEnv, "")
-	req := httptest.NewRequest(http.MethodGet, "/v1/rules/active", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
 	req = req.WithContext(auth.ContextWithTenant(req.Context(), "tenant-authenticated"))
 	rec := httptest.NewRecorder()
 
@@ -138,6 +138,10 @@ func TestGlobalConfigurationRoutesDoNotRequireTenantIdentity(t *testing.T) {
 		"/v1/domains/domain-orders",
 		"/v1/subscriptions",
 		"/v1/subscriptions/audit-consumer",
+		"/v1/rules",
+		"/v1/rules/order.created/revisions",
+		"/v1/contracts",
+		"/v1/contracts/OrderCreated/v1",
 	} {
 		t.Run(path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
