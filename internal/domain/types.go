@@ -119,13 +119,13 @@ type ContractSchema struct {
 
 // TenantDomain groups event types that tenant services can subscribe to.
 type TenantDomain struct {
-	ID          string                    `json:"id"`
-	TenantID    string                    `json:"tenant_id"`
-	Name        string                    `json:"name"`
-	EventTypes  []string                  `json:"event_types"`
+	ID          string              `json:"id"`
+	TenantID    string              `json:"tenant_id"`
+	Name        string              `json:"name"`
+	EventTypes  []string            `json:"event_types"`
 	Deployments []ServiceDeployment `json:"deployments,omitempty"`
-	CreatedAt   time.Time                 `json:"created_at"`
-	UpdatedAt   time.Time                 `json:"updated_at"`
+	CreatedAt   time.Time           `json:"created_at"`
+	UpdatedAt   time.Time           `json:"updated_at"`
 }
 
 // ServiceDeployment declares the immutable ruleset revisions assigned to one
