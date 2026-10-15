@@ -6,7 +6,7 @@ A contract is identified by `(name, version)`; its canonical `schema_hash` ident
 
 ## Message envelope and child contracts
 
-The common envelope carries `message_id`, `tenant_id`, `message_kind`, `contract.name`, `contract.version`, `contract.schema_hash`, `correlation_id`, `causation_id`, `partition_key`, and `payload`. Event, command, and effect payloads are independently versioned child contracts. The parent envelope explicitly lists allowed child contract identities. A receiver declares accepted contract identities and versions; matching a subject alone is not authorization or schema acceptance.
+The event envelope carries `id`, `type`, runtime `tenant_id`, `partition_key`, `occurred_at`, `data`, and optional `contract`, `message_kind`, `correlation_id`, and `causation_id`. Tenant identity and partition key belong to each event, never to Domain/Service/ruleset configuration. Event, command, and effect payloads are independently versioned child contracts. The parent envelope explicitly lists allowed child contract identities. A receiver declares accepted contract identities and versions; matching a subject alone is not authorization or schema acceptance.
 
 ## Routing
 
@@ -18,11 +18,11 @@ The common envelope carries `message_id`, `tenant_id`, `message_kind`, `contract
 
 ## Request/response
 
-A request has a stable message ID and correlation ID, and declares the expected response contract. Correlation state is durable and tenant-scoped. Its state machine is `PENDING -> DISPATCHED -> WAITING_FOR_RESPONSE -> COMPLETED | FAILED | TIMED_OUT | CANCELLED | QUARANTINED`. Responses must match tenant, correlation ID, and expected contract identity/hash. A timeout is durable and idempotent. A synchronous wait is only a bounded convenience over the durable asynchronous workflow.
+A request has a stable message ID and correlation ID, and declares the expected response contract. Correlation state is durable and scoped by runtime event identity. Its state machine is `PENDING -> DISPATCHED -> WAITING_FOR_RESPONSE -> COMPLETED | FAILED | TIMED_OUT | CANCELLED | QUARANTINED`. Responses must match the originating event identity, correlation ID, and expected contract identity/hash. A timeout is durable and idempotent. A synchronous wait is only a bounded convenience over the durable asynchronous workflow.
 
 ## Delivery guarantees
 
-NATS JetStream is the single application-message transport. PostgreSQL remains the persistence protocol; the HTTP API is control-plane management only. Broker delivery is at-least-once. Consumers deduplicate on stable message/effect IDs. Contract validation must occur before ACK-worthy durable execution, and schema hashes are not substitutes for tenant authorization.
+NATS JetStream is the single application-message transport. PostgreSQL remains the persistence protocol; the HTTP API is control-plane management only. Broker delivery is at-least-once. Consumers deduplicate on stable message/effect IDs. Contract validation must occur before ACK-worthy durable execution, and schema hashes are not substitutes for producer authorization.
 
 ## Current implementation boundary
 
