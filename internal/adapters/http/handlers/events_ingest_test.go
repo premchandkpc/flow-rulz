@@ -116,3 +116,43 @@ func TestEventIngestionRejectsTenantMismatch(t *testing.T) {
 		t.Fatalf("publish calls = %d, want 0", publisher.calls)
 	}
 }
+
+func TestEventIngestionRejectsMissingOrInvalidMetaIdentity(t *testing.T) {
+	t.Setenv("APP_ENV", "development")
+	tests := []struct {
+		name string
+		meta map[string]any
+	}{
+		{name: "missing tenant", meta: map[string]any{"partition_key": "order-1"}},
+		{name: "missing partition", meta: map[string]any{"tenant_id": "tenant-a"}},
+		{name: "tenant has wrong type", meta: map[string]any{"tenant_id": 42, "partition_key": "order-1"}},
+		{name: "partition has wrong type", meta: map[string]any{"tenant_id": "tenant-a", "partition_key": false}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			publisher := &capturePublisher{}
+			handler := NewEventIngestionHandler(publisher, 32)
+			mux := http.NewServeMux()
+			handler.RegisterRoutes(mux)
+			server := middleware.TenantExtractor(mux)
+			body, err := json.Marshal(map[string]any{
+				"id": "evt-1", "type": "order.created", "occurred_at": time.Now().UTC(),
+				"data": map[string]any{"order_id": "order-1"}, "meta": tt.meta,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/v1/events/order.created", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Tenant-ID", "tenant-a")
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+			}
+			if publisher.calls != 0 {
+				t.Fatalf("publish calls = %d, want 0", publisher.calls)
+			}
+		})
+	}
+}
