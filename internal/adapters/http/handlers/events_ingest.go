@@ -225,15 +225,18 @@ func buildEventEnvelope(
 		PartitionKey: strings.TrimSpace(request.metaString("partition_key")),
 		WorkflowID: request.metaString("workflow_id"),
 		OccurredAt: request.OccurredAt, Data: append(json.RawMessage(nil), request.Data...),
-		Headers: headers, Meta: cloneRawMetadata(request.Meta),
+		Headers: headers, Meta: unknownEventMetadata(request.Meta),
 		Contract: request.Contract, MessageKind: request.metaString("message_kind"),
 		CorrelationID: request.metaString("correlation_id"), CausationID: request.metaString("causation_id"),
 	}
 }
 
-func cloneRawMetadata(source map[string]json.RawMessage) map[string]json.RawMessage {
+func unknownEventMetadata(source map[string]json.RawMessage) map[string]json.RawMessage {
 	clone := make(map[string]json.RawMessage, len(source))
 	for key, value := range source { clone[key] = append(json.RawMessage(nil), value...) }
+	for _, key := range []string{"tenant_id", "partition_key", "workflow_id", "message_kind", "correlation_id", "causation_id", "headers"} {
+		delete(clone, key)
+	}
 	return clone
 }
 
