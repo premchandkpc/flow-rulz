@@ -108,7 +108,7 @@ func validateDeployments(deployments []domain.ServiceDeployment) error {
 		}
 		seenRulesets := make(map[string]struct{}, len(deployment.Rulesets))
 		for _, assignment := range deployment.Rulesets {
-			if !namePattern.MatchString(assignment.RulesetID) || assignment.Revision <= 0 {
+			if strings.TrimSpace(assignment.RulesetID) == "" || len(assignment.RulesetID) > 128 || !validTenantID(assignment.RulesetID) || assignment.Revision <= 0 {
 				return fmt.Errorf("%w: deployment %q contains an invalid ruleset assignment", ErrInvalidInput, deployment.ServiceID)
 			}
 			if _, exists := seenRulesets[assignment.RulesetID]; exists {
