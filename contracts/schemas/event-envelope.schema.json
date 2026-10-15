@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://flow-rulz.dev/schemas/event-envelope.schema.json",
-  "title": "FlowRulz Event Envelope",
+  "$id": "https://flow-rulz.dev/schemas/event-envelope-v2.schema.json",
+  "title": "FlowRulz Event Envelope v2",
   "description": "Stable event identity and payload live at the top level. Runtime identity and extensible routing/tracing metadata live in meta.",
   "type": "object",
   "additionalProperties": false,
@@ -9,7 +9,6 @@
     "id",
     "type",
     "occurred_at",
-    "contract",
     "data",
     "meta"
   ],
