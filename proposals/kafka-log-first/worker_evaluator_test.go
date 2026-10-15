@@ -2,8 +2,8 @@ package logfirst
 
 import (
 	"context"
-	"strconv"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 )
