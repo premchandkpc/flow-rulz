@@ -69,7 +69,7 @@ struct EventEnvelopeWireOut<'a> {
     occurred_at: DateTime<Utc>,
     data: &'a Value,
     #[serde(skip_serializing_if = "Option::is_none")]
-    contract: &'a Option<ContractRef>,
+    contract: Option<&'a ContractRef>,
     meta: std::collections::HashMap<String, Value>,
 }
 
@@ -107,7 +107,7 @@ impl Serialize for EventEnvelope {
         insert_optional_meta(&mut meta, "causation_id", self.causation_id.as_deref());
         if !self.headers.is_empty() { meta.insert("headers".into(), serde_json::to_value(&self.headers).map_err(serde::ser::Error::custom)?); }
         EventEnvelopeWireOut { id: &self.id, event_type: &self.event_type, occurred_at: self.occurred_at,
-            data: &self.data, contract: &self.contract, meta }.serialize(serializer)
+            data: &self.data, contract: self.contract.as_ref(), meta }.serialize(serializer)
     }
 }
 
