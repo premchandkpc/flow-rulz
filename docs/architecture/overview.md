@@ -18,16 +18,16 @@ The detailed current-state topology and file map live in [map.md](map.md). This 
 
 1. Producers publish an EventEnvelope to the configured NATS subject family, currently events.shard.N.
 2. The worker obtains shard leases and uses the bounded key queue to serialize events per partition key.
-3. The event service validates the fencing token, deduplicates in the inbox, resolves applicable active rulesets (including contract bindings), evaluates them, and commits execution plus only ruleset-declared outbox effects inside a storage transaction.
+3. The event service validates the fencing token, deduplicates in the inbox, resolves applicable active rulesets (including contract bindings), and evaluates them. A separate generic subscriber router resolves matching tenant subscriptions and creates stable delivery intents; executions, ruleset effects, subscriber deliveries, and inbox state commit atomically.
 4. The worker ACKs only after durable commit.
-5. The effects service claims outbox entries. The effect router sends child-event effects back to `events.shard.N` using the consumer's shard count, command effects to typed command subjects, generic effects to `effects.<topic>`, and explicit `service_event` effects to a tenant-scoped NATS subject.
+5. The effects service claims outbox entries. The effect router sends child-event effects back to `events.shard.N` using the consumer's shard count, command effects to typed command subjects, generic effects to `effects.<topic>`, and both explicit `service_event` effects and subscriber deliveries to tenant-scoped NATS subjects.
 6. The scheduler claims due scheduled events and publishes them to the same stream subject family.
 
 Delivery is at-least-once. Inbox/outbox patterns improve recovery and handoff correctness but do not prove exactly-once external delivery. The external destination must honor the supplied idempotency key.
 
 ## Subscriber routing boundary
 
-Tenant domain and service/subscriber registrations are control-plane configuration. The event-processing transaction must not query the subscriber registry or silently add delivery effects to a ruleset decision. In this branch, automatic subscription-based fan-out is not implemented; registering a subscriber alone does not cause event delivery. A separate generic subscription router is the intended component for matching eligible events to authorized subscriptions and recording durable delivery intents. Until that component exists and is tested, only effects explicitly emitted by a ruleset are persisted and dispatched.
+Tenant domains and service/subscriber registrations are control-plane configuration. Rule evaluation never queries subscribers or implements subscriber-specific behavior. A separate generic subscription router matches event types against active, tenant-scoped subscriptions and creates one stable delivery intent per matching subscriber. Those intents are inserted into the same transaction's outbox as rule effects, after a successful active-ruleset execution; events with no active ruleset are not fanned out. The dispatcher publishes committed intents through NATS JetStream. Go and Rust must preserve matching, tenant isolation, effect identity, fan-out limits, and commit/ACK semantics.
 
 ## Control plane / data plane boundary
 
