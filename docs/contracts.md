@@ -6,7 +6,7 @@ A contract is identified by `(name, version)`; its canonical `schema_hash` ident
 
 ## Message envelope and child contracts
 
-The event envelope carries `id`, `type`, runtime `tenant_id`, `partition_key`, `occurred_at`, `data`, and optional `contract`, `message_kind`, `correlation_id`, and `causation_id`. Tenant identity and partition key belong to each event, never to Domain/Service/ruleset configuration. Event, command, and effect payloads are independently versioned child contracts. The parent envelope explicitly lists allowed child contract identities. A receiver declares accepted contract identities and versions; matching a subject alone is not authorization or schema acceptance.
+The event envelope carries `id`, `type`, `occurred_at`, `data`, optional `contract`, and an extensible `meta` object. Put `tenant_id`, `partition_key`, `workflow_id`, `message_kind`, `correlation_id`, `causation_id`, `headers`, trace context, and producer-specific metadata inside `meta`. The schema requires `meta.tenant_id` and `meta.partition_key` but allows unknown metadata keys, which Go and Rust preserve when forwarding. These are runtime event values, never Domain/Service/ruleset configuration. Event, command, and effect payloads are independently versioned child contracts. The parent envelope explicitly lists allowed child contract identities. A receiver declares accepted contract identities and versions; matching a subject alone is not authorization or schema acceptance.
 
 ## Routing
 
