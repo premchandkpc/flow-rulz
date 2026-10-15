@@ -30,7 +30,7 @@ func workerTestBatch(t *testing.T) Batch {
 	input, err := json.Marshal(EventEnvelope{
 		SchemaVersion: 1, ID: "event-1", TenantID: "tenant-a",
 		EventType: "orders.created", PartitionKey: "order-1",
-		Metadata: EventMetadata{TargetServiceID: "domain/orders", DeploymentRevision: 2},
+		Metadata: EventMetadata{TargetServiceID: "tenant-a/domain/orders", DeploymentRevision: 2},
 	})
 	if err != nil { t.Fatal(err) }
 	return Batch{
@@ -42,7 +42,7 @@ func workerTestBatch(t *testing.T) Batch {
 func workerTest(t *testing.T, store *memoryLogStore, evaluator Evaluator, codec Codec) Worker {
 	t.Helper()
 	return Worker{
-		DeploymentID: "domain/orders", DeploymentRevision: 2, GroupID: "orders-workers",
+		DeploymentID: "tenant-a/domain/orders", DeploymentRevision: 2, GroupID: "orders-workers",
 		AuditTopic: "flow.audit", Store: store, Evaluator: evaluator, Codec: codec,
 	}
 }
@@ -152,7 +152,7 @@ func TestWorkerRejectsMisroutedEventBeforeEvaluation(t *testing.T) {
 	batch := workerTestBatch(t)
 	var event EventEnvelope
 	if err := json.Unmarshal(batch.Records[0].Value, &event); err != nil { t.Fatal(err) }
-	event.Metadata.TargetServiceID = "domain/billing"
+	event.Metadata.TargetServiceID = "tenant-a/domain/billing"
 	batch.Records[0].Value, _ = json.Marshal(event)
 	store := newMemoryLogStore()
 	worker := workerTest(t, store, fixedEvaluator{effects: []Effect{validWorkerEffect()}}, jsonCodec{})
