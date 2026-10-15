@@ -34,9 +34,9 @@ func (r *DomainServiceRepository) SaveDomain(ctx context.Context, item *domain.T
 		bson.M{"$set": doc}, options.Update().SetUpsert(true))
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return fmt.Errorf("%w: tenant domain name already exists", domain.ErrDomainServiceConflict)
+			return fmt.Errorf("%w: domain name already exists", domain.ErrDomainServiceConflict)
 		}
-		return fmt.Errorf("save tenant domain: %w", err)
+		return fmt.Errorf("save domain: %w", err)
 	}
 	return nil
 }
@@ -49,7 +49,7 @@ func (r *DomainServiceRepository) GetDomain(ctx context.Context, tenantID, domai
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get tenant domain: %w", err)
+		return nil, fmt.Errorf("get domain: %w", err)
 	}
 	return doc.toDomain(), nil
 }
@@ -59,19 +59,19 @@ func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID stri
 	cursor, err := r.querier.Collection(collectionTenantDomains).Find(ctx,
 		bson.M{"tenant_id": tenantID}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 	if err != nil {
-		return nil, fmt.Errorf("list tenant domains: %w", err)
+		return nil, fmt.Errorf("list domains: %w", err)
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 	items := make([]*domain.TenantDomain, 0)
 	for cursor.Next(ctx) {
 		var doc tenantDomainDoc
 		if err := cursor.Decode(&doc); err != nil {
-			return nil, fmt.Errorf("decode tenant domain: %w", err)
+			return nil, fmt.Errorf("decode domain: %w", err)
 		}
 		items = append(items, doc.toDomain())
 	}
 	if err := cursor.Err(); err != nil {
-		return nil, fmt.Errorf("iterate tenant domains: %w", err)
+		return nil, fmt.Errorf("iterate domains: %w", err)
 	}
 	return items, nil
 }
@@ -80,7 +80,7 @@ func (r *DomainServiceRepository) ListDomains(ctx context.Context, tenantID stri
 func (r *DomainServiceRepository) DeleteDomain(ctx context.Context, tenantID, domainID string) error {
 	_, err := r.querier.Collection(collectionTenantDomains).DeleteOne(ctx, bson.M{"tenant_id": tenantID, "domain_id": domainID})
 	if err != nil {
-		return fmt.Errorf("delete tenant domain: %w", err)
+		return fmt.Errorf("delete domain: %w", err)
 	}
 	_, err = r.querier.Collection(collectionDomainServices).UpdateMany(ctx,
 		bson.M{"tenant_id": tenantID, "domain_ids": domainID},
@@ -102,9 +102,9 @@ func (r *DomainServiceRepository) SaveService(ctx context.Context, item *domain.
 		bson.M{"$set": doc}, options.Update().SetUpsert(true))
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return fmt.Errorf("%w: tenant service name already exists", domain.ErrDomainServiceConflict)
+			return fmt.Errorf("%w: subscription name already exists", domain.ErrDomainServiceConflict)
 		}
-		return fmt.Errorf("save tenant service: %w", err)
+		return fmt.Errorf("save subscription: %w", err)
 	}
 	return nil
 }
@@ -118,7 +118,7 @@ func (r *DomainServiceRepository) GetService(ctx context.Context, tenantID, serv
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get tenant service: %w", err)
+		return nil, fmt.Errorf("get subscription: %w", err)
 	}
 	return doc.toDomain(), nil
 }
@@ -128,19 +128,19 @@ func (r *DomainServiceRepository) ListServices(ctx context.Context, tenantID str
 	cursor, err := r.querier.Collection(collectionDomainServices).Find(ctx,
 		bson.M{"tenant_id": tenantID}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 	if err != nil {
-		return nil, fmt.Errorf("list tenant services: %w", err)
+		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
 	defer func() { _ = cursor.Close(ctx) }()
 	items := make([]*domain.DomainService, 0)
 	for cursor.Next(ctx) {
 		var doc domainServiceDoc
 		if err := cursor.Decode(&doc); err != nil {
-			return nil, fmt.Errorf("decode tenant service: %w", err)
+			return nil, fmt.Errorf("decode subscription: %w", err)
 		}
 		items = append(items, doc.toDomain())
 	}
 	if err := cursor.Err(); err != nil {
-		return nil, fmt.Errorf("iterate tenant services: %w", err)
+		return nil, fmt.Errorf("iterate subscriptions: %w", err)
 	}
 	return items, nil
 }
@@ -151,7 +151,7 @@ func (r *DomainServiceRepository) DeleteService(ctx context.Context, tenantID, s
 		bson.M{"tenant_id": tenantID, "service_id": serviceID},
 		bson.M{"$set": bson.M{"active": false}, "$currentDate": bson.M{"updated_at": true}})
 	if err != nil {
-		return fmt.Errorf("deactivate tenant service: %w", err)
+		return fmt.Errorf("deactivate subscription: %w", err)
 	}
 	return nil
 }
