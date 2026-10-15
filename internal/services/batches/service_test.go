@@ -243,6 +243,9 @@ func TestBatchService_Accumulate(t *testing.T) {
 	if len(payload.Events) != 3 {
 		t.Errorf("expected 3 batch events, got %d", len(payload.Events))
 	}
+	if env.TenantID != "tenant-1" || env.PartitionKey != "pk-1" {
+		t.Errorf("batch event identity = %q/%q, want tenant-1/pk-1", env.TenantID, env.PartitionKey)
+	}
 
 	expectedBatchID := domain.ComputeBatchID("tenant-1", "pk-1", "order.created", []string{"evt-1", "evt-2", "evt-3"})
 	if env.ID != expectedBatchID {
