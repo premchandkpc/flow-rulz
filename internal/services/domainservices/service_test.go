@@ -162,3 +162,35 @@ func TestSaveServiceAssignsStableNATSSubjectAndRejectsDuplicateName(t *testing.T
 		t.Fatalf("duplicate service name error = %v, want ErrConflict", err)
 	}
 }
+
+func TestSaveSubscriptionUsesEventTypeFiltersWithoutTenantConfig(t *testing.T) {
+	repo := newRepositoryStub()
+	service := NewService(repo, fixedClock{now: time.Unix(80, 0).UTC()})
+	item, err := service.SaveService(context.Background(), domain.DomainConfigurationScope, &domain.DomainService{
+		Name: "audit-consumer",
+		EventTypes: []string{" orders.created ", "orders.created", "payments.completed"},
+	})
+	if err != nil {
+		t.Fatalf("SaveService() error = %v", err)
+	}
+	if item.TenantID != domain.DomainConfigurationScope {
+		t.Fatalf("internal scope = %q, want shared config scope", item.TenantID)
+	}
+	if len(item.EventTypes) != 2 || item.EventTypes[0] != "orders.created" || item.EventTypes[1] != "payments.completed" {
+		t.Fatalf("normalized event filters = %#v", item.EventTypes)
+	}
+	if item.NATSSubject == "" {
+		t.Fatal("subscription must receive a stable NATS subject")
+	}
+}
+
+func TestSaveSubscriptionRejectsInvalidEventType(t *testing.T) {
+	service := NewService(newRepositoryStub(), fixedClock{now: time.Unix(81, 0).UTC()})
+	_, err := service.SaveService(context.Background(), domain.DomainConfigurationScope, &domain.DomainService{
+		Name: "audit-consumer",
+		EventTypes: []string{"Invalid Event Type"},
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("SaveService() error = %v, want ErrInvalidInput", err)
+	}
+}
