@@ -40,12 +40,12 @@ func TestEventIngestionPublishesValidatedEnvelopeToShard(t *testing.T) {
 	server := middleware.TenantExtractor(mux)
 
 	body, err := json.Marshal(struct {
-		ID           string            `json:"id"`
-		Type         string            `json:"type"`
-		Meta         map[string]any     `json:"meta"`
-		OccurredAt   time.Time         `json:"occurred_at"`
-		Data         json.RawMessage   `json:"data"`
-		Headers      map[string]string `json:"headers,omitempty"`
+		ID         string          `json:"id"`
+		Type       string          `json:"type"`
+		Meta       map[string]any  `json:"meta"`
+		OccurredAt time.Time       `json:"occurred_at"`
+		Data       json.RawMessage `json:"data"`
+		Headers    map[string]string `json:"headers,omitempty"`
 	}{
 		ID: "evt-1", Type: "order.created", Meta: map[string]any{"tenant_id": "tenant-a", "partition_key": "order-1", "region": "ap-south-1"}, OccurredAt: time.Now().UTC(),
 		Data: json.RawMessage(`{"order_id":"order-1"}`),
@@ -70,8 +70,8 @@ func TestEventIngestionPublishesValidatedEnvelopeToShard(t *testing.T) {
 		t.Fatalf("subject = %q, want events", publisher.subject)
 	}
 	var published struct {
-		ID string `json:"id"`
-		Type string `json:"type"`
+		ID   string         `json:"id"`
+		Type string         `json:"type"`
 		Meta map[string]any `json:"meta"`
 	}
 	if err := json.Unmarshal(publisher.payload, &published); err != nil {
