@@ -46,7 +46,7 @@ func NewService(repository ports.DomainServiceRepository, clock ports.Clock) *Se
 	return &Service{repository: repository, clock: clock}
 }
 
-// SaveDomain creates or updates a tenant domain.
+// SaveDomain creates or updates a Domain configuration.
 func (s *Service) SaveDomain(ctx context.Context, tenantID string, item *domain.TenantDomain) (*domain.TenantDomain, error) {
 	if err := normalizeAndValidateDomain(item, tenantID); err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ func (s *Service) persistDomain(ctx context.Context, item *domain.TenantDomain) 
 	return nil
 }
 
-// GetDomain retrieves a tenant domain by ID.
+// GetDomain retrieves a Domain by ID.
 func (s *Service) GetDomain(ctx context.Context, tenantID, domainID string) (*domain.TenantDomain, error) {
 	item, err := s.repository.GetDomain(ctx, tenantID, domainID)
 	if err != nil {
@@ -216,7 +216,7 @@ func (s *Service) GetDomain(ctx context.Context, tenantID, domainID string) (*do
 	return item, nil
 }
 
-// ListDomains returns all domains for a tenant.
+// ListDomains returns all configured Domains.
 func (s *Service) ListDomains(ctx context.Context, tenantID string) ([]*domain.TenantDomain, error) {
 	items, err := s.repository.ListDomains(ctx, tenantID)
 	if err != nil {
@@ -225,7 +225,7 @@ func (s *Service) ListDomains(ctx context.Context, tenantID string) ([]*domain.T
 	return items, nil
 }
 
-// DeleteDomain removes a tenant domain.
+// DeleteDomain removes a Domain configuration.
 func (s *Service) DeleteDomain(ctx context.Context, tenantID, domainID string) error {
 	if _, err := s.GetDomain(ctx, tenantID, domainID); err != nil {
 		return err
@@ -352,7 +352,7 @@ func (s *Service) persistService(ctx context.Context, item *domain.DomainService
 func (s *Service) GetService(ctx context.Context, tenantID, serviceID string) (*domain.DomainService, error) {
 	item, err := s.repository.GetService(ctx, tenantID, serviceID)
 	if err != nil {
-		return nil, fmt.Errorf("get tenant service: %w", err)
+		return nil, fmt.Errorf("get subscription: %w", err)
 	}
 	if item == nil {
 		return nil, ErrNotFound
@@ -366,7 +366,7 @@ func (s *Service) GetService(ctx context.Context, tenantID, serviceID string) (*
 func (s *Service) ListServices(ctx context.Context, tenantID string) ([]*domain.DomainService, error) {
 	items, err := s.repository.ListServices(ctx, tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("list tenant services: %w", err)
+		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
 	for _, item := range items {
 		item.EndpointURL = ""
@@ -381,7 +381,7 @@ func (s *Service) DeleteService(ctx context.Context, tenantID, serviceID string)
 		return err
 	}
 	if err := s.repository.DeleteService(ctx, tenantID, serviceID); err != nil {
-		return fmt.Errorf("deactivate tenant service: %w", err)
+		return fmt.Errorf("deactivate subscription: %w", err)
 	}
 	return nil
 }
