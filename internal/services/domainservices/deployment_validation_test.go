@@ -3,12 +3,10 @@ package domainservices
 import (
 	"context"
 	"errors"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
-	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
 func TestValidateDeploymentShapeRejectsInvalidAssignments(t *testing.T) {
@@ -82,29 +80,9 @@ func TestValidateDeploymentRejectsDuplicateServiceIDsAndNames(t *testing.T) {
 	}
 }
 
-type mappedRuleRevisionStub struct {
-	ports.RuleService
-	revisions map[string]*domain.RuleRevision
-	errs      map[string]error
-}
-
-func (r mappedRuleRevisionStub) GetRevision(_ context.Context, tenantID, rulesetID string, revision int64) (*domain.RuleRevision, error) {
-	key := tenantID + "/" + rulesetID + "/" + strconv.FormatInt(revision, 10)
-	if err := r.errs[key]; err != nil {
-		return nil, err
-	}
-	return r.revisions[key], nil
-}
-
-func TestDomainConfigurationDefersRulesetLookupUntilEventRuntime(t *testing.T) {
-	lookupError := errors.New("ruleset lookup must happen at event runtime")
-	rules := mappedRuleRevisionStub{
-		errs: map[string]error{
-			"tenant-a/orders-created/" + strconv.FormatInt(7, 10): lookupError,
-		},
-	}
-	service := NewService(newRepositoryStub(), fixedClock{now: time.Unix(72, 0).UTC()}).WithRuleService(rules)
-	item, err := service.SaveDomain(context.Background(), "internal-domain-config", &domain.TenantDomain{
+func TestDomainConfigurationStoresRulesetAssignmentsWithoutTenantLookup(t *testing.T) {
+	service := NewService(newRepositoryStub(), fixedClock{now: time.Unix(72, 0).UTC()})
+	item, err := service.SaveDomain(context.Background(), domain.DomainConfigurationScope, &domain.TenantDomain{
 		Name: "orders",
 		Deployments: []domain.ServiceDeployment{{
 			ServiceID: "orders-worker", Name: "orders-worker", Revision: 1,
@@ -112,9 +90,10 @@ func TestDomainConfigurationDefersRulesetLookupUntilEventRuntime(t *testing.T) {
 		}},
 	})
 	if err != nil {
-		t.Fatalf("SaveDomain() must not require tenant-specific rule lookup: %v", err)
+		t.Fatalf("SaveDomain() error = %v", err)
 	}
-	if len(item.Deployments) != 1 || item.Deployments[0].Rulesets[0].RulesetID != "orders-created" {
+	if len(item.Deployments) != 1 || len(item.Deployments[0].Rulesets) != 1 ||
+		item.Deployments[0].Rulesets[0] != (domain.RulesetAssignment{RulesetID: "orders-created", Revision: 7}) {
 		t.Fatalf("service ruleset assignment was not preserved: %#v", item.Deployments)
 	}
 }
