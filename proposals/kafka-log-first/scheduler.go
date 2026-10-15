@@ -29,7 +29,7 @@ type DueSchedule struct {
 // OccurrenceID must be deterministic for a schedule revision and due occurrence.
 // Production code should use a documented stable hash/UUID algorithm.
 func OccurrenceID(scheduleID string, revision int64, dueAt time.Time) string {
-	return scheduleID + ":" + time.Unix(dueAt.Unix(), 0).UTC().Format(time.RFC3339) + ":" + strconv.FormatInt(revision, 10)
+	return scheduleID + ":" + dueAt.UTC().Format(time.RFC3339Nano) + ":" + strconv.FormatInt(revision, 10)
 }
 
 type ScheduleCodec interface {
@@ -37,11 +37,11 @@ type ScheduleCodec interface {
 }
 
 type Scheduler struct {
-	Store         LogStore
-	Codec        ScheduleCodec
-	EventsTopic  string
+	Store          LogStore
+	Codec          ScheduleCodec
+	EventsTopic    string
 	SchedulesTopic string
-	GroupID      string
+	GroupID         string
 }
 
 // FireDue atomically publishes the due event and tombstones the compacted schedule
