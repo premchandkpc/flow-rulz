@@ -156,7 +156,7 @@ type WorkerProfile struct {
 // DomainService represents the domain service.
 type DomainService struct {
 	ID          string    `json:"id"`
-	TenantID    string    `json:"tenant_id"`
+	TenantID    string    `json:"-"`
 	Name        string    `json:"name"`
 	NATSSubject string    `json:"nats_subject"`
 	EndpointURL string    `json:"endpoint_url,omitempty"` // Deprecated legacy field; never used for delivery.
