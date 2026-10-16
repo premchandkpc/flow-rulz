@@ -1,33 +1,43 @@
 # BDD scenarios: <feature>
 
-- **Spec:** 
-- **Implementation:** 
-- **Status:** Proposed | Automated | Verified | Gap
+- **Spec / acceptance IDs:** 
+- **Implementation path:** 
 - **Test path:** 
+- **Status:** Proposed | Automated | Verified | Partial | Gap | Skipped
 - **Last verified commit:** 
+- **Infrastructure:** unit fake | PostgreSQL | NATS JetStream | full stack
 
-## Scenario: <observable behavior>
-**Given** <initial configuration and durable state>
+## Scenario: <observable outcome>
+**Given** <initial durable database state and configuration>
 
-**And** <broker, database, lease or worker state>
+**And** <broker message, worker/lease state, tenant and partition identity>
 
-**When** <event or failure is triggered>
+**When** <event is processed or a failure is injected at a named boundary>
 
-**Then** <observable API/database/broker result>
+**Then** <observable API, database and broker result>
 
-**And** <expected effects and ordering>
+**And** <expected effect calls, ordering, retry or quarantine behavior>
 
 ## Failure variants
-- Duplicate delivery:
-- Transaction rollback:
-- Crash/restart:
-- Timeout or dependency unavailable:
-- Unauthorized or cross-tenant access:
-- Maximum retries / poison event:
+- Duplicate delivery of the same event ID
+- SQL error or transaction rollback
+- Crash before commit
+- Crash after commit but before ACK
+- Lease expiry / stale worker write
+- NATS outage or redelivery after restart
+- Quarantine store unavailable
+- External destination timeout with ambiguous outcome
+- Unauthorized tenant or global control-plane request
+- Contract mismatch or unavailable ruleset revision
+
+## Assertions
+List exact persisted rows/fields, broker settlement/redelivery state, emitted effect IDs and relevant logs/metrics. Avoid asserting only that a function returned nil.
 
 ## Evidence
-- Test command:
-- Infrastructure used:
+- Exact command:
+- Test name/package:
+- Commit SHA / CI run:
 - Expected result:
-- Actual result:
-- Known gap:
+- Actual result / exit code:
+- Skipped cases:
+- Remaining gap:

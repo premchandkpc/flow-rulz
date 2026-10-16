@@ -1,22 +1,25 @@
-# Engineering reports
+# Engineering reports and audits
 
-Reports are dated evidence snapshots, not living specifications. Preserve original reports as historical records; write a follow-up report when findings change.
+Reports are dated evidence snapshots: what was inspected, at which commit, what was observed and what remains uncertain. A report is not a substitute for a spec, plan, issue or test.
 
-## Existing reports
-- [Historical audits](../audit/): dated architecture and repository reviews; revalidate findings against current source.
-- [Security findings](../security/): security-specific investigations and follow-up evidence.
+## Documents
+- [Report template](report-template.md): architecture/security review, incident analysis, PR review or release-readiness assessment.
+- [Risk register](risk-register.md): cross-cutting risk areas, evidence and owners.
+- [Historical audits](../audit/): preserve as snapshots; revalidate findings against current code before treating them as current.
+- [Security findings](../security/): security-specific investigation and remediation evidence.
 
-## Files
-- [Report template](report-template.md): format for audits, PR reviews, reliability investigations and release readiness.
-- [Risk register](risk-register.md): cross-cutting risks and links to evidence. Change status only when new evidence exists.
-
-Every report should record date, source commit, scope, commands/environment, findings with severity, evidence links, verification status, owner, remediation, and residual risk. Separate observed facts from hypotheses and recommendations.
+## Report standards
+Include date, source commit, scope, environment, exact commands, findings, evidence, severity rationale, status, owner, recommendation, verification and residual risk. Separate:
+- **Observed fact:** supported by source, logs, tests or reproduction.
+- **Hypothesis:** plausible but not demonstrated.
+- **Recommendation:** proposed next action.
+- **Verified fix:** regression test/check passed on a named commit.
 
 ## Severity guide
-- **Critical:** credible path to data loss, cross-tenant exposure, or broad service compromise.
+- **Critical:** credible broad compromise, cross-tenant exposure or substantial data loss.
 - **High:** major correctness/security failure with realistic production impact.
-- **Medium:** meaningful reliability, availability, or maintainability risk with constraints or mitigations.
-- **Low:** limited impact, hygiene, or documentation issue.
+- **Medium:** meaningful reliability/availability risk or important control missing.
+- **Low:** limited impact, hygiene or maintainability issue.
 - **Informational:** observation without a demonstrated defect.
 
-Severity requires evidence and context. Do not copy old severities forward without revalidation.
+Severity depends on likelihood, blast radius and deployment context. Revalidate old severities rather than copying them forward.

@@ -1,31 +1,33 @@
-# Test strategy
+# FlowRulz test strategy
 
 ## Layers and evidence boundaries
-| Layer | Best for | Does not prove by itself |
+| Layer | Primary purpose | Does not prove by itself |
 |---|---|---|
-| Unit | Pure domain logic, validation, rule evaluation, retry classification | Adapter semantics, distributed ordering, crash recovery |
-| Service/use-case | Orchestration and error mapping with fakes | Real database atomicity or broker behavior |
-| Contract | JSON schemas, API/event compatibility, generated code | Runtime durability |
-| Adapter | SQL mapping, broker acknowledgement, serialization | Multi-process failure behavior unless exercised |
-| Integration | Real PostgreSQL/NATS and migrations | Production topology or untested long-duration behavior |
-| E2E/chaos | Full event lifecycle, redelivery, restart, lease handoff, outbox recovery | Failure modes not included in the test |
-| Static/security | Formatting, lint, vet, dependency and code scanning | Runtime correctness |
+| Unit | Domain logic, validation, evaluation and retry classification | Adapter semantics, atomicity, distributed ordering |
+| Service/use-case | Orchestration and error mapping | Real SQL or broker behavior when fakes are used |
+| Contract/schema | JSON Schema, API/event compatibility, generated artifacts | Runtime durability |
+| Adapter | SQL mapping, broker settlement, serialization | Multi-process recovery unless tested |
+| Integration | Real PostgreSQL/NATS and migrations | Untested production topology or long-duration capacity |
+| E2E/recovery | Full event lifecycle, redelivery, restart, lease transfer and outbox | Scenarios not included |
+| Static/security | Formatting, lint, vet and code/dependency scanning | Runtime correctness |
+| Build/deployment | Images, Compose, config and generated clients | Production readiness by itself |
 
-## FlowRulz critical paths
-Prioritize evidence for:
-- inbox deduplication and atomic execution/outbox persistence;
-- ACK only after a committed durable result;
-- crash after commit but before ACK;
-- duplicate and maximum-delivery behavior;
-- stale lease holder rejection and fencing;
-- ordering for a tenant/partition key across retries and worker handoff;
-- stable effect IDs and duplicate-safe downstream delivery;
-- tenant-scoped reads/writes and global control-plane authorization;
-- contract/version compatibility and immutable ruleset revisions;
-- Go/Rust parity only where the same behavior is explicitly claimed.
+## Critical scenarios
+1. Duplicate delivery yields one durable outcome.
+2. Inbox, execution and outbox intent are atomic.
+3. ACK follows durable commit or durable quarantine.
+4. Crash after commit but before ACK safely redelivers.
+5. Quarantine persistence failure preserves a recoverable delivery.
+6. Redelivery remains safe across worker restart and lease transfer.
+7. Stale lease holder cannot commit after ownership changes.
+8. Same tenant/partition-key order is tested across retries/handoff.
+9. Effect retries reuse stable identity and reconcile ambiguous destination outcomes.
+10. Tenant-scoped reads/writes and global control-plane routes enforce auth.
+11. Contract name/version/hash and immutable revision selection are enforced.
+12. Go/Rust parity is tested only for capabilities both implementations claim.
 
-## Test design
-For each scenario, define initial durable state, message/worker setup, injected failure, expected broker state, database state, externally observable effects, and cleanup. Assert persisted outcomes, not only return values.
+## Meaningful integration tests
+State initial database, broker, ruleset and lease state; worker count/config; event ID/tenant/partition/contract; injected failure boundary; expected database rows, broker settlement, quarantine state and external calls; cleanup. Assert durable outcomes, not only return values. Prefer bounded polling for concrete conditions over arbitrary sleeps.
 
 ## Verification record
-Include exact commit SHA, command, dependency versions, exit code, targeted test name/count, and skipped tests. Never report all tests pass when only a subset was run.
+Record exact SHA, commands, tool versions, dependency services, exit codes, test counts, skipped tests and logs/artifacts. A green subset is not “all tests pass.” Use the [verification matrix](verification-matrix.md) to expose gaps.

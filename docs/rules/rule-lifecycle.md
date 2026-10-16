@@ -1,15 +1,32 @@
 # Rule lifecycle
 
-**Purpose:** expected lifecycle for rule changes. Confirm exact API and storage behavior against current implementation before using this as an operational runbook.
+This is a conceptual lifecycle, not a claim every step is automated. Confirm the supported API and storage behavior before using it as a runbook.
 
-1. **Draft:** author a candidate ruleset without changing the active revision.
-2. **Validate:** parse the document, validate fields and operators, verify contract compatibility, and compile the rule.
-3. **Test:** run predicate/action tests and contract fixtures, including negative and boundary cases.
-4. **Publish:** persist a new immutable revision with reproducible metadata.
-5. **Assign:** pin the revision to the intended Domain Service or routing configuration.
-6. **Activate:** update active configuration through the supported control-plane path.
-7. **Observe:** verify selected revision, execution outcomes, errors, and outbox effects.
-8. **Rollback:** select a previously valid revision through a new configuration change; do not rewrite the old revision.
+## 1. Draft
+Create a candidate ruleset/revision without changing the active deployment. Record owner, purpose, event type, contract, mode and intended actions.
 
-## Required evidence
-Record ruleset ID, revision, contract name/version/hash where applicable, deployment configuration revision, test run, activation timestamp, and rollback target. If a step is unsupported by the current runtime, mark it as a gap rather than simulating completion in docs.
+## 2. Validate
+Validate required fields, unique IDs, supported operators/path syntax, action shape and contract identity. Reject unsupported semantics rather than silently accepting them.
+
+## 3. Test
+Test match/non-match, missing/null fields, unexpected types, boundary values, ordering, action output and failure classification. Use fixtures from the same event contract as producers.
+
+## 4. Publish immutable revision
+Persist a new revision and retain prior revisions for audit/rollback. Record the revision and canonical schema hash used for validation.
+
+## 5. Assign
+Pin the exact ruleset ID and revision in the intended Domain/Service configuration. Do not confuse execution assignment with subscriber registration. Review effects of removing or deactivating an assignment.
+
+## 6. Activate and verify
+Use the supported control-plane path, then verify that worker deployment uses the intended Service and ruleset revisions. The Domain API persists assignments, but automatic projection/reconciliation into every worker pool is not complete; deployment automation must keep configuration synchronized.
+
+## 7. Observe
+Inspect selected revision, execution outcomes, quarantine/retry behavior, outbox backlog and effect failures. A committed execution is not proof a downstream effect succeeded.
+
+## 8. Roll back
+Prefer a new configuration change pointing to a previously validated revision. Do not rewrite history. Rollback does not reverse events already processed or external effects already delivered.
+
+## Evidence to retain
+Ruleset ID/revision; contract name/version/hash; Domain/Service and deployment revision; validation/test run and commit; activation timestamp; rollback target; replay or side-effect implications.
+
+If a step is unsupported by the current runtime, record a gap instead of inventing an operational procedure.

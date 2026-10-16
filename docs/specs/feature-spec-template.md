@@ -2,66 +2,71 @@
 
 - **Status:** Draft | In review | Approved | Implemented | Verified | Superseded
 - **Owner:** <team/person>
-- **Created:** YYYY-MM-DD
-- **Last reviewed:** YYYY-MM-DD
-- **Related plan:** [link]
-- **Related tests/report:** [links]
+- **Created / reviewed:** YYYY-MM-DD / YYYY-MM-DD
+- **Issue / PR:** <link>
+- **Related plan:** <link>
+- **Related tests/report:** <links>
+- **Current-behavior source and SHA:** <paths, commit>
 
 ## 1. Problem and evidence
-Describe the user/system problem, current behavior, impact, and source-backed evidence.
+Describe current observable behavior, who is affected, impact, reproduction and evidence. Separate facts from assumptions.
 
-## 2. Goals and non-goals
+## 2. Outcome and scope
 ### Goals
-- 
+- <measurable outcome>
 ### Non-goals
-- 
+- <explicitly excluded behavior>
 
 ## 3. Actors and trust boundaries
-Identify producers, control-plane callers, workers, storage, broker, downstream effects, trusted inputs, tenant identity, and authorization boundaries.
+Identify producer, control-plane caller, router, worker, database, broker, outbox sender and destination. State who may assert tenant identity and internal routing metadata, and what authentication is required.
 
-## 4. Domain and contract changes
-Describe affected concepts, event/API contracts, schemas, persistence records, migrations, and compatibility requirements. Link canonical definitions.
+## 4. Current flow and source of truth
+Trace entry point → service/domain logic → port/adapter → persistence/broker → output. Link source, schema, migrations and tests.
 
-## 5. Required behavior
-Use numbered, testable statements. Use MUST/SHOULD/MAY consistently.
+## 5. Contract and compatibility
+List API/event fields, schema identity, persistence changes, generated artifacts and SDK impact. Describe mixed-version behavior, replay/backfill, deprecation and rollback.
 
-## 6. Invariants
-List properties that must remain true during success, retries, concurrency, crash recovery, and partial failure.
+## 6. Normative requirements
+Give each requirement an ID. Use MUST for mandatory behavior, SHOULD for a strong recommendation and MAY for optional behavior. Make each requirement observable.
 
-## 7. Acceptance criteria
-| ID | Given | When | Then | Verification |
+## 7. Invariants
+Cover success, duplicate delivery, retries, concurrency, worker handoff, unknown commit outcome, restart and partial failure. Link [system invariants](invariants.md).
+
+## 8. Acceptance criteria
+| ID | Given | When | Then | Test/evidence |
 |---|---|---|---|---|
-| AC-01 | <initial state> | <action> | <observable result> | <test path or gap> |
+| AC-01 | Valid event and active pinned ruleset | Worker processes it | One durable outcome is recorded and input is settled per delivery contract | <test or GAP> |
 
-## 8. Failure and recovery
-Cover timeouts, duplicate delivery, transaction rollback, process crash, lease loss/fencing, retry classification, poison messages, and downstream unavailability as applicable.
+Include negative, boundary and failure cases.
 
-## 9. Security and privacy
-Document authentication/authorization, tenant isolation, validation, secrets, sensitive payloads, logging, and abuse limits.
+## 9. Failure and recovery
+Specify rollback, crash windows, lease loss, retry classification, quarantine, broker outage and ambiguous downstream outcomes. Identify which component owns each retry.
 
-## 10. Operations and observability
-Define metrics, logs, traces, alerts, readiness, capacity implications, and operator recovery steps.
+## 10. Security and privacy
+Cover tenant isolation, control-plane scope, validation, secrets, payload logging, rate/size limits and trusted-proxy headers.
 
-## 11. Rollout and rollback
-Include migration ordering, feature flags, mixed-version behavior, backfill/replay needs, rollback safety, and data compatibility.
+## 11. Operations and rollout
+Define metrics, logs, alerts, readiness, capacity, migration ordering, feature flags, mixed versions, replay, rollback and irreversible actions.
 
 ## 12. Verification plan
-| Layer | Test or command | Expected evidence | Status |
+| Layer | Exact test/command | Expected evidence | Status |
 |---|---|---|---|
 | Unit | | | Not run |
-| Adapter/integration | | | Not run |
+| Contract/schema | | | Not run |
+| PostgreSQL/NATS integration | | | Not run |
 | E2E/recovery | | | Not run |
-| Security/static checks | | | Not run |
-| Build/deployment | | | Not run |
+| Security/static | | | Not run |
+| Build/deployment/SDK | | | Not run |
 
-## 13. Risks, alternatives and open questions
-- **Risk:** 
-- **Alternative considered:** 
-- **Open question:** 
+## 13. Risks and decisions
+- Risk and mitigation:
+- Alternative rejected and why:
+- Decision/owner:
+- Accepted gap and approver:
 
 ## 14. Definition of done
-- [ ] Acceptance criteria map to tests or documented gaps.
-- [ ] Compatibility and rollback have been reviewed.
-- [ ] Relevant docs, schemas, migrations and examples are updated.
-- [ ] Required checks were run and results recorded against the exact commit.
-- [ ] Remaining limitations are stated without overstating guarantees.
+- [ ] Acceptance criteria map to tests or explicit gaps.
+- [ ] Contract, schema, migration and generated artifacts agree.
+- [ ] Failure, retry, tenant and rollback paths are covered as applicable.
+- [ ] Required checks ran against the exact commit; skipped tests are recorded.
+- [ ] Operations docs are updated and unsupported guarantees are not claimed.

@@ -1,40 +1,53 @@
 # <Report title>
 
+- **Report ID:** <stable identifier>
 - **Date:** YYYY-MM-DD
-- **Author/owner:** 
+- **Author / owner:** 
 - **Source commit:** <full SHA>
-- **Scope:** 
-- **Environment:** 
-- **Related PR/issue:** 
-- **Status:** Draft | Reviewed | Remediated | Superseded
+- **Related PR / issue / incident:** 
+- **Scope and environment:** 
+- **Status:** Draft | Reviewed | Remediation in progress | Closed | Superseded
 
 ## Executive summary
-Summarize the result and the most important residual risk.
+State the question investigated, conclusion, highest-impact finding and most important residual risk.
 
 ## Scope and method
-List components inspected, exact commands run, test data/environment, and exclusions.
+- Components and paths inspected:
+- Exact commands/tests:
+- Environment and dependency versions:
+- Scenarios/data used:
+- Exclusions and unavailable evidence:
 
 ## Findings
-### [F-01] <short finding title>
+### [F-01] <concise finding>
 - **Severity:** Critical | High | Medium | Low | Informational
+- **Confidence:** Confirmed | Likely | Hypothesis
 - **Status:** Open | In progress | Fixed | Accepted | Not reproducible
-- **Evidence:** source paths, test names, logs, or reproducible steps
-- **Impact:** observable failure mode and affected boundary
-- **Root cause:** distinguish confirmed cause from hypothesis
-- **Recommendation:** specific corrective action
-- **Verification:** regression test/check and actual result
-- **Owner / target:** 
+- **Affected boundary:**
+- **Evidence:** file/line, test name, log, query or reproduction
+- **Observed behavior:**
+- **Expected behavior / invariant:**
+- **Impact and blast radius:**
+- **Root cause:** separate facts from assumptions
+- **Recommendation:**
+- **Regression verification:** exact check and result
+- **Owner / issue / target:**
 
 ## Verification summary
-| Check | Exact command or link | Result | Commit |
-|---|---|---|---|
-| | | Not run | |
+| Check | Exact command / URL | Result | Commit SHA | Notes |
+|---|---|---|---|---|
+| | | Not run | | |
 
-## Open questions and limitations
-- 
+Use Passed, Failed, Skipped or Not run. Never summarize partial execution as all checks passing.
+
+## Decisions and open questions
+- Decision:
+- Owner:
+- Deadline:
+- Evidence still required:
 
 ## Residual risk and follow-up
-- 
+List unmitigated risk, workaround, next owner/action and closure conditions.
 
 ## Change history
 | Date | Change | Evidence |

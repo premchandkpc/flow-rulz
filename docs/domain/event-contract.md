@@ -1,24 +1,33 @@
 # Event contract and identity
 
-## Event identity
-Runtime events must follow the canonical envelope definition in source and schema. Documented identity fields include meta.tenant_id and meta.partition_key. A tenant value must be asserted only by an authorized producer; a field in an event is not authentication.
+The event envelope is the runtime boundary between producers and workers. The canonical definition is the shared EventEnvelope type, event schema and validation code. This page explains semantics but does not replace the schema.
 
-- tenant_id scopes processing and tenant-owned data.
-- partition_key identifies the logical key whose events need stable routing/serialization.
-- Contract name, version and schema hash identify expected payload shape where contract validation is configured.
-- Event type and explicit routing configuration must not be treated as interchangeable without checking the current routing implementation.
+## Envelope responsibilities
+- id: stable event identity used by deduplication.
+- type: event type used by the current rule-resolution model.
+- occurred_at: source occurrence time, distinct from processing time.
+- data: payload validated against the declared contract where configured.
+- contract: contract name, version and schema hash.
+- headers: transport/tracing metadata such as trace context.
+- meta: runtime context containing tenant_id and partition_key; additional supported metadata belongs here rather than as new top-level fields.
 
-## Compatibility checklist
-For a contract change, document:
-1. producer and consumer versions that may coexist;
-2. additive vs breaking field changes;
-3. required/missing/null behavior;
-4. schema version/hash generation and validation;
-5. replay/backfill implications for retained JetStream messages;
-6. rule revisions that depend on the old contract;
-7. migration and rollback behavior.
+See [event guide](../event.md), [contract guide](../contract.md), [event example](../../data/examples/event.json) and [event schema](../../contracts/schemas/event-envelope.schema.json).
 
-## Trust and privacy
-Authenticate producers independently from envelope validation. Validate tenant authorization before accepting the event. Do not log credentials or unrestricted sensitive payloads. Routing subjects and hashes are not authorization boundaries.
+## Identity, routing and trust
+- tenant_id scopes runtime data and processing. It is not authentication; producers must be authorized to assert it.
+- partition_key identifies the logical key used with tenant identity for shard selection and intended same-key serialization.
+- Use the shared shard algorithm. Different hash or normalization logic creates routing divergence.
+- Internal routing metadata such as target Service and deployment revision must be set or validated by trusted routing policy, not blindly accepted from producers.
+- Broker subjects, hashes, event types and partition keys are not authorization boundaries.
+- Do not place tenant or partition identity in Domain, Service, ruleset or contract configuration.
 
-The current EventEnvelope type, registered contract schema, generated artifacts, validation code and contract tests take precedence over this summary. Update this document when those sources change.
+## Contract compatibility
+Event contract name, version and schema hash must match the registered contract and any ruleset-pinned contract where validation applies. A name/version match alone does not prove identical schema semantics.
+
+For a change, record compatible producer/consumer versions, additive versus breaking fields, missing/null/default behavior, canonical hash generation, dependent rulesets, generated SDKs, replay/backfill implications and rollback safety. Publish a new contract version for semantic changes.
+
+## Failure cases to test
+Malformed envelope; missing tenant/partition metadata; unknown top-level fields; invalid schema hash; unsupported payload type; unauthorized tenant claim; mismatched routing metadata; duplicate event ID. Assert the observable error, quarantine or retry result, not just parser failure.
+
+## Source-of-truth order
+Current type and validation code → JSON Schema and registry/migrations → contract tests and examples → this explanation. Update this page when the canonical contract changes.

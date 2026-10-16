@@ -1,17 +1,25 @@
 # Testing and verification
 
-Testing documentation records how correctness is demonstrated. Test names and green unit tests do not establish live infrastructure behavior unless the test actually exercises that infrastructure.
+This area explains what each test layer proves. A passing unit test does not prove PostgreSQL transaction semantics, NATS redelivery or distributed lease correctness unless those systems are exercised.
 
-## Files
-- [Test strategy](test-strategy.md): test layers and the claims each layer supports.
-- [BDD scenario template](bdd-scenario-template.md): Given/When/Then acceptance examples.
-- [Verification matrix](verification-matrix.md): acceptance criteria mapped to tests and evidence.
+## Documents
+- [Test strategy](test-strategy.md): layer boundaries and critical runtime paths.
+- [BDD scenario template](bdd-scenario-template.md): observable acceptance scenarios.
+- [Verification matrix](verification-matrix.md): requirement-to-test traceability.
 
-The existing [change and test checklist](../testing.md) contains repository-specific commands. Read [AGENTS.md testing standards](../../AGENTS.md) before changing coverage.
+For exact repository commands and affected test paths, use the [change/test checklist](../testing.md) and [AGENTS.md](../../AGENTS.md).
+
+## Minimum evidence by change
+| Change | Evidence to consider |
+|---|---|
+| Predicate/action semantics | Unit tests for match, non-match, boundary and errors; contract fixtures |
+| API/Domain/auth | Handler/service tests and cross-tenant negative cases |
+| Event/schema | Go/Rust fixtures as applicable, schema validation, SDK/generated-code checks |
+| SQL/migration | Repository tests plus tagged PostgreSQL integration tests |
+| ACK/retry/inbox/outbox | Real PostgreSQL + NATS tests including crash/redelivery windows |
+| Lease/fencing/order | Multi-worker tests with shared durable state and lease handoff |
+| Deployment/Compose | Config validation, image build, Compose validation and startup/readiness checks |
+| Documentation only | Link/factual review; do not claim runtime tests were run |
 
 ## Evidence rules
-- Record exact command, commit SHA, environment/dependencies, exit status, and relevant test path.
-- Mark skipped tests as Skipped, not Passed.
-- Mocks prove behavior against the mock contract, not PostgreSQL, NATS JetStream, distributed leases, or process crashes.
-- Use infrastructure-backed tests for transaction atomicity, redelivery, lease fencing, and crash recovery.
-- Keep failed or flaky tests visible until diagnosed; do not silently delete or weaken them.
+Record exact command, commit SHA, environment/dependency versions, exit status and test path. Mark skipped tests Skipped. Mocks prove their own contract, not live infrastructure. Keep failures visible until diagnosed. Run nested Go modules, Rust, generated code and console checks separately where the root module does not cover them.
