@@ -128,7 +128,8 @@ Environment variable names and local defaults are documented in .env.example. AP
 - sdk/go/flowrulz is a separate client SDK module. NATS is the supported event transport; HTTP ingestion, gRPC transport and local evaluation are not available in the current runtime.
 - examples contains banking, e-commerce, and food-delivery contracts, rules, workflows, and sample applications. Typed domain code lives in `domains/<domain>/builds/go` (separate Go modules) and is produced by `make generate-domain DOMAIN=<domain>` from the contracts stored in the database; example services import it from there and the SDK from `sdk/go/flowrulz`.
 - migrations contains numbered PostgreSQL migrations.
-- docs contains architecture diagrams, rules, operations, roadmap, and dated audit notes.
+- docs contains the canonical engineering documentation index, architecture, ADRs, domain and event contracts, rule guidance, specifications, plans, testing strategy, reports, operations, security notes, and historical audits. Start at [docs/README.md](docs/README.md).
+- Root-level `README.md`, `AGENTS.md`, and `SECURITY.md` remain at their conventional locations so GitHub and engineering tooling can discover them.
 - AGENTS.md is the engineering guide and source-backed file map.
 - [Architecture map](docs/architecture/map.md) describes runtime data flow, package boundaries, and known gaps.
 
