@@ -128,7 +128,8 @@ Environment variable names and local defaults are documented in .env.example. AP
 - sdk/go/flowrulz is a separate client SDK module. NATS is the supported event transport; HTTP ingestion, gRPC transport and local evaluation are not available in the current runtime.
 - examples contains banking, e-commerce, and food-delivery contracts, rules, workflows, and sample applications. Typed domain code lives in `domains/<domain>/builds/go` (separate Go modules) and is produced by `make generate-domain DOMAIN=<domain>` from the contracts stored in the database; example services import it from there and the SDK from `sdk/go/flowrulz`.
 - migrations contains numbered PostgreSQL migrations.
-- docs contains architecture diagrams, rules, operations, roadmap, and dated audit notes.
+- All human-maintained engineering documentation is organized under [`docs/`](docs/README.md), including specifications, plans, domain references, testing, reports, examples, and operations.
+- `README.md`, `AGENTS.md`, and `SECURITY.md` stay at the repository root because GitHub and engineering tools expect them there. Tool-specific templates and skills remain under `.github/` and `.opencode/`.
 - AGENTS.md is the engineering guide and source-backed file map.
 - [Architecture map](docs/architecture/map.md) describes runtime data flow, package boundaries, and known gaps.
 
@@ -149,4 +150,4 @@ Start with docs/README.md for the documentation index.
 
 ## Random producer simulation
 
-An opt-in random producer can publish 1–100 messages per simulated client through NATS JetStream using Compose service discovery. See [random producer README](examples/random-producer/README.md) for run commands, ACK semantics, shard routing, and the current limits around master election and dynamic worker membership.
+An opt-in random producer can publish 1–100 messages per simulated client through NATS JetStream using Compose service discovery. See [random producer guide](docs/examples/random-producer.md) for run commands, ACK semantics, shard routing, and the current limits around master election and dynamic worker membership.
