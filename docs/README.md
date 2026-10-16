@@ -30,7 +30,9 @@ Canonical entry point for documentation about the event-driven rules runtime. Ro
 - Runtime: [Workers](worker.md), [Delivery reliability](architecture/delivery-reliability.md)
 - Operations: [Operations](operations.md), [Compose deployment](deployment-compose.md)
 - Verification: [Testing checklist](testing.md), [AGENTS.md](../AGENTS.md)
-- Direction/history: [Roadmap](roadmap.md), [Future architecture](future-architecture.md), [Implementation plan](IMPLEMENTATION_PLAN.md), [Audits](audit/), [Security findings](security/)
+- Direction/history: [Roadmap](roadmap.md), [Future architecture](future-architecture.md), [Implementation plan](IMPLEMENTATION_PLAN.md), [Refactoring plan](../REFACTORING_PLAN.md), [Audits](audit/), [Security findings](security/), [Security policy](../SECURITY.md)
+- [Sample data](../data/README.md), [Domain packages](../domains/README.md), [Examples](../examples/README.md), [Random producer](../examples/random-producer/README.md), [Go load generator](../sdk/go/cmd/random-loadgen/README.md), [Console](../web/console/README.md)
+- [Kafka log-first proposal](proposals/kafka-log-first-data-plane.md) is a design proposal, not current runtime transport; supporting experiments are under [proposals/kafka-log-first](../proposals/kafka-log-first/README.md)
 
 ## Documentation contract
 1. Current code, schemas, migrations, configuration, tests and CI define behavior.
