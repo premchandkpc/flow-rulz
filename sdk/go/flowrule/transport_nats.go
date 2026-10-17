@@ -38,28 +38,6 @@ func newNATSTransport(cfg *TransportConfig) (Transport, error) {
 		return nil, fmt.Errorf("create JetStream: %w", err)
 	}
 
-	// Ensure stream exists
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	subjects := make([]string, 0, len(cfg.Config.NATSSubjects)*2)
-	for _, s := range cfg.Config.NATSSubjects {
-		subjects = append(subjects, s+".shard.*", s+".ruleset.*.shard.*")
-	}
-
-	_, err = js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-		Name:      cfg.Config.NATSStream,
-		Subjects:  subjects,
-		Retention: jetstream.WorkQueuePolicy,
-		Storage:   jetstream.FileStorage,
-		MaxMsgs:   -1,
-		Discard:   jetstream.DiscardOld,
-	})
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("create stream: %w", err)
-	}
-
 	return &natsTransport{
 		cfg:  cfg,
 		conn: conn,

@@ -623,3 +623,62 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .chain-node-header strong { min-width: 100%; order: -1; }
   .contract-grid { grid-template-columns: 1fr; }
 }
+
+/* ===== DataTable Component Styles ===== */
+.datatable-container { display: flex; flex-direction: column; width: 100%; }
+.datatable-loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px; color: var(--muted, #7a8699); font-size: 13px; }
+.datatable-spinner { width: 20px; height: 20px; border: 2px solid var(--line, #d9dee7); border-top-color: var(--blue, #4263eb); border-radius: 50%; animation: datatable-spin 0.8s linear infinite; }
+@keyframes datatable-spin { to { transform: rotate(360deg); } }
+
+.datatable-wrapper { overflow: auto; position: relative; }
+.datatable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.datatable-sticky-header { position: sticky; top: 0; z-index: 10; }
+
+.datatable-th { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line, #d9dee7); background: var(--surface, #fff); font-weight: 600; color: var(--navy, #142337); white-space: nowrap; }
+.datatable-th-content { display: flex; align-items: center; gap: 6px; }
+.datatable-sort-btn { padding: 2px; margin-left: auto; background: transparent; border: none; cursor: pointer; color: var(--muted, #7a8699); display: flex; align-items: center; }
+.datatable-sort-btn:hover { color: var(--blue, #4263eb); }
+.datatable-filter-input { width: 100%; margin-top: 6px; padding: 4px 8px; font-size: 11px; border: 1px solid var(--line, #d9dee7); border-radius: 4px; background: #fafbfc; outline: none; }
+.datatable-filter-input:focus { background: white; border-color: var(--blue, #4263eb); box-shadow: 0 0 0 2px #4263eb33; }
+
+.datatable-select-col { width: 48px; text-align: center; padding: 0; }
+.datatable-checkbox { width: 16px; height: 16px; accent-color: var(--blue, #4263eb); cursor: pointer; }
+.datatable-checkbox:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.datatable-tbody tr { border-bottom: 1px solid var(--line, #d9dee7); transition: background 0.1s; }
+.datatable-tbody tr:last-child { border-bottom: none; }
+.datatable-tbody tr.hovered { background: #f5f7fb; }
+.datatable-tbody tr.selected { background: #eef2ff; }
+.datatable-td { padding: 10px 12px; color: var(--navy, #142337); vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+.datatable-actions-col { padding: 4px 8px; }
+.datatable-row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.datatable-row-actions .button { padding: 4px 8px; font-size: 11px; }
+
+.datatable-empty { padding: 48px 24px; text-align: center; color: var(--muted, #7a8699); }
+
+.datatable-footer { padding: 12px 16px; border-top: 1px solid var(--line, #d9dee7); background: #fafbfc; }
+.datatable-pagination { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--line, #d9dee7); background: #fafbfc; flex-wrap: wrap; gap: 12px; }
+.datatable-pagination-info { font-size: 12px; color: var(--muted, #7a8699); }
+.datatable-pagination-controls { display: flex; align-items: center; gap: 8px; }
+.datatable-pagination-controls select { padding: 4px 8px; font-size: 11px; border: 1px solid var(--line, #d9dee7); border-radius: 4px; background: white; }
+.datatable-pagination-controls .button { padding: 4px 10px; font-size: 11px; }
+
+.datatable-toolbar { padding: 12px 16px; border-bottom: 1px solid var(--line, #d9dee7); background: #fafbfc; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* Badge styles for DataTable */
+.datatable-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 500; }
+.datatable-badge[class*="bg-gray-100"] { background: #f0f3f8; color: #5a6a8a; }
+.datatable-badge[class*="bg-green-100"] { background: #eaf7f1; color: #16845b; }
+.datatable-badge[class*="bg-amber-100"] { background: #fff5e7; color: #a56a1b; }
+.datatable-badge[class*="bg-red-100"] { background: #fff0f0; color: #cb4c4c; }
+.datatable-badge[class*="bg-blue-100"] { background: #eef2ff; color: #4263eb; }
+
+/* Responsive DataTable */
+@media (max-width: 900px) {
+  .datatable-th, .datatable-td { padding: 8px 10px; font-size: 11px; }
+  .datatable-filter-input { font-size: 10px; padding: 3px 6px; }
+}
+@media (max-width: 600px) {
+  .datatable-wrapper { margin: 0 -12px; padding: 0 12px; }
+  .datatable { min-width: 600px; }
+}

@@ -1,33 +1,5 @@
-version: '3.8'
-
 services:
-  # Override for local development - mount source code for hot reload
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    volumes:
-      - .:/app
-      - /app/bin
-    command: ["sh", "-c", "go run ./cmd/api"]
-    environment:
-      APP_ENV: development
-      LOG_LEVEL: debug
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    volumes:
-      - .:/app
-      - /app/bin
-    command: ["sh", "-c", "go run ./cmd/worker"]
-    environment:
-      APP_ENV: development
-      LOG_LEVEL: debug
-      WORKER_ID: dev-worker
-
-  # Add a codegen service for development
+  # Add a codegen service for local development.
   codegen:
     build:
       context: .

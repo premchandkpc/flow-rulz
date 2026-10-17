@@ -597,12 +597,6 @@ func NewPublisher(cfg Config) (*Publisher, error) {
 		conn.Close()
 		return nil, fmt.Errorf("create jetstream publisher: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := ensureStream(ctx, js, cfg); err != nil {
-		conn.Close()
-		return nil, err
-	}
 	return &Publisher{
 		conn: conn, js: js, stream: cfg.Stream, numShards: cfg.NumShards, ruleSets: cfg.RuleSets,
 	}, nil

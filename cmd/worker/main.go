@@ -49,6 +49,12 @@ func run() (runErr error) {
 
 	obsConfig := observability.DefaultConfig()
 	obsConfig.ServiceName = serviceName
+	metricsAddr := strings.TrimSpace(os.Getenv("FLOWRULZ_METRICS_ADDR"))
+	if metricsAddr != "" {
+		// The worker's process-local listener below owns this endpoint. Disable
+		// the generic observability listener to avoid binding the same port twice.
+		obsConfig.MetricsPort = 0
+	}
 	obs, err := observability.New(obsConfig)
 	if err != nil {
 		return fmt.Errorf("initialize observability: %w", err)
@@ -63,7 +69,7 @@ func run() (runErr error) {
 
 	obs.Logger.Info("worker starting", "environment", cfg.App.Env)
 
-	if metricsAddr := strings.TrimSpace(os.Getenv("FLOWRULZ_METRICS_ADDR")); metricsAddr != "" {
+	if metricsAddr != "" {
 		shutdownMetrics, err := startMetricsServer(metricsAddr, os.Getenv("FLOWRULZ_CONSOLE_ORIGIN"))
 		if err != nil {
 			return err

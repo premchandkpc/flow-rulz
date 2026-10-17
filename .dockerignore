@@ -35,6 +35,9 @@ coverage.html
 .env.local
 .env.*.local
 
+# Local Compose runtime data
+data/
+
 # Docker
 docker-compose.override.yml
 Dockerfile*
