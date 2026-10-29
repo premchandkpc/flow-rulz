@@ -48,3 +48,14 @@ data/
 examples/*/generated/
 # Invalid/temporary code-generator output directories
 examples/*/.generated/
+
+# Terraform (terraform/.terraform.lock.hcl is intentionally committed)
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

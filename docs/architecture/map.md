@@ -212,6 +212,10 @@ Rules:
 
 Do not turn this table into claims of completion without changes and tests. A follow-up audit should identify the reviewed main SHA and workflow runs, and label each old finding fixed/partial/open against current source.
 
+## AWS deployment infrastructure
+
+`terraform/` holds the AWS deployment root module (`main.tf`, `outputs.tf`, `variables.tf`) and seven local modules: `vpc`, `eks`, `rds`, `elasticache`, `nats`, `app` (namespace, ConfigMap/Secret, API/worker/console workloads) and `observability` (kube-prometheus-stack, Grafana, Loki). Secrets are generated in the root module when not supplied, and the application IRSA role trusts only the FlowRulz service account. The configuration passes `terraform fmt -check` and `terraform validate`; `terraform plan`/`apply` have not been executed from this repository, and per-environment usage plus known gaps (no ingress/ALB path, Redis TLS disabled because the Go client lacks TLS support, several unwired variables) are documented in `terraform/README.md`.
+
 ## Domain builds
 
 `domains/<domain>/builds/go/` holds typed Go code generated from contracts stored in the database (`make generate-domain DOMAIN=<domain>`). Each is a separate Go module depending on `sdk/go/flowrulz`; example services depend on it through `replace` directives. Run `make verify-generated` to compile them.

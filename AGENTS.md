@@ -85,6 +85,7 @@ This map explains responsibility; it is not a requirement to make the directory 
 | `.github/workflows/` | CI definitions and verification gates |
 | `api/` | Public JSON schemas; verify runtime validation actually uses them |
 | `migrations/` | Ordered schema changes; applied migrations are immutable |
+| `terraform/` | AWS infrastructure as code (VPC, EKS, RDS, ElastiCache, NATS, app, observability); see `terraform/README.md` |
 | `docs/` | Architecture, operations, diagrams, plans and dated audits |
 
 ### Entrypoints and core packages
