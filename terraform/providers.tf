@@ -24,13 +24,15 @@ provider "kubernetes" {
   }
 }
 
-# Helm Provider - uses Kubernetes provider
+# Helm Provider - same EKS token auth as the Kubernetes provider above.
+# Helm provider v3+ uses nested-object syntax (kubernetes = { ... }); the v2
+# block syntax is rejected by v3 and by editors validating against v3 schemas.
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = module.eks.cluster_endpoint
     cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
 
-    exec {
+    exec = {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "aws"
       args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
