@@ -10,43 +10,22 @@ import (
 	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
-// Router sends child events and command/service effects through NATS-backed senders.
+// Router dispatches effects through transport-neutral delivery ports.
 type Router struct {
-	publisher   ports.EventPublisher
-	command     ports.EffectSender
-	service     ports.EffectSender
-	scheduled   ports.EffectSender
-	baseSubject string
-	numShards   uint32
+	publisher ports.EventPublisher
+	command   ports.EffectSender
+	service   ports.EffectSender
+	scheduled ports.EffectSender
 }
 
-// NewRouter creates a router using the default event subject and shard count.
-func NewRouter(publisher ports.EventPublisher, commandSender ports.EffectSender) *Router {
-	return NewRouterWithConfig(publisher, commandSender, "events", 4096)
-}
-
-// NewRouterWithConfig creates a router aligned with the stream's subject family
-// and the shard count used by producers, consumers, and the scheduler.
-func NewRouterWithConfig(publisher ports.EventPublisher, commandSender ports.EffectSender, baseSubject string, numShards uint32, serviceSenders ...ports.EffectSender) *Router {
-	if baseSubject == "" {
-		baseSubject = "events"
-	}
-	if numShards == 0 {
-		numShards = 4096
-	}
-	router := &Router{publisher: publisher, command: commandSender, baseSubject: baseSubject, numShards: numShards}
-	if len(serviceSenders) > 0 {
-		router.service = serviceSenders[0]
-	}
-	if len(serviceSenders) > 1 {
-		router.scheduled = serviceSenders[1]
-	}
-	return router
+// NewRouter wires explicit senders for each effect destination. The event
+// publisher owns broker routing; the router only decodes the child envelope.
+func NewRouter(publisher ports.EventPublisher, command, service, scheduled ports.EffectSender) *Router {
+	return &Router{publisher: publisher, command: command, service: service, scheduled: scheduled}
 }
 
 // Send routes an effect to the appropriate destination based on its type.
-// Child events go to the shard publisher, service events to their unique NATS subject,
-// and command/emit effects to their NATS subjects.
+// Broker subjects and shard selection belong to the configured adapters.
 func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
 	if effect == nil {
 		return fmt.Errorf("send effect: effect is nil")
@@ -65,7 +44,7 @@ func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey
 			return r.service.Send(ctx, effect, idempotencyKey)
 		}
 		if r.command == nil {
-			return fmt.Errorf("send command or emit effect: NATS sender is not configured")
+			return fmt.Errorf("send command or emit effect: sender is not configured")
 		}
 		return r.command.Send(ctx, effect, idempotencyKey)
 	}
@@ -80,10 +59,7 @@ func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey
 		return fmt.Errorf("validate child event: %w", err)
 	}
 
-	// Event type is carried in the envelope. The broker subject must match the
-	// stream filter shared by consumers and the scheduler: <baseSubject>.shard.N.
-	shard := child.VirtualShard(r.numShards)
-	return r.publisher.PublishToShard(ctx, r.baseSubject, shard, effect.Payload)
+	return r.publisher.PublishEvent(ctx, &child)
 }
 
 var _ ports.EffectSender = (*Router)(nil)

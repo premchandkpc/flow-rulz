@@ -61,11 +61,10 @@ type SubjectPublisher interface {
 }
 
 // EventPublisher is the fixed publishing contract used by application services.
-// Callers provide a base subject and shard; adapters encode transport-specific routing.
+// Adapters own serialization, shard selection and transport-specific routing.
+// Connection lifecycle remains with the composition root.
 type EventPublisher interface {
-	PublishToShard(ctx context.Context, baseSubject string, shard uint32, data []byte) error
-	PublishBatch(ctx context.Context, messages []PublishMessage) error
-	Close() error
+	PublishEvent(ctx context.Context, event *domain.EventEnvelope) error
 }
 
 // OrderEventBroker is a domain-specific contract for order event flows.

@@ -115,6 +115,8 @@ func run() (runErr error) {
 		}
 	}()
 
+	eventPublisher := nats.NewEventPublisher(publisher, eventSubject, cfg.Worker.NumShards)
+
 	compiler := rules.NewCompiler(rules.DefaultLimits())
 	clock := domain.SystemClock{}
 	evaluator := rules.NewEvaluator(clock)
@@ -128,8 +130,8 @@ func run() (runErr error) {
 	// Each registered service has a unique subject for durable fan-out.
 	serviceSender := effects.NewDomainServiceSender(repositories.DomainServices, publisher)
 	scheduledEventSender := effects.NewScheduledEventSender(repositories.ScheduledEvents)
-	effectSender := svceffects.NewRouterWithConfig(
-		publisher, commandSender, eventSubject, cfg.Worker.NumShards, serviceSender, scheduledEventSender,
+	effectSender := svceffects.NewRouter(
+		eventPublisher, commandSender, serviceSender, scheduledEventSender,
 	)
 	workerID := cfg.WorkerID()
 	eventsSvc := svcevents.NewService(
@@ -182,7 +184,6 @@ func run() (runErr error) {
 		clock,
 		leaseManager,
 		workerID,
-		cfg.Worker.NumShards,
 		workerConfig,
 	)
 	if err != nil {
@@ -190,11 +191,10 @@ func run() (runErr error) {
 	}
 	sched := scheduler.NewScheduler(
 		repositories.ScheduledEvents,
-		publisher,
+		eventPublisher,
 		clock,
 		cfg.SchedulerPollInterval(),
 		cfg.Worker.SchedulerBatchSize,
-		cfg.Worker.NumShards,
 	)
 
 	obs.Logger.Info("worker initialized", "worker_id", workerID, "shards", cfg.Worker.NumShards)

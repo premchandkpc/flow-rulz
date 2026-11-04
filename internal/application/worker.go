@@ -2,7 +2,6 @@
 package application
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -41,18 +40,9 @@ func DefaultWorkerConfig() WorkerConfig {
 	}
 }
 
-// shardedConsumer is the transport capability required by sharded workers.
-type shardedConsumer interface {
-	EnsureShardConsumer(ctx context.Context, shard uint32) error
-	RemoveShardConsumer(ctx context.Context, shard uint32) error
-	FetchShards(ctx context.Context, maxMessages int, shards []uint32) ([]ports.Delivery, error)
-	OwnedShards() []uint32
-}
-
 // Worker coordinates event consumption, per-key processing, and outbox publishing.
 // Runtime loops and delivery settlement live in focused companion files.
 type Worker struct {
-	consumer        ports.BrokerConsumer
 	events          ports.EventProcessor
 	effects         ports.EffectPublisher
 	batches         ports.BatchProcessor
@@ -61,15 +51,14 @@ type Worker struct {
 	shardService    ports.ShardService
 	keyQueue        ports.KeyQueue
 	workerID        string
-	numShards       uint32
 	config          WorkerConfig
-	shardedConsumer shardedConsumer
+	shardedConsumer ports.ShardedConsumer
 }
 
 // NewWorker validates dependencies and configuration without starting resources.
 // The key queue is created by Run so its lifecycle is owned by the worker.
 func NewWorker(
-	consumer ports.BrokerConsumer,
+	consumer ports.ShardedConsumer,
 	events ports.EventProcessor,
 	effects ports.EffectPublisher,
 	batches ports.BatchProcessor,
@@ -77,7 +66,6 @@ func NewWorker(
 	clock ports.Clock,
 	shardService ports.ShardService,
 	workerID string,
-	numShards uint32,
 	config WorkerConfig,
 ) (*Worker, error) {
 	if err := validateWorkerDependencies(consumer, events, effects, clock, shardService, workerID); err != nil {
@@ -88,17 +76,7 @@ func NewWorker(
 	if err != nil {
 		return nil, err
 	}
-	if numShards == 0 {
-		numShards = 4096
-	}
-
-	sharded, ok := consumer.(shardedConsumer)
-	if !ok {
-		return nil, errors.New("consumer must implement sharded consumer; non-sharded mode is not supported")
-	}
-
 	return &Worker{
-		consumer:        consumer,
 		events:          events,
 		effects:         effects,
 		batches:         batches,
@@ -106,14 +84,13 @@ func NewWorker(
 		clock:           clock,
 		shardService:    shardService,
 		workerID:        workerID,
-		numShards:       numShards,
 		config:          config,
-		shardedConsumer: sharded,
+		shardedConsumer: consumer,
 	}, nil
 }
 
 func validateWorkerDependencies(
-	consumer ports.BrokerConsumer,
+	consumer ports.ShardedConsumer,
 	events ports.EventProcessor,
 	effects ports.EffectPublisher,
 	clock ports.Clock,

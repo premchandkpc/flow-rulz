@@ -112,7 +112,7 @@ The event transaction contains fencing validation, inbox deduplication, ruleset 
 - Publisher and consumer adapters are composed separately; application services depend on EventPublisher and ShardedConsumer ports rather than a combined broker implementation.
 - N is EventEnvelope.VirtualShard(NUM_SHARDS).
 - EventEnvelope.Type carries business event type such as payment.requested; it is not part of the configured broker subject.
-- The effect router and scheduler must use the same base subject and shard count as the stream/consumer. A publish to a different topic does not reach consumers if it is outside the stream subject filter.
+- The effect router and scheduler share one `ports.EventPublisher` exposing `PublishEvent(ctx, envelope)`. `internal/adapters/nats/event_publisher.go` owns JSON encoding and shard selection and delegates ruleset subject mapping to the underlying NATS publisher. The composition root supplies the stream base subject and shard count once. Neither use case selects subjects or closes the connection.
 - Generic emitted effects and commands publish through NATS JetStream to `effects.<topic>` and `commands.<destination>.<name>`. Explicit ruleset-declared `service_event` effects and subscriber-router deliveries publish to the scope-scoped `services.<scope-hash>.<subscription-hash>` subject (global scope for new subscriptions, legacy tenant scope for old records). Receivers deduplicate by the stable effect ID.
 - Delivery is at-least-once. Receiver idempotency depends on durable consumer configuration and deduplication by stable effect ID; the overall system must not be described as exactly-once.
 
