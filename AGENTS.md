@@ -119,7 +119,7 @@ This map explains responsibility; it is not a requirement to make the directory 
 | Path | Responsibility |
 |---|---|
 | `internal/adapters/http/` | HTTP routing, handlers, middleware and request/response translation |
-| `internal/adapters/nats/` | NATS/JetStream connection, subject mapping, message conversion and ACK/NAK |
+| `internal/adapters/nats/` | NATS/JetStream connection, subject mapping, message conversion and ACK/NAK; `event_publisher.go` maps `ports.EventPublisher` envelopes to configured shards |
 | `internal/adapters/postgres/` | SQL repositories, transactions and driver-specific behavior |
 | `internal/adapters/mongo/` | Mongo repositories, BSON conversion, indexes and driver-specific behavior |
 | `internal/adapters/cache/` | Cache implementation |

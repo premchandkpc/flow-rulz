@@ -238,7 +238,6 @@ func StartStack(t *testing.T) *TestEnv {
 		clock,
 		leaseManager,
 		workerID,
-		cfg.Worker.NumShards,
 		workerConfig,
 	)
 	if err != nil {
@@ -248,11 +247,10 @@ func StartStack(t *testing.T) *TestEnv {
 	// Start scheduler
 	sched := scheduler.NewScheduler(
 		repositories.ScheduledEvents,
-		consumer,
+		nats.NewEventPublisher(consumer, "events", cfg.Worker.NumShards),
 		clock,
 		cfg.SchedulerPollInterval(),
 		cfg.Worker.SchedulerBatchSize,
-		cfg.Worker.NumShards,
 	)
 
 	workerCtx, workerCancel := context.WithCancel(ctx)

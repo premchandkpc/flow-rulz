@@ -3,31 +3,21 @@ package effects
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
-	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
 type testPublisher struct {
-	subject string
-	payload []byte
+	event *domain.EventEnvelope
+	err   error
 }
 
-func (p *testPublisher) PublishBatch(_ context.Context, _ []ports.PublishMessage) error {
-	return nil
-}
-
-func (p *testPublisher) PublishToShard(_ context.Context, baseSubject string, shard uint32, data []byte) error {
-	p.subject = fmt.Sprintf("%s.shard.%d", baseSubject, shard)
-	p.payload = append([]byte(nil), data...)
-	return nil
-}
-
-func (p *testPublisher) Close() error {
-	return nil
+func (p *testPublisher) PublishEvent(_ context.Context, event *domain.EventEnvelope) error {
+	p.event = event
+	return p.err
 }
 
 type testDestination struct {
@@ -50,7 +40,7 @@ func TestRouterPublishesChildEvent(t *testing.T) {
 	}
 	publisher := &testPublisher{}
 	external := &testDestination{}
-	router := NewRouterWithConfig(publisher, external, "events", 64)
+	router := NewRouter(publisher, external, nil, nil)
 
 	err = router.Send(context.Background(), &domain.Effect{
 		EffectType:  domain.EffectTypeEmitEvent,
@@ -60,13 +50,11 @@ func TestRouterPublishesChildEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("send: %v", err)
 	}
-	// Routing subject is fixed; the business event type stays in the envelope.
-	expectedSubject := fmt.Sprintf("events.shard.%d", childEnvelope.VirtualShard(64))
-	if publisher.subject != expectedSubject {
-		t.Fatalf("subject = %q, want %q", publisher.subject, expectedSubject)
+	if publisher.event == nil || publisher.event.ID != childEnvelope.ID || publisher.event.Type != childEnvelope.Type {
+		t.Fatalf("publisher received incorrect envelope: %+v", publisher.event)
 	}
-	if len(publisher.payload) == 0 {
-		t.Fatal("publisher received an empty payload")
+	if string(publisher.event.Data) != string(childEnvelope.Data) {
+		t.Fatalf("data = %s, want %s", publisher.event.Data, childEnvelope.Data)
 	}
 	if external.sent {
 		t.Fatal("external destination received an internal event")
@@ -77,7 +65,7 @@ func TestRouterSendsScheduledIntentToDurableSender(t *testing.T) {
 	publisher := &testPublisher{}
 	command := &testDestination{}
 	scheduled := &testDestination{}
-	router := NewRouterWithConfig(publisher, command, "events", 64, nil, scheduled)
+	router := NewRouter(publisher, command, nil, scheduled)
 
 	err := router.Send(context.Background(), &domain.Effect{
 		EffectType:  domain.EffectTypeScheduleEvent,
@@ -91,7 +79,31 @@ func TestRouterSendsScheduledIntentToDurableSender(t *testing.T) {
 	if !scheduled.sent {
 		t.Fatal("scheduled-event sender did not receive the intent")
 	}
-	if command.sent || publisher.subject != "" {
+	if command.sent || publisher.event != nil {
 		t.Fatal("scheduled intent was sent to a command or event publisher")
+	}
+}
+
+func TestRouterPropagatesChildPublishFailure(t *testing.T) {
+	want := errors.New("broker unavailable")
+	publisher := &testPublisher{err: want}
+	child, err := json.Marshal(domain.EventEnvelope{ID: "evt", Type: "test", TenantID: "a", PartitionKey: "key", OccurredAt: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = NewRouter(publisher, nil, nil, nil).Send(context.Background(), &domain.Effect{EffectType: domain.EffectTypeEmitEvent, Payload: child}, "effect-1")
+	if !errors.Is(err, want) {
+		t.Fatalf("error = %v, want %v", err, want)
+	}
+}
+
+func TestRouterRejectsMalformedChildBeforePublishing(t *testing.T) {
+	publisher := &testPublisher{}
+	err := NewRouter(publisher, nil, nil, nil).Send(context.Background(), &domain.Effect{EffectType: domain.EffectTypeEmitEvent, Payload: json.RawMessage(`{`)}, "effect-1")
+	if err == nil {
+		t.Fatal("malformed event accepted")
+	}
+	if publisher.event != nil {
+		t.Fatal("malformed event reached publisher")
 	}
 }

@@ -3,9 +3,9 @@ package scheduler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"sync"
 	"time"
 
@@ -22,7 +22,6 @@ type Scheduler struct {
 	clock        ports.Clock
 	pollInterval time.Duration
 	batchSize    int
-	numShards    uint32
 
 	mu       sync.Mutex
 	running  bool
@@ -38,7 +37,6 @@ func NewScheduler(
 	clock ports.Clock,
 	pollInterval time.Duration,
 	batchSize int,
-	numShards uint32,
 ) *Scheduler {
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
@@ -46,16 +44,12 @@ func NewScheduler(
 	if batchSize <= 0 {
 		batchSize = 100
 	}
-	if numShards == 0 {
-		numShards = 4096
-	}
 	return &Scheduler{
 		repo:         repo,
 		publisher:    publisher,
 		clock:        clock,
 		pollInterval: pollInterval,
 		batchSize:    batchSize,
-		numShards:    numShards,
 		stopChan:     make(chan struct{}),
 	}
 }
@@ -215,7 +209,7 @@ func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent
 		CausationID:   evt.Headers["flowrulz_parent_event_id"],
 		OccurredAt:    s.clock.Now(),
 		Data:          evt.Payload,
-		Headers:       evt.Headers,
+		Headers:       maps.Clone(evt.Headers),
 	}
 
 	// Add idempotency key to headers
@@ -224,13 +218,5 @@ func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent
 	}
 	env.Headers["Idempotency-Key"] = idempotencyKey
 
-	data, err := json.Marshal(env)
-	if err != nil {
-		return fmt.Errorf("marshal event: %w", err)
-	}
-
-	// Publish to shard-specific subject using the shared base subject
-	shard := env.VirtualShard(s.numShards)
-	baseSubject := "events" // Must match consumer stream subject pattern
-	return s.publisher.PublishToShard(ctx, baseSubject, shard, data)
+	return s.publisher.PublishEvent(ctx, env)
 }
