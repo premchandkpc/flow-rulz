@@ -21,6 +21,21 @@ The HTTP API is a control-plane service. It creates and validates configuration 
 
 ## Event lifecycle
 
+To connect producers and consumers directly to a worker-hosted broker, use
+[`WORKER_MODE=broker`](docs/embedded-broker.md). It hosts partitioned topics,
+consumer groups, ACKs/retries, and rule processing in one process, with memory or
+local-disk storage. `BROKER_TRANSPORTS=http,tcp,nats` enables any desired ingress
+adapters; `none` keeps only in-process access. `BROKER_OUTPUT_TRANSPORT` selects
+local topics or an HTTP/TCP/NATS peer independently. Start the sample with
+`WORKER_MODE=broker WORKER_RULES_DIR=examples/direct-worker/rules NUM_SHARDS=16 go run ./cmd/worker`.
+
+For a minimal `A → broker → rules worker → broker → B` path, use
+[`WORKER_MODE=direct`](docs/direct-worker.md). It needs only NATS and local rule
+files, publishes results immediately, and ACKs after publication. Database,
+inbox/outbox, leases, scheduler and the API are absent from this mode. Outputs may
+repeat on retries. Start it with `docker compose -f docker-compose.direct.yml up --build`.
+The lifecycle below describes the default **durable** mode.
+
 1. A producer publishes an EventEnvelope to the NATS JetStream subject family events.shard.N. N is computed from tenant ID and partition key using the configured shard count. File-backed, limits-retention streams keep acknowledged messages available for replay until configured retention or storage limits remove them. Configure `NATS_STREAM_MAX_AGE`, `NATS_STREAM_MAX_BYTES`, and `NATS_STREAM_MAX_MSGS`; zero age and `-1` limits mean unlimited, which requires capacity monitoring.
 2. The worker consumes only shards for which it owns a lease. The key queue serializes work for each partition key within this worker process and can allow concurrency across keys. This alone does not guarantee end-to-end per-key ordering across redelivery, lease handoff, or concurrent outbox publishers.
 3. Inside one storage transaction, the event service validates the fencing token, checks the inbox for duplicates, resolves applicable active rulesets (including contract bindings when present), evaluates rules, and writes execution records, ruleset-declared effects, and subscriber delivery intents produced by the separate subscription router.
@@ -113,6 +128,25 @@ err = typed.Send(ctx, &transactioninitiated.Initiated{
 Generated `Subscribe` methods use live core NATS subscriptions and are available only with the NATS transport. They receive matching event types without competing with the worker's JetStream WorkQueue consumer. They are best-effort rather than durable: events published while disconnected are not replayed, and handler failures stop the subscription without ACK/retry behavior.
 
 Environment variable names and local defaults are documented in .env.example. API and worker startup initialize storage/migrations. The Go worker publishes all command and service effects through NATS JetStream; no HTTP destination URL is required.
+
+## Code formatting
+
+Run `npm ci --prefix web/console` once to install the console dependencies, including
+the pinned Prettier formatter. With Go, Cargo, Node.js/npm and
+[uv](https://docs.astral.sh/uv/) installed, use:
+
+```sh
+make fmt-all
+make check-fmt-all
+```
+
+These commands cover Go sources in all modules, Rust sources, console TypeScript,
+JavaScript, CSS, HTML and JSON, and Python broker tests. `make fmt` and
+`make check-fmt` remain Go-only; `fmt-rust`, `fmt-web` and `fmt-python` are also
+available individually. Python formatting uses a pinned Ruff version through
+`uvx`, which downloads the formatter on first use. `.editorconfig` supplies shared
+indentation, newline and whitespace settings. Generated build output and local
+runtime data are excluded from formatting.
 
 ## Repository map
 

@@ -22,7 +22,9 @@ help:
 	@echo "Code quality:"
 	@echo "  lint            Run golangci-lint"
 	@echo "  vet             Run go vet"
-	@echo "  fmt             Format code with gofmt"
+	@echo "  fmt             Format Go code across all modules"
+	@echo "  fmt-all         Format Go, Rust, console and Python code"
+	@echo "  check-fmt-all   Check formatting for all supported languages"
 	@echo ""
 	@echo "Code generation:"
 	@echo "  generate        Generate artifacts for a registered contract (set CONTRACT and CONTRACT_VERSION)"
@@ -126,8 +128,26 @@ vet:
 	$(GO) vet ./...
 
 fmt:
-	@echo "Formatting code..."
-	$(GO) fmt ./...
+	@echo "Formatting Go code across all modules..."
+	@git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 gofmt -w
+
+.PHONY: fmt-all fmt-rust fmt-web fmt-python check-fmt-all
+
+fmt-rust:
+	cargo fmt --manifest-path rust-worker/Cargo.toml --all
+
+fmt-web:
+	npm --prefix web/console run format
+
+fmt-python:
+	uvx --from ruff==0.14.5 ruff format --no-cache rust-worker/tests
+
+fmt-all: fmt fmt-rust fmt-web fmt-python
+
+check-fmt-all: check-fmt
+	cargo fmt --manifest-path rust-worker/Cargo.toml --all -- --check
+	npm --prefix web/console run format:check
+	uvx --from ruff==0.14.5 ruff format --no-cache --check rust-worker/tests
 
 # Code generation
 CONTRACT ?=
@@ -198,7 +218,7 @@ verify-generated:
 
 # CI pipeline
 check-fmt:
-	@files="$$(gofmt -l $$(find cmd internal tests examples/random-producer -name '*.go' -type f))"; \
+	@files="$$(git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 gofmt -l)" || exit $$?; \
 	if [ -n "$$files" ]; then printf "%s\n" "$$files"; gofmt -d $$files; exit 1; fi
 
 ci: deps check-fmt vet lint test verify-generated

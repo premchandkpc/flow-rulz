@@ -35,11 +35,13 @@ Thumbs.db
 rust/target/
 rust/Cargo.lock
 rust-worker/target/
-rust-worker/Cargo.lock
 
 # Temp files
 .temp/
 *.tmp
+__pycache__/
+*.py[cod]
+.ruff_cache/
 
 # Database/data directories (runtime data)
 data/

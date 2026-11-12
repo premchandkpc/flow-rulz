@@ -1,6 +1,24 @@
 //! Environment-backed configuration for the Rust worker runtime.
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::{env, time::Duration};
+
+pub(crate) enum WorkerMode {
+    Durable,
+    Broker,
+}
+
+impl WorkerMode {
+    pub(crate) fn from_env() -> Result<Self> {
+        match env::var("WORKER_MODE")
+            .unwrap_or_else(|_| "durable".into())
+            .as_str()
+        {
+            "durable" => Ok(Self::Durable),
+            "broker" => Ok(Self::Broker),
+            _ => bail!("Rust WORKER_MODE must be durable or broker"),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config {
@@ -85,9 +103,20 @@ impl Config {
 fn load_connection_settings() -> Result<ConnectionSettings> {
     let storage_backend = env::var("STORAGE_BACKEND").unwrap_or_else(|_| "postgres".into());
     if !storage_backend.eq_ignore_ascii_case("postgres") {
-        bail!("Rust worker supports STORAGE_BACKEND=postgres only; MongoDB parity is not implemented");
+        bail!(
+            "Rust worker supports STORAGE_BACKEND=postgres only; MongoDB parity is not implemented"
+        );
     }
 
+    let service_id = optional_env("FLOW_SERVICE_ID");
+    let deployment_revision = optional_env("FLOW_DEPLOYMENT_REVISION")
+        .map(|value| {
+            value.parse::<i64>().map_err(|error| {
+                anyhow::anyhow!("FLOW_DEPLOYMENT_REVISION must be an integer: {error}")
+            })
+        })
+        .transpose()?;
+    let deployment_revision = legacy_revision(&service_id, deployment_revision);
     Ok(ConnectionSettings {
         nats_url: env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into()),
         stream: env::var("NATS_STREAM").unwrap_or_else(|_| "flowrulz".into()),
@@ -96,13 +125,22 @@ fn load_connection_settings() -> Result<ConnectionSettings> {
             "postgres://postgres:postgres@127.0.0.1:5432/flowrulz?sslmode=disable".into()
         }),
         worker_id: env::var("WORKER_ID").unwrap_or_else(|_| {
-            format!("rust-{}", env::var("HOSTNAME").unwrap_or_else(|_| "worker".into()))
+            format!(
+                "rust-{}",
+                env::var("HOSTNAME").unwrap_or_else(|_| "worker".into())
+            )
         }),
-        service_id: optional_env("FLOW_SERVICE_ID"),
-        deployment_revision: optional_env("FLOW_DEPLOYMENT_REVISION")
-            .map(|value| value.parse::<i64>().map_err(|error| anyhow::anyhow!("FLOW_DEPLOYMENT_REVISION must be a positive integer: {error}")))
-            .transpose()?,
+        service_id,
+        deployment_revision,
     })
+}
+
+fn legacy_revision(service: &Option<String>, revision: Option<i64>) -> Option<i64> {
+    if service.is_none() && revision == Some(0) {
+        None
+    } else {
+        revision
+    }
 }
 
 fn load_lease_settings() -> Result<LeaseSettings> {
@@ -110,27 +148,39 @@ fn load_lease_settings() -> Result<LeaseSettings> {
         num_shards: parse_u32("NUM_SHARDS", 4096)?,
         worker_replicas: parse_u32("WORKER_REPLICAS", 1)?,
         lease_ttl: Duration::from_millis(parse_u64("LEASE_TTL_MS", 30_000)?),
-        lease_renew_interval: Duration::from_millis(parse_u64("LEASE_RENEWAL_INTERVAL_MS", 10_000)?),
+        lease_renew_interval: Duration::from_millis(parse_u64(
+            "LEASE_RENEWAL_INTERVAL_MS",
+            10_000,
+        )?),
     })
 }
 
 fn load_delivery_settings() -> Result<DeliverySettings> {
-    let rulesets = env::var("NATS_RULESETS").unwrap_or_default().split(',')
-        .map(str::trim).filter(|value| !value.is_empty()).map(str::to_owned).collect();
+    let rulesets = env::var("NATS_RULESETS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect();
 
     Ok(DeliverySettings {
         ack_wait: Duration::from_millis(parse_u64("NATS_ACK_WAIT_MS", 30_000)?),
         retry_delay: Duration::from_millis(parse_u64("EVENT_RETRY_DELAY_MS", 5_000)?),
         fetch_batch_size: usize::try_from(parse_u64("FETCH_BATCH_SIZE", 100)?)?,
         rulesets,
-        effect_poll_interval: Duration::from_millis(parse_u64("EFFECT_PUBLISH_INTERVAL_MS", 5_000)?),
+        effect_poll_interval: Duration::from_millis(parse_u64(
+            "EFFECT_PUBLISH_INTERVAL_MS",
+            5_000,
+        )?),
         scheduler_poll_interval: Duration::from_millis(parse_u64("SCHEDULER_POLL_MS", 5_000)?),
         scheduler_batch_size: i64::try_from(parse_u64("SCHEDULER_BATCH_SIZE", 100)?)?,
     })
 }
 
 fn validate_config(config: &Config) -> Result<()> {
-    if config.stream.trim().is_empty() || config.durable.trim().is_empty()
+    if config.stream.trim().is_empty()
+        || config.durable.trim().is_empty()
         || config.worker_id.trim().is_empty()
     {
         bail!("NATS_STREAM, NATS_CONSUMER and WORKER_ID cannot be empty");
@@ -146,7 +196,9 @@ fn validate_config(config: &Config) -> Result<()> {
     match (&config.service_id, config.deployment_revision) {
         (Some(service_id), Some(revision)) if !service_id.trim().is_empty() && revision > 0 => {}
         (None, None) => {}
-        _ => bail!("FLOW_SERVICE_ID and positive FLOW_DEPLOYMENT_REVISION must be configured together"),
+        _ => bail!(
+            "FLOW_SERVICE_ID and positive FLOW_DEPLOYMENT_REVISION must be configured together"
+        ),
     }
     validate_lease_settings(config)?;
     validate_delivery_settings(config)
@@ -169,10 +221,13 @@ fn validate_lease_settings(config: &Config) -> Result<()> {
     if config.num_shards == 0 || config.worker_replicas == 0 {
         bail!("NUM_SHARDS and WORKER_REPLICAS must be > 0");
     }
-    if config.lease_ttl.is_zero() || config.lease_renew_interval.is_zero()
+    if config.lease_ttl.is_zero()
+        || config.lease_renew_interval.is_zero()
         || config.lease_renew_interval * 3 > config.lease_ttl
     {
-        bail!("LEASE_RENEWAL_INTERVAL_MS must be positive and no greater than one third of LEASE_TTL_MS");
+        bail!(
+            "LEASE_RENEWAL_INTERVAL_MS must be positive and no greater than one third of LEASE_TTL_MS"
+        );
     }
     Ok(())
 }
@@ -181,7 +236,8 @@ fn validate_delivery_settings(config: &Config) -> Result<()> {
     if config.ack_wait.is_zero() || config.retry_delay.is_zero() || config.fetch_batch_size == 0 {
         bail!("NATS_ACK_WAIT_MS, EVENT_RETRY_DELAY_MS and FETCH_BATCH_SIZE must be > 0");
     }
-    if config.effect_poll_interval.is_zero() || config.scheduler_poll_interval.is_zero()
+    if config.effect_poll_interval.is_zero()
+        || config.scheduler_poll_interval.is_zero()
         || config.scheduler_batch_size <= 0
     {
         bail!("effect/scheduler polling intervals and batch size must be > 0");
@@ -191,8 +247,12 @@ fn validate_delivery_settings(config: &Config) -> Result<()> {
 
 fn parse_u64(name: &str, default: u64) -> Result<u64> {
     let value = env::var(name).unwrap_or_else(|_| default.to_string());
-    let parsed = value.parse::<u64>().map_err(|e| anyhow::anyhow!("{name} must be an unsigned integer: {e}"))?;
-    if parsed == 0 { bail!("{name} must be greater than zero"); }
+    let parsed = value
+        .parse::<u64>()
+        .map_err(|e| anyhow::anyhow!("{name} must be an unsigned integer: {e}"))?;
+    if parsed == 0 {
+        bail!("{name} must be greater than zero");
+    }
     Ok(parsed)
 }
 fn parse_u32(name: &str, default: u32) -> Result<u32> {
@@ -201,13 +261,22 @@ fn parse_u32(name: &str, default: u32) -> Result<u32> {
 }
 
 fn optional_env(name: &str) -> Option<String> {
-    env::var(name).ok().map(|value| value.trim().to_owned()).filter(|value| !value.is_empty())
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepts_shared_zero_revision_default_only_for_legacy_deployments() {
+        assert_eq!(legacy_revision(&None, Some(0)), None);
+        assert_eq!(legacy_revision(&Some("service".into()), Some(0)), Some(0));
+        assert_eq!(legacy_revision(&None, Some(2)), Some(2));
+    }
 
     fn valid_config() -> Config {
         Config {

@@ -1,12 +1,20 @@
-use crate::{config::Config, engine::{EventEnvelope, sha256_hex}, runtime::{scheduler::event_subject, uuid_token}};
-use anyhow::{bail, Context, Result};
+use crate::{
+    config::Config,
+    engine::{EventEnvelope, sha256_hex},
+    runtime::{scheduler::event_subject, uuid_token},
+};
+use anyhow::{Context, Result, bail};
 use async_nats::jetstream;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
-use tokio::time::{interval, MissedTickBehavior};
+use tokio::time::{MissedTickBehavior, interval};
 use tracing::warn;
 
-pub(super) async fn outbox_loop(pool: PgPool, js: jetstream::Context, config: Config) -> Result<()> {
+pub(super) async fn outbox_loop(
+    pool: PgPool,
+    js: jetstream::Context,
+    config: Config,
+) -> Result<()> {
     let mut ticker = interval(config.effect_poll_interval);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -51,7 +59,11 @@ struct ClaimedEffect {
     max_attempts: i32,
 }
 
-async fn claim_outbox_batch(pool: &PgPool, claim: &str, batch_size: usize) -> Result<Vec<sqlx::postgres::PgRow>> {
+async fn claim_outbox_batch(
+    pool: &PgPool,
+    claim: &str,
+    batch_size: usize,
+) -> Result<Vec<sqlx::postgres::PgRow>> {
     sqlx::query(
         "WITH candidates AS ( \
            SELECT effect_id FROM outbox_effects \
@@ -103,7 +115,12 @@ async fn mark_effect_delivered(pool: &PgPool, claim: &str, effect_id: &str) -> R
     Ok(())
 }
 
-async fn record_effect_failure(pool: &PgPool, claim: &str, effect: &ClaimedEffect, error: &str) -> Result<()> {
+async fn record_effect_failure(
+    pool: &PgPool,
+    claim: &str,
+    effect: &ClaimedEffect,
+    error: &str,
+) -> Result<()> {
     let next_attempt = effect.attempts + 1;
     if next_attempt >= effect.max_attempts {
         quarantine_effect_atomically(pool, claim, effect, next_attempt, error).await
@@ -122,11 +139,13 @@ async fn quarantine_effect_atomically(
     attempt: i32,
     error: &str,
 ) -> Result<()> {
-    let mut tx = pool.begin().await.context("begin exhausted effect quarantine")?;
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin exhausted effect quarantine")?;
     let raw = effect.payload.to_string();
-    let quarantine_id = sha256_hex(
-        format!("effect|{}|{}", effect.id, sha256_hex(raw.as_bytes())).as_bytes(),
-    );
+    let quarantine_id =
+        sha256_hex(format!("effect|{}|{}", effect.id, sha256_hex(raw.as_bytes())).as_bytes());
 
     sqlx::query(
         "INSERT INTO quarantine (quarantine_id,source_type,source_id,error_class,payload_ref,event_id,tenant_id,error_message,created_at,updated_at) \
@@ -154,7 +173,9 @@ async fn quarantine_effect_atomically(
     .context("quarantine exhausted outbox effect")?;
 
     ensure_claim_update(result.rows_affected(), "quarantining", &effect.id)?;
-    tx.commit().await.context("commit exhausted effect quarantine")?;
+    tx.commit()
+        .await
+        .context("commit exhausted effect quarantine")?;
     Ok(())
 }
 
@@ -165,7 +186,13 @@ fn ensure_claim_update(rows_affected: u64, action: &str, effect_id: &str) -> Res
     Ok(())
 }
 
-async fn schedule_effect_retry(pool: &PgPool, claim: &str, effect_id: &str, attempt: i32, error: &str) -> Result<()> {
+async fn schedule_effect_retry(
+    pool: &PgPool,
+    claim: &str,
+    effect_id: &str,
+    attempt: i32,
+    error: &str,
+) -> Result<()> {
     let delay = (1_i64 << (attempt - 1).clamp(0, 5)).min(60);
     let result = sqlx::query(
         "UPDATE outbox_effects SET status='pending',attempts=$3,last_error=$4,available_at=NOW()+($5 * INTERVAL '1 second'), \
@@ -198,7 +225,13 @@ async fn send_effect(
             event.validate().context("validate child event")?;
             let shard = event.virtual_shard(config.num_shards)?;
             let subject = event_subject(&event.event_type, shard, &config.rulesets);
-            publish(js, &subject, serde_json::to_vec(&event)?, "publish child event").await?;
+            publish(
+                js,
+                &subject,
+                serde_json::to_vec(&event)?,
+                "publish child event",
+            )
+            .await?;
             return Ok(());
         }
         "service_event" => {
@@ -219,7 +252,10 @@ async fn send_effect(
             .await
             .context("verify active tenant service")?;
             if !active {
-                bail!("active tenant service {:?} was not found", effect.destination);
+                bail!(
+                    "active tenant service {:?} was not found",
+                    effect.destination
+                );
             }
             service_subject(&effect.tenant_id, &effect.destination)
         }
@@ -228,7 +264,13 @@ async fn send_effect(
 
     validate_concrete_subject(&subject)?;
     let envelope = effect_message(effect);
-    publish(js, &subject, serde_json::to_vec(&envelope)?, "publish outbox effect").await
+    publish(
+        js,
+        &subject,
+        serde_json::to_vec(&envelope)?,
+        "publish outbox effect",
+    )
+    .await
 }
 
 async fn publish(
@@ -237,7 +279,8 @@ async fn publish(
     payload: Vec<u8>,
     context: &str,
 ) -> Result<()> {
-    let acknowledgement = js.publish(subject.to_owned(), payload.into())
+    let acknowledgement = js
+        .publish(subject.to_owned(), payload.into())
         .await
         .with_context(|| format!("send {context} to {subject}"))?;
     acknowledgement
@@ -271,8 +314,9 @@ fn validate_subject_token(value: &str, label: &str) -> Result<()> {
     let valid = !value.is_empty()
         && value.len() <= 63
         && value.as_bytes()[0].is_ascii_lowercase()
-        && value.bytes().all(|byte| byte.is_ascii_lowercase()
-            || byte.is_ascii_digit() || byte == b'_' || byte == b'-');
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
+        });
     if !valid {
         bail!("invalid {label} {value:?}");
     }
@@ -291,7 +335,9 @@ fn validate_subject_path(value: &str) -> Result<()> {
 
 fn validate_concrete_subject(subject: &str) -> Result<()> {
     if subject.is_empty()
-        || subject.split('.').any(|token| token.is_empty() || token.contains('*') || token.contains('>'))
+        || subject
+            .split('.')
+            .any(|token| token.is_empty() || token.contains('*') || token.contains('>'))
     {
         bail!("invalid concrete NATS subject {subject:?}");
     }

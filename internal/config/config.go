@@ -3,6 +3,8 @@ package config
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -46,6 +48,9 @@ type RedisConfig struct {
 
 // WorkerConfig contains worker config settings.
 type WorkerConfig struct {
+	Mode                    string
+	RulesDir                string
+	InputSubject            string
 	NumShards               uint32
 	WorkerReplicas          uint32
 	WorkerID                string
@@ -71,6 +76,26 @@ type WorkerConfig struct {
 	HotKeyCheckIntervalMS   int
 }
 
+// BrokerConfig configures the broker hosted inside the worker process.
+type BrokerConfig struct {
+	Transports        []string
+	TCPAddr           string
+	NATSSubject       string
+	OutputTransport   string
+	OutputURL         string
+	OutputAddr        string
+	OutputNATSURL     string
+	OutputNATSSubject string
+	OutputToken       string
+	Addr              string
+	Token             string
+	Storage           string
+	DataDir           string
+	MaxMessages       int
+	MaxBytes          int64
+	AckWaitMS         int
+}
+
 // GenerationConfig contains generation config settings.
 type GenerationConfig struct {
 	ProtocPath          string
@@ -90,6 +115,7 @@ type AuthConfig struct {
 
 // Config contains config settings.
 type Config struct {
+	Broker     BrokerConfig
 	App        AppConfig
 	Database   DatabaseConfig
 	NATS       NATSConfig
@@ -101,10 +127,67 @@ type Config struct {
 
 // Load provides the load.
 func Load() (*Config, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// LoadWorker validates dependencies required by the selected worker mode.
+// Load retains full validation for the API and other database-backed commands.
+func LoadWorker() (*Config, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Worker.Mode == "broker" {
+		if err := cfg.validateBroker(); err != nil {
+			return nil, err
+		}
+		return cfg, nil
+	}
+	if cfg.Worker.Mode == "direct" {
+		if err := cfg.validateNATS(); err != nil {
+			return nil, err
+		}
+		if err := cfg.validateWorker(); err != nil {
+			return nil, err
+		}
+		return cfg, nil
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func loadConfig() (*Config, error) {
 	if err := validateRawEnv(); err != nil {
 		return nil, err
 	}
 	cfg := &Config{
+		Broker: BrokerConfig{
+			Transports:        splitCSV(getEnv("BROKER_TRANSPORTS", "http")),
+			TCPAddr:           getEnv("BROKER_TCP_ADDR", "127.0.0.1:8091"),
+			NATSSubject:       getEnv("BROKER_NATS_SUBJECT", "flowrulz.broker"),
+			OutputTransport:   getEnv("BROKER_OUTPUT_TRANSPORT", "local"),
+			OutputURL:         getEnv("BROKER_OUTPUT_URL", ""),
+			OutputAddr:        getEnv("BROKER_OUTPUT_ADDR", ""),
+			OutputNATSURL:     getEnv("BROKER_OUTPUT_NATS_URL", ""),
+			OutputNATSSubject: getEnv("BROKER_OUTPUT_NATS_SUBJECT", "flowrulz.broker"),
+			OutputToken:       getEnv("BROKER_OUTPUT_TOKEN", ""),
+			Addr:              getEnv("BROKER_ADDR", "127.0.0.1:8090"),
+			Token:             getEnv("BROKER_TOKEN", ""),
+			Storage:           getEnv("BROKER_STORAGE", "memory"),
+			DataDir:           getEnv("BROKER_DATA_DIR", "data/broker"),
+			MaxMessages:       toInt(getIntEnv("BROKER_MAX_MESSAGES", 10000)),
+			MaxBytes:          int64(getIntEnv("BROKER_MAX_BYTES", 64<<20)),
+			AckWaitMS:         toInt(getIntEnv("BROKER_ACK_WAIT_MS", 30000)),
+		},
 		App:        loadAppConfig(),
 		Database:   loadDatabaseConfig(),
 		NATS:       loadNATSConfig(),
@@ -112,9 +195,6 @@ func Load() (*Config, error) {
 		Worker:     loadWorkerConfig(),
 		Generation: loadGenerationConfig(),
 		Auth:       loadAuthConfig(),
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
 	}
 	return cfg, nil
 }
@@ -160,6 +240,9 @@ func loadRedisConfig() RedisConfig {
 
 func loadWorkerConfig() WorkerConfig {
 	return WorkerConfig{
+		Mode:                    getEnv("WORKER_MODE", "durable"),
+		RulesDir:                getEnv("WORKER_RULES_DIR", ""),
+		InputSubject:            getEnv("WORKER_INPUT_SUBJECT", "events.shard.*"),
 		NumShards:               uint32(toUint32(getIntEnv("NUM_SHARDS", int(DefaultNumShards)))),
 		WorkerReplicas:          uint32(toUint32(getIntEnv("WORKER_REPLICAS", 1))),
 		WorkerID:                getEnv("WORKER_ID", ""),
@@ -317,6 +400,24 @@ func (c *Config) validateEnvironmentAuth() error {
 }
 
 func (c *Config) validateWorker() error {
+	if c.Worker.Mode != "" && c.Worker.Mode != "durable" && c.Worker.Mode != "direct" && c.Worker.Mode != "broker" {
+		return fmt.Errorf("WORKER_MODE must be durable, direct or broker")
+	}
+	if c.Worker.Mode == "direct" {
+		if c.Worker.RulesDir == "" || c.Worker.InputSubject == "" {
+			return fmt.Errorf("direct mode requires WORKER_RULES_DIR and WORKER_INPUT_SUBJECT")
+		}
+		if c.Worker.NumShards == 0 || c.Worker.NATSAckWaitMS <= 0 || c.Worker.RetryDelayMS <= 0 || c.Worker.MaxGlobalInFlight <= 0 {
+			return fmt.Errorf("direct mode requires positive NUM_SHARDS, NATS_ACK_WAIT_MS, EVENT_RETRY_DELAY_MS and MAX_GLOBAL_IN_FLIGHT")
+		}
+		if c.Worker.ServiceID != "" || c.Worker.DeploymentRevision != 0 || len(c.NATS.RuleSets) > 0 {
+			return fmt.Errorf("direct mode uses local rules and WORKER_INPUT_SUBJECT; deployment identity and NATS_RULESETS are unsupported")
+		}
+		if c.Worker.NATSMaxDeliver != -1 {
+			return fmt.Errorf("direct mode requires unlimited NATS_MAX_DELIVER=-1")
+		}
+		return nil
+	}
 	if c.Worker.ServiceID == "" && c.Worker.DeploymentRevision != 0 {
 		return fmt.Errorf("FLOW_SERVICE_ID is required when FLOW_DEPLOYMENT_REVISION is set")
 	}
@@ -336,6 +437,107 @@ func (c *Config) validateWorker() error {
 		return err
 	}
 	return c.validateDeliverySettings()
+}
+
+func (c *Config) validateBroker() error {
+	if c.Worker.RulesDir == "" || c.Worker.NumShards == 0 || c.Worker.NumShards > 4096 || c.Worker.RetryDelayMS <= 0 {
+		return fmt.Errorf("broker mode requires WORKER_RULES_DIR, NUM_SHARDS between 1 and 4096 and positive EVENT_RETRY_DELAY_MS")
+	}
+	if c.Broker.Storage != "memory" && c.Broker.Storage != "file" {
+		return fmt.Errorf("BROKER_STORAGE must be memory or file")
+	}
+	if c.Broker.Storage == "file" && c.Broker.DataDir == "" {
+		return fmt.Errorf("BROKER_DATA_DIR is required for file storage")
+	}
+	if c.Broker.MaxMessages < 2 || c.Broker.MaxMessages > 10000 || c.Broker.MaxBytes <= 0 || c.Broker.MaxBytes > 64<<20 || c.Broker.AckWaitMS < 100 || c.Broker.AckWaitMS > 300000 {
+		return fmt.Errorf("broker limits require 2..10000 messages, 1..67108864 bytes and 100..300000 ms ACK wait")
+	}
+	if err := c.validateBrokerTransports(); err != nil {
+		return err
+	}
+	if c.Worker.ServiceID != "" || c.Worker.DeploymentRevision != 0 {
+		return fmt.Errorf("broker mode uses local rules without service deployment identity")
+	}
+	return nil
+}
+
+func validateBrokerAddress(address string) (string, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", err
+	}
+	number, err := strconv.Atoi(port)
+	if err != nil || number < 0 || number > 65535 {
+		return "", fmt.Errorf("port must be between 0 and 65535")
+	}
+	return host, nil
+}
+
+func validBrokerRPCSubject(subject string) bool {
+	if subject == "" || len(subject) > 128 {
+		return false
+	}
+	for _, part := range strings.Split(subject, ".") {
+		if part == "" || strings.ContainsAny(part, "*> \t\r\n") {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *Config) validateBrokerTransports() error {
+	seen := make(map[string]bool)
+	for _, transport := range c.Broker.Transports {
+		if seen[transport] {
+			return fmt.Errorf("BROKER_TRANSPORTS contains duplicate %q", transport)
+		}
+		seen[transport] = true
+		switch transport {
+		case "none":
+			if len(c.Broker.Transports) != 1 {
+				return fmt.Errorf("BROKER_TRANSPORTS=none must be used alone")
+			}
+		case "http", "tcp":
+			address := c.Broker.Addr
+			if transport == "tcp" {
+				address = c.Broker.TCPAddr
+			}
+			host, err := validateBrokerAddress(address)
+			if err != nil {
+				return fmt.Errorf("invalid broker %s address: %w", transport, err)
+			}
+			ip := net.ParseIP(host)
+			if host != "localhost" && (ip == nil || !ip.IsLoopback()) && len(c.Broker.Token) < 16 {
+				return fmt.Errorf("non-loopback broker listeners require BROKER_TOKEN of at least 16 characters")
+			}
+		case "nats":
+			if c.NATS.URL == "" || !validBrokerRPCSubject(c.Broker.NATSSubject) {
+				return fmt.Errorf("NATS ingress requires NATS_URL and a literal BROKER_NATS_SUBJECT")
+			}
+		default:
+			return fmt.Errorf("BROKER_TRANSPORTS accepts http, tcp, nats or none")
+		}
+	}
+	switch c.Broker.OutputTransport {
+	case "", "local":
+		return nil
+	case "http":
+		peer, err := url.Parse(c.Broker.OutputURL)
+		if err != nil || (peer.Scheme != "http" && peer.Scheme != "https") || peer.Host == "" || peer.User != nil || peer.RawQuery != "" || peer.Fragment != "" {
+			return fmt.Errorf("HTTP output requires an absolute BROKER_OUTPUT_URL without credentials, query or fragment")
+		}
+	case "tcp":
+		if _, err := validateBrokerAddress(c.Broker.OutputAddr); err != nil {
+			return fmt.Errorf("invalid BROKER_OUTPUT_ADDR: %w", err)
+		}
+	case "nats":
+		if (c.Broker.OutputNATSURL == "" && c.NATS.URL == "") || !validBrokerRPCSubject(c.Broker.OutputNATSSubject) {
+			return fmt.Errorf("NATS output requires a NATS URL and literal BROKER_OUTPUT_NATS_SUBJECT")
+		}
+	default:
+		return fmt.Errorf("BROKER_OUTPUT_TRANSPORT must be local, http, tcp or nats")
+	}
+	return nil
 }
 
 func (c *Config) validateWorkerConcurrency() error {
@@ -440,6 +642,7 @@ func validateRawEnv() error {
 
 func validateIntegerEnvironment() error {
 	keys := []string{
+		"BROKER_MAX_MESSAGES", "BROKER_MAX_BYTES", "BROKER_ACK_WAIT_MS",
 		"REDIS_DB", "NUM_SHARDS", "WORKER_REPLICAS", "MAX_GLOBAL_IN_FLIGHT",
 		"FETCH_BATCH_SIZE", "EFFECT_PUBLISH_INTERVAL_MS", "EFFECT_PUBLISH_BATCH_SIZE",
 		"EVENT_RETRY_DELAY_MS", "MAX_PER_KEY_QUEUE", "KEY_QUEUE_WORKERS",

@@ -10,7 +10,7 @@ import (
 	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
-// Router sends child events and command/service effects through NATS-backed senders.
+// Router sends child events and command/service effects through selected senders.
 type Router struct {
 	publisher   ports.EventPublisher
 	command     ports.EffectSender
@@ -65,7 +65,7 @@ func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey
 			return r.service.Send(ctx, effect, idempotencyKey)
 		}
 		if r.command == nil {
-			return fmt.Errorf("send command or emit effect: NATS sender is not configured")
+			return fmt.Errorf("send command or emit effect: sender is not configured")
 		}
 		return r.command.Send(ctx, effect, idempotencyKey)
 	}

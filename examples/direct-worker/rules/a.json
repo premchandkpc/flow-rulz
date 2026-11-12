@@ -1,0 +1,14 @@
+{
+  "rule_set": "a.created",
+  "revision": 1,
+  "mode": "first_match",
+  "rules": [{
+    "id": "forward-to-next-worker",
+    "when": {"path": "$.id", "op": "exists"},
+    "then": [{"emit_event": {
+      "type": "a.processed",
+      "partition_key_policy": "inherit",
+      "data": {"id": "{{$.id}}"}
+    }}]
+  }]
+}

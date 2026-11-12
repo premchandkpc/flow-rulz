@@ -1,14 +1,22 @@
 //! Scheduled-event claiming, retry, and JetStream publication.
-use crate::{config::Config, engine::{self, EventEnvelope}, runtime::uuid_token};
+use crate::{
+    config::Config,
+    engine::{self, EventEnvelope},
+    runtime::uuid_token,
+};
 use anyhow::{Context, Result};
 use async_nats::jetstream;
 use chrono::Utc;
 use serde_json::Value;
-use sqlx::{postgres::PgRow, PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgRow};
 use std::collections::HashMap;
-use tokio::time::{interval, MissedTickBehavior};
+use tokio::time::{MissedTickBehavior, interval};
 
-pub(super) async fn scheduler_loop(pool: PgPool, js: jetstream::Context, config: Config) -> Result<()> {
+pub(super) async fn scheduler_loop(
+    pool: PgPool,
+    js: jetstream::Context,
+    config: Config,
+) -> Result<()> {
     let mut ticker = interval(config.scheduler_poll_interval);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -44,7 +52,9 @@ async fn process_scheduled_event(
     let event_id = event.id.clone();
     match publish_scheduled_event(js, config, &event).await {
         Ok(()) => mark_released(pool, claimant, &event_id).await,
-        Err(error) => record_publish_failure(pool, claimant, &event_id, retry_count, &error.to_string()).await,
+        Err(error) => {
+            record_publish_failure(pool, claimant, &event_id, retry_count, &error.to_string()).await
+        }
     }
 }
 
@@ -85,12 +95,19 @@ fn scheduled_event_headers(headers: Option<Value>, event_id: &str) -> HashMap<St
     headers
 }
 
-async fn publish_scheduled_event(js: &jetstream::Context, config: &Config, event: &EventEnvelope) -> Result<()> {
+async fn publish_scheduled_event(
+    js: &jetstream::Context,
+    config: &Config,
+    event: &EventEnvelope,
+) -> Result<()> {
     let shard = event.virtual_shard(config.num_shards)?;
     let subject = event_subject(&event.event_type, shard, &config.rulesets);
-    let acknowledgement = js.publish(subject.clone(), serde_json::to_vec(event)?.into()).await
+    let acknowledgement = js
+        .publish(subject.clone(), serde_json::to_vec(event)?.into())
+        .await
         .with_context(|| format!("publish scheduled event to JetStream subject {subject}"))?;
-    acknowledgement.await
+    acknowledgement
+        .await
         .with_context(|| format!("await scheduled-event publish acknowledgement for {subject}"))?;
     Ok(())
 }
@@ -118,7 +135,13 @@ async fn record_publish_failure(
     }
 }
 
-async fn mark_failed(pool: &PgPool, claimant: &str, event_id: &str, attempt: i32, error: &str) -> Result<()> {
+async fn mark_failed(
+    pool: &PgPool,
+    claimant: &str,
+    event_id: &str,
+    attempt: i32,
+    error: &str,
+) -> Result<()> {
     sqlx::query(
         "UPDATE scheduled_events SET status='failed',retry_count=$3,last_error=$4,claimant=NULL,claimed_at=NULL,claim_expires_at=NULL \
          WHERE event_id=$1 AND claimant=$2 AND claim_expires_at>NOW()"
@@ -127,7 +150,13 @@ async fn mark_failed(pool: &PgPool, claimant: &str, event_id: &str, attempt: i32
     Ok(())
 }
 
-async fn schedule_retry(pool: &PgPool, claimant: &str, event_id: &str, attempt: i32, error: &str) -> Result<()> {
+async fn schedule_retry(
+    pool: &PgPool,
+    claimant: &str,
+    event_id: &str,
+    attempt: i32,
+    error: &str,
+) -> Result<()> {
     let delay = (1_i64 << (attempt - 1).clamp(0, 5)).min(60);
     sqlx::query(
         "UPDATE scheduled_events SET status='pending',retry_count=$3,retry_at=NOW()+($4 * INTERVAL '1 second'),last_error=$5,claimant=NULL,claimed_at=NULL,claim_expires_at=NULL \
@@ -139,7 +168,10 @@ async fn schedule_retry(pool: &PgPool, claimant: &str, event_id: &str, attempt: 
 
 pub(super) fn event_subject(event_type: &str, shard: u32, rulesets: &[String]) -> String {
     if rulesets.iter().any(|rule_set| rule_set == event_type) {
-        format!("events.ruleset.{}.shard.{shard}", engine::sha256_hex(event_type.as_bytes()))
+        format!(
+            "events.ruleset.{}.shard.{shard}",
+            engine::sha256_hex(event_type.as_bytes())
+        )
     } else {
         format!("events.shard.{shard}")
     }

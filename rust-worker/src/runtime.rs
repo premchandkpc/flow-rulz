@@ -1,14 +1,15 @@
 //! Runtime orchestration. Domain work lives in focused submodules.
+pub(crate) mod broker;
 mod consumer;
 mod effects;
 mod quarantine;
 mod scheduler;
 
 use crate::{config::Config, engine};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use async_nats::jetstream;
 use chrono::Utc;
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::collections::HashMap;
 use tokio::task::JoinSet;
 use tracing::{info, warn};
@@ -16,8 +17,13 @@ use tracing::{info, warn};
 pub async fn run(config: Config) -> Result<()> {
     let (pool, js) = connect_services(&config).await?;
     let leases = acquire_initial_leases(&pool, &config).await?;
-    if leases.is_empty() { bail_no_leases(&config)?; }
-    info!(owned_shards = leases.len(), "Rust worker acquired shard leases");
+    if leases.is_empty() {
+        bail_no_leases(&config)?;
+    }
+    info!(
+        owned_shards = leases.len(),
+        "Rust worker acquired shard leases"
+    );
 
     let mut tasks = JoinSet::new();
     spawn_consumer_tasks(&mut tasks, &pool, &js, &config, &leases);
@@ -37,13 +43,23 @@ fn bail_no_leases(config: &Config) -> Result<()> {
 }
 
 async fn connect_services(config: &Config) -> Result<(PgPool, jetstream::Context)> {
-    let pool = PgPoolOptions::new().max_connections(20).connect(&config.database_url)
-        .await.context("connect PostgreSQL")?;
-    sqlx::query("SELECT 1").execute(&pool).await.context("verify PostgreSQL")?;
+    let pool = PgPoolOptions::new()
+        .max_connections(20)
+        .connect(&config.database_url)
+        .await
+        .context("connect PostgreSQL")?;
+    sqlx::query("SELECT 1")
+        .execute(&pool)
+        .await
+        .context("verify PostgreSQL")?;
 
-    let client = async_nats::connect(config.nats_url.clone()).await.context("connect NATS")?;
+    let client = async_nats::connect(config.nats_url.clone())
+        .await
+        .context("connect NATS")?;
     let js = jetstream::new(client);
-    let _stream = js.get_stream(&config.stream).await
+    let _stream = js
+        .get_stream(&config.stream)
+        .await
         .with_context(|| format!("get JetStream stream {}", config.stream))?;
     Ok((pool, js))
 }
@@ -71,7 +87,12 @@ fn spawn_consumer_tasks(
     }
 }
 
-fn spawn_background_tasks(tasks: &mut JoinSet<Result<()>>, pool: &PgPool, js: &jetstream::Context, config: &Config) {
+fn spawn_background_tasks(
+    tasks: &mut JoinSet<Result<()>>,
+    pool: &PgPool,
+    js: &jetstream::Context,
+    config: &Config,
+) {
     let outbox_pool = pool.clone();
     let outbox_js = js.clone();
     let outbox_config = config.clone();
@@ -134,10 +155,14 @@ async fn acquire_initial_leases(pool: &PgPool, config: &Config) -> Result<HashMa
     let ttl_ms = i64::try_from(config.lease_ttl.as_millis())?;
     let mut leases = HashMap::with_capacity(target as usize);
     for offset in 0..config.num_shards {
-        if leases.len() >= target as usize { break; }
+        if leases.len() >= target as usize {
+            break;
+        }
         let shard = (start + offset) % config.num_shards;
         match engine::acquire_lease(pool, shard, &config.worker_id, ttl_ms).await {
-            Ok(Some(token)) => { leases.insert(shard, token); }
+            Ok(Some(token)) => {
+                leases.insert(shard, token);
+            }
             Ok(None) => {}
             Err(err) => warn!(shard, error=%err, "initial shard lease attempt failed"),
         }
@@ -146,5 +171,9 @@ async fn acquire_initial_leases(pool: &PgPool, config: &Config) -> Result<HashMa
 }
 
 fn uuid_token() -> String {
-    format!("{}-{}", Utc::now().timestamp_nanos_opt().unwrap_or_default(), std::process::id())
+    format!(
+        "{}-{}",
+        Utc::now().timestamp_nanos_opt().unwrap_or_default(),
+        std::process::id()
+    )
 }

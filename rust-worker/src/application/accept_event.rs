@@ -1,7 +1,7 @@
 use crate::{
     domain::{
-        deterministic_id, identity::encode_hex, EventEnvelope, ExecutionMode, LogPosition,
-        LogRecordKind, PartitionId,
+        EventEnvelope, ExecutionMode, LogPosition, LogRecordKind, PartitionId, deterministic_id,
+        identity::encode_hex,
     },
     ports::{
         event_log::{EventLog, LogError, NewLogRecord},

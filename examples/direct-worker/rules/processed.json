@@ -1,0 +1,14 @@
+{
+  "rule_set": "a.processed",
+  "revision": 1,
+  "mode": "first_match",
+  "rules": [{
+    "id": "send-to-b",
+    "when": {"path": "$.id", "op": "exists"},
+    "then": [{"command": {
+      "destination": "b",
+      "name": "handle",
+      "data": {"source": "a.processed", "action": "handle"}
+    }}]
+  }]
+}

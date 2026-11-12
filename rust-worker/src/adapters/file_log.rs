@@ -3,11 +3,11 @@
 //! This adapter provides durable local append, replay and idempotency. It is
 //! deliberately not described as a replicated/distributed broker: it has no
 //! quorum protocol or cross-node fencing authority.
-use crate::domain::{
-    deterministic_id, EffectKind, ExecutionCommit, ExecutionOutcome, LogPosition, LogRecord,
-    LogRecordKind, PartitionId,
-};
 use crate::domain::identity::encode_hex;
+use crate::domain::{
+    EffectKind, ExecutionCommit, ExecutionOutcome, LogPosition, LogRecord, LogRecordKind,
+    PartitionId, deterministic_id,
+};
 use crate::ports::event_log::{EventLog, LogError, NewLogRecord};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -75,7 +75,9 @@ impl FileEventLog {
         segment_max_bytes: u64,
     ) -> Result<Self, LogError> {
         if segment_max_bytes == 0 {
-            return Err(LogError::Invalid("WAL segment size must be positive".into()));
+            return Err(LogError::Invalid(
+                "WAL segment size must be positive".into(),
+            ));
         }
         let root = root.as_ref().to_path_buf();
         fs::create_dir_all(&root).map_err(storage_error)?;
@@ -88,7 +90,10 @@ impl FileEventLog {
             let entry = entry.map_err(storage_error)?;
             let name = entry.file_name().to_string_lossy().to_string();
             if let Some((partition, segment)) = parse_partition_segment(&name)? {
-                files.entry(PartitionId(partition)).or_default().push((segment, entry.path()));
+                files
+                    .entry(PartitionId(partition))
+                    .or_default()
+                    .push((segment, entry.path()));
             }
         }
 
@@ -114,13 +119,12 @@ impl FileEventLog {
                         partition.0, expected_segment
                     )));
                 }
-                let (file, segment_records, segment_position, segment_epoch) =
-                    recover_partition(
-                        path.clone(),
-                        partition,
-                        next_position + 1,
-                        highest_fencing_epoch,
-                    )?;
+                let (file, segment_records, segment_position, segment_epoch) = recover_partition(
+                    path.clone(),
+                    partition,
+                    next_position + 1,
+                    highest_fencing_epoch,
+                )?;
 
                 for record in &segment_records {
                     if record_index
@@ -252,7 +256,8 @@ impl EventLog for FileEventLog {
         }
 
         let mut partitions = self.partitions.lock().await;
-        self.ensure_partition(&mut partitions, record.partition).await?;
+        self.ensure_partition(&mut partitions, record.partition)
+            .await?;
         let state = partitions
             .get_mut(&record.partition)
             .ok_or_else(|| LogError::Integrity("partition state disappeared".into()))?;
@@ -261,28 +266,34 @@ impl EventLog for FileEventLog {
             LogRecordKind::EventAccepted => {
                 let value: serde_json::Value = serde_json::from_slice(&record.payload)
                     .map_err(|error| LogError::Integrity(error.to_string()))?;
-                let tenant_id = value["identity"]["tenant_id"].as_str()
-                    .ok_or_else(|| LogError::Integrity("accepted event tenant ID missing".into()))?;
-                let event_id = value["identity"]["event_id"].as_str()
+                let tenant_id = value["identity"]["tenant_id"].as_str().ok_or_else(|| {
+                    LogError::Integrity("accepted event tenant ID missing".into())
+                })?;
+                let event_id = value["identity"]["event_id"]
+                    .as_str()
                     .ok_or_else(|| LogError::Integrity("accepted event ID missing".into()))?;
-                let partition_key = value["identity"]["partition_key"].as_str()
-                    .ok_or_else(|| LogError::Integrity("accepted event partition key missing".into()))?;
-                let payload_hex = value["payload_hex"].as_str()
-                    .ok_or_else(|| LogError::Integrity("accepted event payload bytes missing".into()))?;
-                let payload_hash = value["payload_sha256"].as_str()
-                    .ok_or_else(|| LogError::Integrity("accepted event payload hash missing".into()))?;
+                let partition_key =
+                    value["identity"]["partition_key"].as_str().ok_or_else(|| {
+                        LogError::Integrity("accepted event partition key missing".into())
+                    })?;
+                let payload_hex = value["payload_hex"].as_str().ok_or_else(|| {
+                    LogError::Integrity("accepted event payload bytes missing".into())
+                })?;
+                let payload_hash = value["payload_sha256"].as_str().ok_or_else(|| {
+                    LogError::Integrity("accepted event payload hash missing".into())
+                })?;
                 let original_payload = decode_hex(payload_hex)?;
-                let expected_record_id = deterministic_id(
-                    "event.accepted",
-                    &[tenant_id, partition_key, event_id, ""],
-                );
+                let expected_record_id =
+                    deterministic_id("event.accepted", &[tenant_id, partition_key, event_id, ""]);
                 if tenant_id != record.tenant_id
                     || event_id != record.event_id
                     || record.record_id != expected_record_id
                     || partition_for_key(tenant_id, partition_key) != record.partition
                     || sha256_hex(&original_payload) != payload_hash
                 {
-                    return Err(LogError::Integrity("accepted event identity or payload hash is invalid".into()));
+                    return Err(LogError::Integrity(
+                        "accepted event identity or payload hash is invalid".into(),
+                    ));
                 }
             }
             LogRecordKind::FenceAdvanced => {
@@ -297,7 +308,9 @@ impl EventLog for FileEventLog {
                     || record.tenant_id != "_system"
                     || record.event_id != format!("fence:{}:{attempted}", record.partition.0)
                 {
-                    return Err(LogError::Invalid("fencing fact identity does not match payload".into()));
+                    return Err(LogError::Invalid(
+                        "fencing fact identity does not match payload".into(),
+                    ));
                 }
                 let partition_text = record.partition.0.to_string();
                 let expected_id = deterministic_id(
@@ -305,7 +318,9 @@ impl EventLog for FileEventLog {
                     &["_system", &partition_text, &record.event_id, ""],
                 );
                 if record.record_id != expected_id {
-                    return Err(LogError::Invalid("fencing fact has a non-canonical record ID".into()));
+                    return Err(LogError::Invalid(
+                        "fencing fact has a non-canonical record ID".into(),
+                    ));
                 }
                 if attempted <= state.highest_fencing_epoch {
                     return Err(LogError::Fenced {
@@ -331,7 +346,9 @@ impl EventLog for FileEventLog {
                 if value["event"]["tenant_id"].as_str() != Some(record.tenant_id.as_str())
                     || value["event"]["event_id"].as_str() != Some(record.event_id.as_str())
                 {
-                    return Err(LogError::Invalid("execution commit identity does not match record".into()));
+                    return Err(LogError::Invalid(
+                        "execution commit identity does not match record".into(),
+                    ));
                 }
                 let expected_execution_id = deterministic_id(
                     "execution",
@@ -339,13 +356,20 @@ impl EventLog for FileEventLog {
                 );
                 let expected_record_id = deterministic_id(
                     "execution.committed",
-                    &[&record.tenant_id, partition_key, &record.event_id, execution_id],
+                    &[
+                        &record.tenant_id,
+                        partition_key,
+                        &record.event_id,
+                        execution_id,
+                    ],
                 );
                 if execution_id != expected_execution_id
                     || record.record_id != expected_record_id
                     || partition_for_key(&record.tenant_id, partition_key) != record.partition
                 {
-                    return Err(LogError::Invalid("execution commit has non-canonical identity or partition".into()));
+                    return Err(LogError::Invalid(
+                        "execution commit has non-canonical identity or partition".into(),
+                    ));
                 }
                 if attempted != state.highest_fencing_epoch {
                     return Err(LogError::Fenced {
@@ -462,9 +486,8 @@ impl EventLog for FileEventLog {
             ExecutionOutcome::NoMatch => "no_match",
             ExecutionOutcome::Quarantined { .. } => "quarantined",
         };
-        let result_payload: serde_json::Value =
-            serde_json::from_slice(&commit.result_payload)
-                .map_err(|error| LogError::Invalid(format!("invalid result payload: {error}")))?;
+        let result_payload: serde_json::Value = serde_json::from_slice(&commit.result_payload)
+            .map_err(|error| LogError::Invalid(format!("invalid result payload: {error}")))?;
         let mut effects = Vec::with_capacity(commit.effects.len());
         for effect in &commit.effects {
             let kind = match effect.kind {
@@ -473,10 +496,8 @@ impl EventLog for FileEventLog {
                 EffectKind::Reply => "reply",
                 EffectKind::Schedule => "schedule",
             };
-            let effect_payload: serde_json::Value =
-                serde_json::from_slice(&effect.payload).map_err(|error| {
-                    LogError::Invalid(format!("invalid effect payload: {error}"))
-                })?;
+            let effect_payload: serde_json::Value = serde_json::from_slice(&effect.payload)
+                .map_err(|error| LogError::Invalid(format!("invalid effect payload: {error}")))?;
             effects.push(json!({
                 "effect_id": effect.effect_id,
                 "effect_key": effect.effect_key,
@@ -544,12 +565,16 @@ impl EventLog for FileEventLog {
         let partitions = self.partitions.lock().await;
         let Some(state) = partitions.get(&partition) else {
             if after.0 > 0 {
-                return Err(LogError::Invalid("cursor is beyond an empty partition".into()));
+                return Err(LogError::Invalid(
+                    "cursor is beyond an empty partition".into(),
+                ));
             }
             return Ok(Vec::new());
         };
         if after.0 > state.next_position {
-            return Err(LogError::Invalid("cursor is beyond current log position".into()));
+            return Err(LogError::Invalid(
+                "cursor is beyond current log position".into(),
+            ));
         }
         Ok(state
             .records
@@ -602,7 +627,12 @@ impl EventLog for FileEventLog {
         self.append(NewLogRecord {
             record_id: deterministic_id(
                 "fence.advanced",
-                &["_system", &partition_text, &format!("fence:{partition_text}:{epoch_text}"), ""],
+                &[
+                    "_system",
+                    &partition_text,
+                    &format!("fence:{partition_text}:{epoch_text}"),
+                    "",
+                ],
             ),
             partition,
             kind: LogRecordKind::FenceAdvanced,
@@ -657,7 +687,9 @@ fn recover_partition(
         let mut bytes = vec![0_u8; frame_len];
         file.read_exact(&mut bytes).map_err(storage_error)?;
         let frame: Frame = serde_json::from_slice(&bytes).map_err(|error| {
-            LogError::Integrity(format!("invalid complete frame at offset {offset}: {error}"))
+            LogError::Integrity(format!(
+                "invalid complete frame at offset {offset}: {error}"
+            ))
         })?;
         let body_bytes = serde_json::to_vec(&frame.body).map_err(storage_error)?;
         if sha256_hex(&body_bytes) != frame.frame_sha256 {
@@ -691,28 +723,34 @@ fn recover_partition(
             LogRecordKind::EventAccepted => {
                 let value: serde_json::Value = serde_json::from_slice(&record.payload)
                     .map_err(|error| LogError::Integrity(error.to_string()))?;
-                let tenant_id = value["identity"]["tenant_id"].as_str()
-                    .ok_or_else(|| LogError::Integrity("accepted event tenant ID missing".into()))?;
-                let event_id = value["identity"]["event_id"].as_str()
+                let tenant_id = value["identity"]["tenant_id"].as_str().ok_or_else(|| {
+                    LogError::Integrity("accepted event tenant ID missing".into())
+                })?;
+                let event_id = value["identity"]["event_id"]
+                    .as_str()
                     .ok_or_else(|| LogError::Integrity("accepted event ID missing".into()))?;
-                let partition_key = value["identity"]["partition_key"].as_str()
-                    .ok_or_else(|| LogError::Integrity("accepted event partition key missing".into()))?;
-                let payload_hex = value["payload_hex"].as_str()
-                    .ok_or_else(|| LogError::Integrity("accepted event payload bytes missing".into()))?;
-                let payload_hash = value["payload_sha256"].as_str()
-                    .ok_or_else(|| LogError::Integrity("accepted event payload hash missing".into()))?;
+                let partition_key =
+                    value["identity"]["partition_key"].as_str().ok_or_else(|| {
+                        LogError::Integrity("accepted event partition key missing".into())
+                    })?;
+                let payload_hex = value["payload_hex"].as_str().ok_or_else(|| {
+                    LogError::Integrity("accepted event payload bytes missing".into())
+                })?;
+                let payload_hash = value["payload_sha256"].as_str().ok_or_else(|| {
+                    LogError::Integrity("accepted event payload hash missing".into())
+                })?;
                 let original_payload = decode_hex(payload_hex)?;
-                let expected_record_id = deterministic_id(
-                    "event.accepted",
-                    &[tenant_id, partition_key, event_id, ""],
-                );
+                let expected_record_id =
+                    deterministic_id("event.accepted", &[tenant_id, partition_key, event_id, ""]);
                 if tenant_id != record.tenant_id
                     || event_id != record.event_id
                     || record.record_id != expected_record_id
                     || partition_for_key(tenant_id, partition_key) != partition
                     || sha256_hex(&original_payload) != payload_hash
                 {
-                    return Err(LogError::Integrity("accepted event identity or payload hash is invalid".into()));
+                    return Err(LogError::Integrity(
+                        "accepted event identity or payload hash is invalid".into(),
+                    ));
                 }
             }
             LogRecordKind::FenceAdvanced => {
@@ -734,10 +772,14 @@ fn recover_partition(
                     || record.event_id != expected_event_id
                     || record.record_id != expected_record_id
                 {
-                    return Err(LogError::Integrity("fencing record identity is not canonical".into()));
+                    return Err(LogError::Integrity(
+                        "fencing record identity is not canonical".into(),
+                    ));
                 }
                 if epoch <= highest_fencing_epoch {
-                    return Err(LogError::Integrity("fencing epochs must increase monotonically".into()));
+                    return Err(LogError::Integrity(
+                        "fencing epochs must increase monotonically".into(),
+                    ));
                 }
                 highest_fencing_epoch = epoch;
             }
@@ -745,17 +787,24 @@ fn recover_partition(
                 let value: serde_json::Value = serde_json::from_slice(&record.payload)
                     .map_err(|error| LogError::Integrity(error.to_string()))?;
                 if value["fencing_epoch"].as_u64() != Some(highest_fencing_epoch) {
-                    return Err(LogError::Integrity("execution commit has stale fencing epoch".into()));
+                    return Err(LogError::Integrity(
+                        "execution commit has stale fencing epoch".into(),
+                    ));
                 }
-                let tenant_id = value["event"]["tenant_id"].as_str()
+                let tenant_id = value["event"]["tenant_id"]
+                    .as_str()
                     .ok_or_else(|| LogError::Integrity("execution tenant ID missing".into()))?;
-                let event_id = value["event"]["event_id"].as_str()
+                let event_id = value["event"]["event_id"]
+                    .as_str()
                     .ok_or_else(|| LogError::Integrity("execution event ID missing".into()))?;
-                let partition_key = value["event"]["partition_key"].as_str()
+                let partition_key = value["event"]["partition_key"]
+                    .as_str()
                     .ok_or_else(|| LogError::Integrity("execution partition key missing".into()))?;
-                let execution_id = value["execution_id"].as_str()
+                let execution_id = value["execution_id"]
+                    .as_str()
                     .ok_or_else(|| LogError::Integrity("execution ID missing".into()))?;
-                let expected_execution_id = deterministic_id("execution", &[tenant_id, partition_key, event_id]);
+                let expected_execution_id =
+                    deterministic_id("execution", &[tenant_id, partition_key, event_id]);
                 let expected_record_id = deterministic_id(
                     "execution.committed",
                     &[tenant_id, partition_key, event_id, execution_id],
@@ -766,7 +815,9 @@ fn recover_partition(
                     || record.record_id != expected_record_id
                     || partition_for_key(tenant_id, partition_key) != partition
                 {
-                    return Err(LogError::Integrity("execution record identity is not canonical".into()));
+                    return Err(LogError::Integrity(
+                        "execution record identity is not canonical".into(),
+                    ));
                 }
             }
             _ => {}
@@ -786,7 +837,6 @@ fn recover_partition(
     Ok((file, records, expected_position - 1, highest_fencing_epoch))
 }
 
-
 #[cfg(unix)]
 unsafe extern "C" {
     fn flock(fd: std::os::raw::c_int, operation: std::os::raw::c_int) -> std::os::raw::c_int;
@@ -800,7 +850,11 @@ fn truncate_and_sync(file: &mut File, offset: u64) -> Result<(), LogError> {
 }
 
 fn acquire_process_lock(root: &Path) -> Result<File, LogError> {
-    let path = root.join(".flow-rulz-wal.lock");
+    acquire_process_lock_at(root, ".flow-rulz-wal.lock")
+}
+
+pub(super) fn acquire_process_lock_at(root: &Path, name: &str) -> Result<File, LogError> {
+    let path = root.join(name);
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -837,25 +891,31 @@ fn partition_path(root: &Path, partition: PartitionId) -> PathBuf {
 }
 
 fn segment_path(root: &Path, partition: PartitionId, segment: u64) -> PathBuf {
-    root.join(format!("partition-{:010}-segment-{:020}.wal", partition.0, segment))
+    root.join(format!(
+        "partition-{:010}-segment-{:020}.wal",
+        partition.0, segment
+    ))
 }
 
 fn parse_partition_segment(name: &str) -> Result<Option<(u32, u64)>, LogError> {
-    let Some(name) = name.strip_prefix("partition-").and_then(|value| value.strip_suffix(".wal")) else {
+    let Some(name) = name
+        .strip_prefix("partition-")
+        .and_then(|value| value.strip_suffix(".wal"))
+    else {
         return Ok(None);
     };
     if let Some((partition, segment)) = name.split_once("-segment-") {
-        let partition = partition.parse::<u32>().map_err(|_| {
-            LogError::Integrity(format!("invalid WAL partition filename {name}"))
-        })?;
-        let segment = segment.parse::<u64>().map_err(|_| {
-            LogError::Integrity(format!("invalid WAL segment filename {name}"))
-        })?;
+        let partition = partition
+            .parse::<u32>()
+            .map_err(|_| LogError::Integrity(format!("invalid WAL partition filename {name}")))?;
+        let segment = segment
+            .parse::<u64>()
+            .map_err(|_| LogError::Integrity(format!("invalid WAL segment filename {name}")))?;
         Ok(Some((partition, segment)))
     } else {
-        let partition = name.parse::<u32>().map_err(|_| {
-            LogError::Integrity(format!("invalid WAL partition filename {name}"))
-        })?;
+        let partition = name
+            .parse::<u32>()
+            .map_err(|_| LogError::Integrity(format!("invalid WAL partition filename {name}")))?;
         Ok(Some((partition, 0)))
     }
 }
@@ -920,10 +980,7 @@ mod tests {
 
     fn temp_dir() -> PathBuf {
         let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "flow-rulz-wal-{}-{id}",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("flow-rulz-wal-{}-{id}", std::process::id()))
     }
 
     fn new_record(record_id: &str, payload: &[u8]) -> NewLogRecord {
@@ -941,7 +998,9 @@ mod tests {
     #[tokio::test]
     async fn recovery_fails_closed_when_a_segment_is_missing() {
         let dir = temp_dir();
-        let log = FileEventLog::open_with_segment_bytes(&dir, 1).await.unwrap();
+        let log = FileEventLog::open_with_segment_bytes(&dir, 1)
+            .await
+            .unwrap();
         for index in 1_u32..=3 {
             log.append(new_record(
                 &format!("progress-{index}"),
@@ -967,7 +1026,9 @@ mod tests {
     #[tokio::test]
     async fn segment_rotation_preserves_global_positions_after_restart() {
         let dir = temp_dir();
-        let log = FileEventLog::open_with_segment_bytes(&dir, 1).await.unwrap();
+        let log = FileEventLog::open_with_segment_bytes(&dir, 1)
+            .await
+            .unwrap();
         for index in 1_u32..=3 {
             let record = new_record(
                 &format!("progress-{index}"),
@@ -992,10 +1053,16 @@ mod tests {
             reopened.current_position(PartitionId(7)).await.unwrap(),
             LogPosition(3)
         );
-        let records = reopened.read(PartitionId(7), LogPosition(0), 10).await.unwrap();
+        let records = reopened
+            .read(PartitionId(7), LogPosition(0), 10)
+            .await
+            .unwrap();
         assert_eq!(records.len(), 3);
         assert_eq!(
-            records.iter().map(|record| record.position.0).collect::<Vec<_>>(),
+            records
+                .iter()
+                .map(|record| record.position.0)
+                .collect::<Vec<_>>(),
             vec![1, 2, 3]
         );
         let _ = fs::remove_dir_all(dir);
@@ -1031,7 +1098,10 @@ mod tests {
         });
         let payload = Bytes::from(serde_json::to_vec(&accepted).unwrap());
         let record = NewLogRecord {
-            record_id: deterministic_id("event.accepted", &[tenant_id, partition_key, event_id, ""]),
+            record_id: deterministic_id(
+                "event.accepted",
+                &[tenant_id, partition_key, event_id, ""],
+            ),
             partition,
             kind: LogRecordKind::EventAccepted,
             tenant_id: tenant_id.to_string(),
@@ -1132,7 +1202,11 @@ mod tests {
         drop(log);
 
         let path = partition_path(&dir, PartitionId(7));
-        let mut file = OpenOptions::new().read(true).write(true).open(path).unwrap();
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap();
         file.seek(SeekFrom::End(-2)).unwrap();
         file.write_all(b"xx").unwrap();
         file.sync_all().unwrap();
@@ -1152,14 +1226,17 @@ mod tests {
         let tenant_id = "tenant-a";
         let event_id = "event-1";
         let partition_key = "order-1";
-        let execution_id = deterministic_id(
-            "execution",
-            &[tenant_id, partition_key, event_id],
-        );
+        let execution_id = deterministic_id("execution", &[tenant_id, partition_key, event_id]);
         let effect_key = "orders-approved";
         let effect_id = deterministic_id(
             "effect",
-            &[tenant_id, partition_key, event_id, &execution_id, effect_key],
+            &[
+                tenant_id,
+                partition_key,
+                event_id,
+                &execution_id,
+                effect_key,
+            ],
         );
         let effect_payload = Bytes::from_static(br#"{"type":"orders.approved"}"#);
         let effect = crate::domain::EffectIntent {
@@ -1199,7 +1276,10 @@ mod tests {
         };
 
         let partition = partition_for_key(tenant_id, partition_key);
-        assert_eq!(log.advance_fence(partition, 1).await.unwrap(), LogPosition(1));
+        assert_eq!(
+            log.advance_fence(partition, 1).await.unwrap(),
+            LogPosition(1)
+        );
         let position = log.commit_execution(commit).await.unwrap();
         assert_eq!(position, LogPosition(2));
         let records = log.read(partition, LogPosition(0), 10).await.unwrap();
@@ -1221,9 +1301,11 @@ mod tests {
             expected ^= u32::from(*byte);
             expected = expected.wrapping_mul(16_777_619);
         }
-        assert_eq!(partition_for_key("tenant-a", key), PartitionId(expected % 4096));
+        assert_eq!(
+            partition_for_key("tenant-a", key),
+            PartitionId(expected % 4096)
+        );
     }
-
 
     #[tokio::test]
     async fn record_id_cannot_be_reused_in_another_partition() {
@@ -1239,7 +1321,6 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-
     #[tokio::test]
     async fn fencing_epochs_are_monotonic_and_stale_retries_are_rejected() {
         let dir = temp_dir();
@@ -1253,10 +1334,15 @@ mod tests {
             LogPosition(2)
         );
         let error = log.advance_fence(PartitionId(7), 1).await.unwrap_err();
-        assert!(matches!(error, LogError::Fenced { attempted: 1, current: 2 }));
+        assert!(matches!(
+            error,
+            LogError::Fenced {
+                attempted: 1,
+                current: 2
+            }
+        ));
         let _ = fs::remove_dir_all(dir);
     }
-
 
     #[tokio::test]
     async fn recovery_rejects_semantically_invalid_fencing_identity_even_with_valid_checksum() {
@@ -1266,7 +1352,11 @@ mod tests {
         drop(log);
 
         let path = partition_path(&dir, PartitionId(7));
-        let mut file = OpenOptions::new().read(true).write(true).open(&path).unwrap();
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
         let mut length = [0_u8; 4];
         file.read_exact(&mut length).unwrap();
         let frame_len = u32::from_be_bytes(length) as usize;
@@ -1281,7 +1371,8 @@ mod tests {
         let encoded = serde_json::to_vec(&frame).unwrap();
         assert_eq!(encoded.len(), frame_len);
         file.seek(SeekFrom::Start(0)).unwrap();
-        file.write_all(&u32::try_from(encoded.len()).unwrap().to_be_bytes()).unwrap();
+        file.write_all(&u32::try_from(encoded.len()).unwrap().to_be_bytes())
+            .unwrap();
         file.write_all(&encoded).unwrap();
         file.sync_all().unwrap();
         drop(file);
@@ -1301,5 +1392,4 @@ mod tests {
         assert!(FileEventLog::open(&dir).await.is_ok());
         let _ = fs::remove_dir_all(dir);
     }
-
 }

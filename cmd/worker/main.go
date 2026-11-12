@@ -39,13 +39,19 @@ func main() {
 }
 
 func run() (runErr error) {
-	cfg, err := config.Load()
+	cfg, err := config.LoadWorker()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
 	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
+	if cfg.Worker.Mode == "broker" {
+		return runBroker(ctx, cfg)
+	}
+	if cfg.Worker.Mode == "direct" {
+		return runDirect(ctx, cfg)
+	}
 
 	obsConfig := observability.DefaultConfig()
 	obsConfig.ServiceName = serviceName

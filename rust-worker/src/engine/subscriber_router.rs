@@ -3,9 +3,9 @@
 //! This module resolves tenant-domain subscriptions inside the event transaction.
 //! It creates durable delivery intents only; NATS publication is handled by the
 //! outbox dispatcher after commit, independently of rule evaluation.
-use super::{sha256_hex, EventEnvelope};
 use super::rules::Effect;
-use anyhow::{bail, Context, Result};
+use super::{EventEnvelope, sha256_hex};
+use anyhow::{Context, Result, bail};
 use sqlx::{Postgres, Row, Transaction};
 
 const MAX_SUBSCRIBER_FANOUT: usize = 100;
@@ -53,9 +53,7 @@ pub(super) async fn route_subscribers(
 }
 
 fn subscriber_effect_id(tenant_id: &str, event_id: &str, service_id: &str) -> String {
-    sha256_hex(
-        format!("{tenant_id}|{event_id}|service-subscription|1|{service_id}|0").as_bytes(),
-    )
+    sha256_hex(format!("{tenant_id}|{event_id}|service-subscription|1|{service_id}|0").as_bytes())
 }
 
 #[cfg(test)]
@@ -65,9 +63,21 @@ mod tests {
     #[test]
     fn subscriber_effect_id_is_stable_and_tenant_scoped() {
         let first = subscriber_effect_id("tenant-a", "event-1", "service-a");
-        assert_eq!(first, subscriber_effect_id("tenant-a", "event-1", "service-a"));
-        assert_ne!(first, subscriber_effect_id("tenant-b", "event-1", "service-a"));
-        assert_ne!(first, subscriber_effect_id("tenant-a", "event-2", "service-a"));
-        assert_ne!(first, subscriber_effect_id("tenant-a", "event-1", "service-b"));
+        assert_eq!(
+            first,
+            subscriber_effect_id("tenant-a", "event-1", "service-a")
+        );
+        assert_ne!(
+            first,
+            subscriber_effect_id("tenant-b", "event-1", "service-a")
+        );
+        assert_ne!(
+            first,
+            subscriber_effect_id("tenant-a", "event-2", "service-a")
+        );
+        assert_ne!(
+            first,
+            subscriber_effect_id("tenant-a", "event-1", "service-b")
+        );
     }
 }

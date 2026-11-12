@@ -1,19 +1,27 @@
 //! JetStream event consumption and delivery settlement.
-use crate::{config::Config, engine::{self, EventEnvelope, ProcessOutcome}, runtime::quarantine};
-use anyhow::{anyhow, bail, Context, Result};
+use crate::{
+    config::Config,
+    engine::{self, EventEnvelope, ProcessOutcome},
+    runtime::quarantine,
+};
+use anyhow::{Context, Result, anyhow, bail};
 use async_nats::jetstream::{self, consumer::pull};
 use futures_util::StreamExt;
 use sqlx::PgPool;
-use tokio::time::{interval, MissedTickBehavior};
+use tokio::time::{MissedTickBehavior, interval};
 use tracing::{info, warn};
 
 pub(super) fn subjects_for_shard(shard: u32, config: &Config) -> Vec<(String, String)> {
-    let mut subjects = vec![(format!("events.shard.{shard}"),
-        format!("{}-legacy-shard-{shard}", config.durable))];
+    let mut subjects = vec![(
+        format!("events.shard.{shard}"),
+        format!("{}-legacy-shard-{shard}", config.durable),
+    )];
     for rule_set in &config.rulesets {
         let token = engine::sha256_hex(rule_set.as_bytes());
-        subjects.push((format!("events.ruleset.{}.shard.{shard}", token),
-            format!("{}-rs-{}-shard-{shard}", config.durable, &token[..32])));
+        subjects.push((
+            format!("events.ruleset.{}.shard.{shard}", token),
+            format!("{}-rs-{}-shard-{shard}", config.durable, &token[..32]),
+        ));
     }
     subjects
 }
@@ -28,14 +36,23 @@ pub(super) async fn consume_shard_subject(
     durable: String,
 ) -> Result<()> {
     let stream = js.get_stream(&config.stream).await?;
-    let consumer = stream.get_or_create_consumer(&durable, pull::Config {
-        durable_name: Some(durable.clone()),
-        filter_subject: subject.clone(),
-        ack_wait: config.ack_wait,
-        max_deliver: -1,
-        ..Default::default()
-    }).await.with_context(|| format!("create durable {durable} for {subject}"))?;
-    let mut messages = consumer.messages().await.context("open pull consumer message stream")?;
+    let consumer = stream
+        .get_or_create_consumer(
+            &durable,
+            pull::Config {
+                durable_name: Some(durable.clone()),
+                filter_subject: subject.clone(),
+                ack_wait: config.ack_wait,
+                max_deliver: -1,
+                ..Default::default()
+            },
+        )
+        .await
+        .with_context(|| format!("create durable {durable} for {subject}"))?;
+    let mut messages = consumer
+        .messages()
+        .await
+        .context("open pull consumer message stream")?;
     let mut renew = interval(config.lease_renew_interval);
     renew.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
@@ -59,9 +76,8 @@ async fn renew_shard_lease(
     fencing_token: i64,
 ) -> Result<()> {
     let ttl_ms = i64::try_from(config.lease_ttl.as_millis())?;
-    let renewed = engine::renew_lease(
-        pool, shard, &config.worker_id, fencing_token, ttl_ms,
-    ).await?;
+    let renewed =
+        engine::renew_lease(pool, shard, &config.worker_id, fencing_token, ttl_ms).await?;
     if !renewed {
         bail!("shard lease lost; consumer must stop");
     }
@@ -79,7 +95,14 @@ async fn handle_message(
         return Ok(());
     };
     if let Err(error) = validate_message_routing(&envelope, config, shard) {
-        quarantine_and_ack(pool, &message, &envelope.id, Some(&envelope.tenant_id), &error.to_string()).await?;
+        quarantine_and_ack(
+            pool,
+            &message,
+            &envelope.id,
+            Some(&envelope.tenant_id),
+            &error.to_string(),
+        )
+        .await?;
         return Ok(());
     }
 
@@ -99,8 +122,13 @@ async fn decode_or_quarantine(
     };
     if let Err(error) = envelope.validate() {
         quarantine_and_ack(
-            pool, message, &envelope.id, Some(&envelope.tenant_id), &error.to_string(),
-        ).await?;
+            pool,
+            message,
+            &envelope.id,
+            Some(&envelope.tenant_id),
+            &error.to_string(),
+        )
+        .await?;
         return Ok(None);
     }
     Ok(Some(envelope))
@@ -112,18 +140,30 @@ fn validate_message_routing(envelope: &EventEnvelope, config: &Config, shard: u3
         bail!("message routed to shard {shard} but envelope hashes to {computed_shard}");
     }
     if let Some(expected_service_id) = &config.service_id {
-        let target_service_id = envelope.meta.get("target_service_id").and_then(serde_json::Value::as_str)
-            .ok_or_else(|| anyhow!("meta.target_service_id is required for a configured service deployment"))?;
+        let target_service_id = envelope
+            .meta
+            .get("target_service_id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| {
+                anyhow!("meta.target_service_id is required for a configured service deployment")
+            })?;
         if target_service_id != expected_service_id {
-            bail!("message targets service deployment {target_service_id}, not this worker's {expected_service_id}");
+            bail!(
+                "message targets service deployment {target_service_id}, not this worker's {expected_service_id}"
+            );
         }
-        let expected_revision = config.deployment_revision
+        let expected_revision = config
+            .deployment_revision
             .ok_or_else(|| anyhow!("worker deployment revision is not configured"))?;
-        let target_revision = envelope.meta.get("deployment_revision")
+        let target_revision = envelope
+            .meta
+            .get("deployment_revision")
             .and_then(serde_json::Value::as_i64)
             .ok_or_else(|| anyhow!("meta.deployment_revision must be an integer"))?;
         if target_revision != expected_revision {
-            bail!("message targets deployment revision {target_revision}, not this worker's {expected_revision}");
+            bail!(
+                "message targets deployment revision {target_revision}, not this worker's {expected_revision}"
+            );
         }
     }
     Ok(())
@@ -138,20 +178,42 @@ async fn process_and_settle_event(
     envelope: EventEnvelope,
 ) -> Result<()> {
     let outcome = engine::process_event(
-        pool, &envelope, &config.worker_id, fencing_token, config.num_shards,
-    ).await;
+        pool,
+        &envelope,
+        &config.worker_id,
+        fencing_token,
+        config.num_shards,
+    )
+    .await;
 
     match outcome {
-        Ok(ProcessOutcome::Processed { execution_id, decision_hash, matched_rules }) => {
-            settle_processed_event(&message, shard, &envelope, &execution_id, &decision_hash, &matched_rules).await
+        Ok(ProcessOutcome::Processed {
+            execution_id,
+            decision_hash,
+            matched_rules,
+        }) => {
+            settle_processed_event(
+                &message,
+                shard,
+                &envelope,
+                &execution_id,
+                &decision_hash,
+                &matched_rules,
+            )
+            .await
         }
         Ok(ProcessOutcome::Duplicate { execution_id }) => {
             settle_duplicate_event(&message, shard, &envelope, &execution_id).await
         }
         Err(error) if is_permanent_event_error(&error) => {
             quarantine_and_ack(
-                pool, &message, &envelope.id, Some(&envelope.tenant_id), &error.to_string(),
-            ).await
+                pool,
+                &message,
+                &envelope.id,
+                Some(&envelope.tenant_id),
+                &error.to_string(),
+            )
+            .await
         }
         Err(error) => retry_event_later(&message, config, shard, &envelope, &error).await,
     }
@@ -187,8 +249,10 @@ async fn retry_event_later(
     error: &anyhow::Error,
 ) -> Result<()> {
     warn!(shard, event_id=%envelope.id, error=%error, "event processing failed; scheduling retry");
-    message.ack_with(jetstream::AckKind::Nak(Some(config.retry_delay)))
-        .await.map_err(|error| anyhow!("nak failed event for retry: {error}"))?;
+    message
+        .ack_with(jetstream::AckKind::Nak(Some(config.retry_delay)))
+        .await
+        .map_err(|error| anyhow!("nak failed event for retry: {error}"))?;
     Ok(())
 }
 
@@ -206,7 +270,10 @@ fn log_processed_event(
 }
 
 async fn acknowledge_message(message: &jetstream::Message, context: &str) -> Result<()> {
-    message.ack().await.map_err(|error| anyhow!("{context}: {error}"))
+    message
+        .ack()
+        .await
+        .map_err(|error| anyhow!("{context}: {error}"))
 }
 
 async fn quarantine_and_ack(
@@ -216,21 +283,36 @@ async fn quarantine_and_ack(
     tenant_id: Option<&str>,
     reason: &str,
 ) -> Result<()> {
-    quarantine::persist_quarantine(pool, "event", event_id, tenant_id, &message.payload, reason).await?;
-    message.ack().await.map_err(|err| anyhow!("ack quarantined event: {err}"))?;
+    quarantine::persist_quarantine(pool, "event", event_id, tenant_id, &message.payload, reason)
+        .await?;
+    message
+        .ack()
+        .await
+        .map_err(|err| anyhow!("ack quarantined event: {err}"))?;
     Ok(())
 }
 
 fn is_permanent_event_error(error: &anyhow::Error) -> bool {
     let message = error.to_string().to_ascii_lowercase();
-    ["event id is required", "event type is required", "tenant_id is required",
-     "partition_key is required", "unsupported predicate operator", "unsupported partition key policy",
-     "emit topic is required", "resolved an empty partition key",
-     "action must contain exactly one supported action", "predicate path missing",
-     "inbox duplicate has no committed execution", "inbox points to missing execution",
-     "exceeds the 100-service fan-out limit", "command destination and name are required"].iter().any(|needle| message.contains(needle))
+    [
+        "event id is required",
+        "event type is required",
+        "tenant_id is required",
+        "partition_key is required",
+        "unsupported predicate operator",
+        "unsupported partition key policy",
+        "emit topic is required",
+        "resolved an empty partition key",
+        "action must contain exactly one supported action",
+        "predicate path missing",
+        "inbox duplicate has no committed execution",
+        "inbox points to missing execution",
+        "exceeds the 100-service fan-out limit",
+        "command destination and name are required",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
 }
-
 
 #[cfg(test)]
 mod deployment_routing_tests {
@@ -270,7 +352,10 @@ mod deployment_routing_tests {
         ]);
         for (key, value) in route_meta {
             let value = if key == "deployment_revision" {
-                match value.parse::<i64>() { Ok(revision) => json!(revision), Err(_) => json!(value) }
+                match value.parse::<i64>() {
+                    Ok(revision) => json!(revision),
+                    Err(_) => json!(value),
+                }
             } else {
                 json!(value)
             };
@@ -326,13 +411,17 @@ mod deployment_routing_tests {
     fn rejects_missing_malformed_and_stale_deployment_revision() {
         let cfg = config(Some("domain-a/orders"), Some(3));
         for revision in [None, Some("not-a-number"), Some("2")] {
-            let mut headers = HashMap::from([("target_service_id".into(), "domain-a/orders".into())]);
+            let mut headers =
+                HashMap::from([("target_service_id".into(), "domain-a/orders".into())]);
             if let Some(value) = revision {
                 headers.insert("deployment_revision".into(), value.into());
             }
             let env = event(headers);
             let shard = env.virtual_shard(cfg.num_shards).unwrap();
-            assert!(validate_message_routing(&env, &cfg, shard).is_err(), "revision case {revision:?} should fail");
+            assert!(
+                validate_message_routing(&env, &cfg, shard).is_err(),
+                "revision case {revision:?} should fail"
+            );
         }
     }
 

@@ -4,6 +4,31 @@ This is a source-backed map of the current implementation, not a target-state pr
 
 ## Runtime topology
 
+The Rust worker also supports `WORKER_MODE=broker` with protocol v1 and optional
+HTTP/TCP/NATS adapters. Its composition and ownership map are documented in
+[the Rust worker guide](../rust-worker.md). Cross-runtime broker tests cover the
+sample child-event/command chain; PostgreSQL runtime parity remains a separate
+verification boundary.
+
+`WORKER_MODE=broker` hosts topics, consumer groups and rule execution in the worker
+process, exposed through optional HTTP, framed TCP and NATS RPC adapters.
+`BROKER_TRANSPORTS=none` enables an in-process-only host. Shared broker operation
+policy is in `internal/services/broker`, with protocol contracts in
+`internal/ports/broker_protocol.go`. Output publication independently selects
+local topics or a peer via HTTP, TCP or NATS. Producers publish to FlowRulz and
+destination services consume and ACK directly. Storage is memory or an optional
+local snapshot adapter. See [worker-hosted broker](../embedded-broker.md) for
+ownership, configuration, retention and recovery boundaries.
+
+The topology below describes durable mode. The optional
+[`WORKER_MODE=direct`](../direct-worker.md) path is producer → NATS → local-rule
+worker → NATS → destination. It does not initialize database storage, leases,
+inbox/outbox, scheduler or the per-key queue. Broker-managed delivery replaces
+application shard ownership; output publication precedes input ACK and can repeat
+on redelivery. Direct composition is in `cmd/worker/direct.go`, application policy
+in `internal/application/direct.go`, and broker mechanics in
+`internal/adapters/nats/direct.go`.
+
 ~~~mermaid
 flowchart LR
   Producer[Producer / Go SDK] -->|events.shard.N| NATS[NATS JetStream]

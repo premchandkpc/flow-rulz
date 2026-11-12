@@ -47,6 +47,38 @@ FlowRulz is a Go event-driven rules runtime. The root Go module contains the API
 
 ### Event lifecycle
 
+The Rust broker path selects `WORKER_MODE=broker` in `rust-worker/src/main.rs`.
+Its `broker_config.rs` validates optional transports, `broker_runtime.rs` composes
+them, `runtime/broker.rs` owns retained state, and `application/broker.rs` owns
+operation and rule-processing policy. Adapters implement the shared protocol v1
+from `ports/broker.rs`. Local rules reuse `engine/rules.rs` via `engine/local.rs`.
+`rust-worker/tests/broker_protocol.py` tests real-process transport combinations,
+Go/Rust interoperability and forced-kill snapshot recovery. Keep these broker
+checks distinct from unverified PostgreSQL-runtime parity and cluster failover.
+
+Opt-in `WORKER_MODE=broker` hosts the broker and local-rule worker inside one
+process. `internal/runtime/broker` owns retained topic partitions, group offsets,
+capacity and receipt fencing. `internal/adapters/brokerstore` owns optional local
+snapshots, `internal/adapters/http/broker` owns external publish/consume/settlement,
+and `internal/adapters/embedded` implements the existing worker transport ports.
+`internal/ports/broker_protocol.go` defines the versioned request/response contract,
+and `internal/services/broker` owns shared operation/authentication policy.
+HTTP, `internal/adapters/tcp` and `internal/adapters/nats/broker.go` adapt that same
+contract. `cmd/worker/broker_transports.go` selects enabled ingress and a local or
+remote output publisher. `internal/adapters/remote` shares peer publication policy
+through `ports.BrokerCaller`; core services must not import transport clients.
+`cmd/worker/broker.go` composes this path. See `docs/embedded-broker.md` for its
+single-instance, at-least-once and memory/file persistence limits. Do not apply
+database transactional-outbox or cluster-failover guarantees to this mode.
+
+This lifecycle describes the default `WORKER_MODE=durable`. Opt-in `direct` mode
+uses local JSON rules and a shared NATS consumer without database, inbox/outbox,
+leases, scheduler or per-key queue. It publishes before ACK and can repeat outputs.
+See `docs/direct-worker.md`; do not apply durable-mode guarantees to direct mode.
+`cmd/worker/direct.go` owns direct composition/file loading,
+`internal/application/direct.go` owns evaluation and settlement, and
+`internal/adapters/nats/direct.go` owns shared broker consumption.
+
 1. A producer creates the shared `internal/domain.EventEnvelope` and publishes to the NATS JetStream subject family `events.shard.N`.
 2. Shard selection uses the shared tenant/partition-key algorithm and configured shard count. Never implement a competing hash or routing scheme.
 3. Workers acquire shard leases and fencing tokens, then consume only the shards they own.

@@ -2,9 +2,9 @@
 FROM rust:alpine AS builder
 RUN apk add --no-cache build-base musl-dev
 WORKDIR /build/rust-worker
-COPY rust-worker/Cargo.toml ./Cargo.toml
+COPY rust-worker/Cargo.toml rust-worker/Cargo.lock ./
 COPY rust-worker/src ./src
-RUN cargo build --release
+RUN cargo build --release --locked
 
 FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata

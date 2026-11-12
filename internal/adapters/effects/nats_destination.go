@@ -1,4 +1,4 @@
-// Package effects contains NATS-backed effect destinations.
+// Package effects contains effect delivery destinations.
 package effects
 
 import (
@@ -15,15 +15,20 @@ import (
 
 var subjectToken = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
-// NATSDestination publishes emitted effects and commands to durable NATS JetStream subjects.
-// Receivers consume the subject with their own durable consumer and deduplicate
-// using the stable effect ID/idempotency key in the message envelope.
+// NATSDestination formats topic-based effects for an injected publisher.
+// The name is retained for compatibility with existing NATS composition roots.
+// Receivers deduplicate using the stable effect ID/idempotency key.
 type NATSDestination struct {
 	publisher ports.SubjectPublisher
 }
 
 // NewNATSDestination creates a NATS-backed effect destination.
 func NewNATSDestination(publisher ports.SubjectPublisher) *NATSDestination {
+	return NewTopicDestination(publisher)
+}
+
+// NewTopicDestination formats topic-based effects for the selected publisher.
+func NewTopicDestination(publisher ports.SubjectPublisher) *NATSDestination {
 	return &NATSDestination{publisher: publisher}
 }
 
@@ -33,7 +38,7 @@ func (s *NATSDestination) Send(ctx context.Context, effect *domain.Effect, idemp
 		return errors.New("publish effect: effect is nil")
 	}
 	if s.publisher == nil {
-		return errors.New("publish effect: NATS publisher is not configured")
+		return errors.New("publish effect: publisher is not configured")
 	}
 	if effect.ID == "" || idempotencyKey == "" {
 		return errors.New("publish effect: stable effect ID and idempotency key are required")
