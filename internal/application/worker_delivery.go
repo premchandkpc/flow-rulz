@@ -55,9 +55,13 @@ func (w *Worker) processDelivery(ctx context.Context, env *domain.EventEnvelope,
 		return errors.New("process delivery: event envelope is nil")
 	}
 
+	started := time.Now()
 	execution, err := w.events.Process(ctx, env, fencingToken, vshard, workerID)
 	if err == nil && execution == nil {
 		err = errors.New("event processor returned a nil execution without an error")
+	}
+	if observe := w.config.ObserveDeliveryStage; observe != nil {
+		observe("process", err, time.Since(started))
 	}
 	return w.settleEventResult(ctx, env, delivery, execution, err)
 }
@@ -75,7 +79,7 @@ func (w *Worker) settleEventResult(
 	if processErr != nil {
 		return w.handleEventProcessingFailure(settleCtx, env, delivery, processErr)
 	}
-	if err := delivery.Ack(settleCtx); err != nil {
+	if err := w.measureDeliveryStage("ack", func() error { return delivery.Ack(settleCtx) }); err != nil {
 		return fmt.Errorf("ack event %s: %w", env.ID, err)
 	}
 	log.Printf("processed event %s -> execution %s", env.ID, execution.ID)
@@ -92,7 +96,7 @@ func (w *Worker) handleEventProcessingFailure(
 	if domain.IsPermanent(processErr) {
 		return w.quarantinePermanentEvent(settleCtx, env, delivery, processErr)
 	}
-	if retryErr := delivery.Retry(settleCtx, retryDelayForDelivery(w.config.RetryDelay, delivery)); retryErr != nil {
+	if retryErr := w.retryQueuedDelivery(settleCtx, delivery); retryErr != nil {
 		return errors.Join(
 			fmt.Errorf("process event %s: %w", env.ID, processErr),
 			fmt.Errorf("retry event %s: %w", env.ID, retryErr),
@@ -107,21 +111,30 @@ func (w *Worker) quarantinePermanentEvent(
 	delivery ports.Delivery,
 	processErr error,
 ) error {
-	if err := w.events.QuarantineEvent(
-		settleCtx,
-		env.ID,
-		env.ID,
-		env.TenantID,
-		domain.ClassifyError(processErr),
-		processErr.Error(),
-	); err != nil {
-		retryErr := delivery.Retry(settleCtx, retryDelayForDelivery(w.config.RetryDelay, delivery))
+	if err := w.measureDeliveryStage("quarantine", func() error {
+		return w.events.QuarantineEvent(settleCtx, env.ID, env.ID, env.TenantID, domain.ClassifyError(processErr), processErr.Error())
+	}); err != nil {
+		retryErr := w.retryQueuedDelivery(settleCtx, delivery)
 		return errors.Join(fmt.Errorf("quarantine permanent event %s: %w", env.ID, err), retryErr)
 	}
-	if err := delivery.Ack(settleCtx); err != nil {
+	if err := w.measureDeliveryStage("ack", func() error { return delivery.Ack(settleCtx) }); err != nil {
 		return fmt.Errorf("ack quarantined event %s: %w", env.ID, err)
 	}
 	return nil
+}
+
+func (w *Worker) retryQueuedDelivery(ctx context.Context, delivery ports.Delivery) error {
+	delay := retryDelayForDelivery(w.config.RetryDelay, delivery)
+	return w.measureDeliveryStage("retry", func() error { return delivery.Retry(ctx, delay) })
+}
+
+func (w *Worker) measureDeliveryStage(stage string, run func() error) error {
+	started := time.Now()
+	err := run()
+	if observe := w.config.ObserveDeliveryStage; observe != nil {
+		observe(stage, err, time.Since(started))
+	}
+	return err
 }
 
 // processSingleDelivery validates routing and submits a delivery to the per-key queue.

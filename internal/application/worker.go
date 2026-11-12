@@ -24,6 +24,8 @@ type WorkerConfig struct {
 	HotKeyThreshold        int
 	HotKeyCheckInterval    time.Duration
 	HotKeyCallback         func(partitionKey string, depth int)
+	// ObserveDeliveryStage reports each queued delivery operation with its own result.
+	ObserveDeliveryStage func(stage string, err error, elapsed time.Duration)
 }
 
 // DefaultWorkerConfig returns production-safe worker defaults.

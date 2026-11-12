@@ -30,6 +30,8 @@ FLOWRULZ_CONSOLE_ORIGIN=http://127.0.0.1:5173
 
 `FLOWRULZ_METRICS_ADDR` is opt-in. Set a unique reachable address per worker host/container and keep it on a private network. Set `FLOWRULZ_CONSOLE_ORIGIN` to the exact browser origin only when the console must scrape metrics cross-origin; leave it unset when a same-origin reverse proxy is used. The metrics server exposes only `GET /metrics`, allows preflight only for the configured origin, and does not enable wildcard CORS. The metrics listener does not authenticate requests; do not expose it to untrusted networks. Put it behind an authenticated reverse proxy if browser access crosses a trust boundary. Do not expose raw metrics to the public internet. Prometheus counters and gauges are process-local; scrape each worker separately for per-worker views. This endpoint does not provide log tailing; use the approved centralized log backend for logs.
 
+`flowrulz_worker_delivery_stage_duration_seconds` measures queued event processing and its subsequent ACK, retry request, or quarantine write as separate stages. Use the histogram buckets for latency percentiles and its `_count` series for attempt rates by stage and result. An `ack` or `retry` result of `ok` means the adapter call returned successfully. The retry stage measures the retry request itself, excluding the redelivery delay. The process stage includes duplicate events that return an existing execution successfully. Queue wait, pre-queue rejections, and downstream outbox delivery are outside this metric.
+
 ## Local development
 
 Start the development stack from the repository root:
