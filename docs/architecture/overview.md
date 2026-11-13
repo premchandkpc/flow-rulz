@@ -35,7 +35,7 @@ The HTTP API is a control-plane adapter. It manages domains, contracts, rule rev
 
 Routes are registered in internal/adapters/http/handlers. Rule creation/activation is POST /v1/rules/{ruleSet}/revisions; rule revisions and active rules are exposed through GET routes; DELETE on a revision path deactivates a rule set. Contract routes are under /v1/contracts. Workflow definition routes are under /v1/workflows/definitions; creating a global definition requires the platform admin scope. Workflow-instance creation/transitions, batch submission, quarantine replay/deletion, scheduled-event mutation and business-event ingestion are not exposed by the control-plane router. Event trace remains a read-only management view. See ../../README.md for the route matrix.
 
-Security limitation: authentication and authorization are not implemented. TenantExtractor trusts X-Tenant-ID or tenant_id query values and falls back to default. ../../AGENTS.md had mistakenly described a trusted-proxy token mode that is not implemented; do not rely on such a setting. The API must not be exposed to untrusted networks until verified identity and tenant authorization are implemented. /health is process liveness only; the API has no gRPC listener. The default native HTTP bind is loopback.
+Security limitation: JWT and trusted-proxy authentication mechanisms exist, but resource-level authorization and cross-tenant negative coverage are incomplete. Development mode accepts caller-provided tenant identity; a production trusted proxy must authenticate callers and replace trust headers. Do not expose the API to untrusted networks until every resource path and broker producer identity are verified. `/health` is process liveness; `/ready` checks the API's database dependency, not NATS or worker progress. The API has no gRPC listener.
 
 ## Transaction and failure invariants
 
@@ -43,12 +43,12 @@ Security limitation: authentication and authorization are not implemented. Tenan
 - ACK must happen after successful commit, not after merely receiving or validating a message.
 - A duplicate inbox row must not create a second execution. An inconsistent duplicate without its execution must fail closed.
 - Outbox delivery/retry/quarantine settlement requires a unique claim token and an unexpired claim in SQL and Mongo. Durable settlement errors are returned. Quarantine records and outbox state still live in separate repositories, so cleanup after a lost claim can still fail and require repair.
-- Persisting a quarantine record or delivery/retry state can fail; logging those failures and returning success is not acceptable. Current effect service still needs that hardening.
+- Effect publication propagates persistence and settlement failures. Quarantine and outbox settlement remain separate operations and require failure-injection testing.
 - Keep producer, scheduler, effect router and consumer aligned on base subject and shard count. Event type is part of the envelope, not an alternate stream subject.
-- The scheduler can reclaim expired claims and its settlement methods are claimant/expiry fenced. Transient publish failures are still marked terminally failed instead of retried with backoff.
+- The scheduler can reclaim expired claims and its settlement methods are claimant/expiry fenced. Publish failures retry with bounded backoff until the configured code limit; live recovery and backend parity require verification.
 - Mongo stores JSON payload/source/context fields as binary bytes rather than casting JSON bytes to bson.Raw. BSON round-trip regression tests cover these fields; live Mongo/PostgreSQL conformance remains unverified.
 - Batch queries are tenant-scoped, but batch event execution still lacks a valid shard lease/fencing token and key-queue integration. BATCH_MODE values other than none are rejected until that is implemented.
-- LeaseManager targets NUM_SHARDS/3 per worker without dynamic membership/rebalancing; the current behavior assumes three replicas and can leave shards unowned when replica count differs.
+- LeaseManager targets ceil(NUM_SHARDS / WORKER_REPLICAS) per worker. Replica count must be configured consistently; dynamic membership and coordinated rebalancing are not implemented.
 - External destination calls require bounded timeouts and receiver idempotency. Do not imply that the broker transaction includes a remote HTTP side effect.
 
 ## Configuration and lifecycle

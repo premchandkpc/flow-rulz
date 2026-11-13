@@ -54,7 +54,7 @@ func NewBrokerEndpoint(ctx context.Context, url, subject string, protocol ports.
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	s := &BrokerEndpoint{conn: conn, ctx: runCtx, cancel: cancel, slots: make(chan struct{}, 64)}
-	s.sub, err = conn.Subscribe(subject, func(message *natslib.Msg) { s.receive(message, protocol) })
+	s.sub, err = conn.Subscribe(subject, func(message *natslib.Msg) { s.receive(runCtx, message, protocol) })
 	if err == nil {
 		err = s.sub.SetPendingLimits(128, 64<<20)
 	}
@@ -71,7 +71,7 @@ func NewBrokerEndpoint(ctx context.Context, url, subject string, protocol ports.
 	return s, nil
 }
 
-func (s *BrokerEndpoint) receive(message *natslib.Msg, protocol ports.BrokerProtocol) {
+func (s *BrokerEndpoint) receive(ctx context.Context, message *natslib.Msg, protocol ports.BrokerProtocol) {
 	if message.Reply == "" {
 		return
 	}
@@ -99,8 +99,8 @@ func (s *BrokerEndpoint) receive(message *natslib.Msg, protocol ports.BrokerProt
 			decoder.DisallowUnknownFields()
 			if err := decoder.Decode(&request); err == nil {
 				if err := decoder.Decode(new(any)); errors.Is(err, io.EOF) {
-					ctx, cancel := context.WithTimeout(s.ctx, 25*time.Second)
-					response = protocol.Execute(ctx, request)
+					requestCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+					response = protocol.Execute(requestCtx, request)
 					cancel()
 				}
 			}

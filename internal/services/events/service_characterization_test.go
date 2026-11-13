@@ -120,7 +120,7 @@ type duplicateInboxRepository struct {
 	marks   int
 }
 
-func (r *duplicateInboxRepository) Get(context.Context, string, string) (*domain.InboxEntry, error) {
+func (r *duplicateInboxRepository) GetByRuleSet(context.Context, string, string, string) (*domain.InboxEntry, error) {
 	return r.entry, nil
 }
 
@@ -129,7 +129,7 @@ func (r *duplicateInboxRepository) Insert(context.Context, *domain.InboxEntry) (
 	return false, nil
 }
 
-func (r *duplicateInboxRepository) MarkCommitted(context.Context, string, string, string) error {
+func (r *duplicateInboxRepository) MarkCommitted(context.Context, string, string, string, string) error {
 	r.marks++
 	return nil
 }
@@ -151,9 +151,9 @@ func (r *existingExecutionRepository) Save(context.Context, *domain.Execution) e
 
 func TestProcessReturnsExistingExecutionForRedelivery(t *testing.T) {
 	ctx := context.Background()
-	existing := &domain.Execution{ID: "execution-existing", EventID: "event-1", TenantID: "tenant-a"}
+	existing := &domain.Execution{ID: "execution-existing", EventID: "event-1", TenantID: "tenant-a", RuleSet: "orders.created"}
 	inbox := &duplicateInboxRepository{
-		entry: &domain.InboxEntry{TenantID: "tenant-a", EventID: "event-1", ExecutionID: existing.ID, RuleSet: "orders.created"},
+		entry: &domain.InboxEntry{TenantID: "tenant-a", EventID: "event-1", ExecutionID: existing.ID, RuleSet: "orders.created", Status: domain.InboxStatusCommitted},
 	}
 	executions := &existingExecutionRepository{execution: existing}
 	tx := &eventTxStub{ctx: ctx}

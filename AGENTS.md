@@ -156,9 +156,9 @@ This map explains responsibility; it is not a requirement to make the directory 
 | `internal/adapters/mongo/` | Mongo repositories, BSON conversion, indexes and driver-specific behavior |
 | `internal/adapters/cache/` | Cache implementation |
 | `internal/adapters/effects/` | External effect delivery and development/test destinations |
-| `sdk/go/`, `sdk/go/flowrulz/` | Separate Go SDK modules |
+| `sdk/go/`, `sdk/go/flowrule/` | Separate Go SDK modules |
 | `domains/<domain>/` (`banking`, `ecommerce`, `food-delivery`) | Domain specification: `contracts/`, `rules/`, `workflows/` YAML, `deploy.sh`, and generated per-language code in `builds/<lang>/` (currently `builds/go`, a separate Go module) |
-| `examples/ecommerce/`, `examples/banking/`, `examples/food-delivery/` | Sample producer/consumer services that import `domains/<domain>/builds/go` and `sdk/go/flowrulz` |
+| `examples/ecommerce/`, `examples/banking/`, `examples/food-delivery/` | Sample producer/consumer services that import `domains/<domain>/builds/go` and `sdk/go/flowrule` |
 | `examples/random-producer/` | Opt-in producer using existing domain contracts |
 | `tests/` | Root test suites; inspect whether each uses mocks, in-memory storage or live services |
 
@@ -290,7 +290,7 @@ When their code or shared contracts are affected:
 
 ```sh
 (cd sdk/go && go test -race -count=1 ./...)
-(cd sdk/go/flowrulz && go test -race -count=1 ./...)
+(cd sdk/go/flowrule && go test -race -count=1 ./...)
 (cd examples/banking && go test -race -count=1 ./...)
 (cd examples/ecommerce && go test -race -count=1 ./...)
 (cd examples/food-delivery && go test -race -count=1 ./...)

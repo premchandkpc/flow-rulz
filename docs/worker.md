@@ -4,23 +4,23 @@ Workers are generic execution runtimes. They understand event envelopes, contrac
 
 ## Deployment identity
 
-Each worker pool belongs to one configured Domain/Service deployment:
+The control plane can describe Domain/Service deployments:
 
 - `FLOW_SERVICE_ID`: service identity, currently expected as `<domain-id>/<service-id>`.
 - `FLOW_DEPLOYMENT_REVISION`: positive deployment revision.
-- Ruleset assignments come from the Domain's Service configuration; a worker should execute only those pinned revisions.
+- Ruleset assignments are stored in the Domain's Service configuration. Enforcing those pinned revisions in the durable worker remains future work.
 
-The deployment identity is configuration. `meta.tenant_id` and `meta.partition_key` are read from each event and are never worker environment settings. Routed deployments also receive `meta.target_service_id` and `meta.deployment_revision`; the router, not the producer, must set those values.
+The deployment identity is configuration. `meta.tenant_id` and `meta.partition_key` are read from each event. The current worker checks `headers["flow.service_id"]` and `headers["flow.deployment_revision"]` when configured with a deployment identity; it does not create those headers or route events to an isolated service stream.
 
-**Current implementation note:** the Domain API stores Service assignments, but a complete deployment controller that continuously projects those assignments into both Go and Rust worker pools is not yet present. The current Rust runtime still reads its `RULESETS` list from environment configuration. Until that controller is implemented, deployment automation must keep worker settings aligned with the Domain revision; do not claim that workers dynamically reload the Domain API.
+**Current implementation note:** the Domain API stores Service assignments, but the worker does not intersect those assignments with matching rulesets or isolate service pools. Shards are leased globally; a worker can quarantine and acknowledge an event targeted at a different deployment. Do not use deployment headers for multi-service routing until routing and ownership are redesigned and tested. The experimental Rust runtime still reads its `RULESETS` list from environment configuration.
 
 ## Processing guarantees
 
 1. Validate event envelope and immutable contract reference.
-2. Verify the event is routed to the configured Service and deployment revision.
+2. When configured, compare the event's deployment headers with the worker's configured identity. This check is not a routing mechanism.
 3. Derive the shard from the event's tenant/partition pair.
 4. Deduplicate by stable event identity and ruleset identity.
-5. Evaluate assigned rulesets without subscriber-specific behavior.
+5. Evaluate active rulesets resolved from contract bindings or the event type, without subscriber-specific behavior.
 6. Persist execution state and effects transactionally.
 7. Acknowledge only after the durable transaction succeeds.
 8. Retry transient failures; quarantine permanent or exhausted failures according to the runtime policy.

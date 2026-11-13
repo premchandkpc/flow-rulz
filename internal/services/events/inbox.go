@@ -13,6 +13,9 @@ func (s *Service) deduplicateEventForRuleset(ctx context.Context, repos ports.Ev
 	if err != nil || execution != nil {
 		return execution, err
 	}
+	if err := rejectUnresolvedLegacyInbox(ctx, repos, envelope); err != nil {
+		return nil, err
+	}
 	inserted, err := repos.Inbox.Insert(ctx, s.newInboxEntry(envelope, ruleSet))
 	if err != nil {
 		return nil, fmt.Errorf("insert inbox: %w", err)
@@ -24,18 +27,48 @@ func (s *Service) deduplicateEventForRuleset(ctx context.Context, repos ports.Ev
 }
 
 func findInboxExecution(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, ruleSet, inboxOperation, executionOperation string) (*domain.Execution, error) {
-	entry, err := repos.Inbox.Get(ctx, envelope.TenantID, envelope.ID)
+	entry, err := repos.Inbox.GetByRuleSet(ctx, envelope.TenantID, envelope.ID, ruleSet)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", inboxOperation, err)
 	}
-	if entry == nil || entry.RuleSet != ruleSet {
+	if entry == nil {
 		return nil, nil
 	}
-	execution, err := repos.Executions.Get(ctx, entry.ExecutionID)
+	if !validCommittedInbox(entry, envelope, ruleSet) {
+		return nil, domain.ErrInboxDuplicate
+	}
+	return loadInboxExecution(ctx, repos.Executions, entry, envelope, ruleSet, executionOperation)
+}
+
+func loadInboxExecution(ctx context.Context, repository ports.ExecutionRepository, entry *domain.InboxEntry, envelope *domain.EventEnvelope, ruleSet, operation string) (*domain.Execution, error) {
+	execution, err := repository.Get(ctx, entry.ExecutionID)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", executionOperation, err)
+		return nil, fmt.Errorf("%s: %w", operation, err)
+	}
+	if !matchingInboxExecution(execution, entry, envelope, ruleSet) {
+		return nil, domain.ErrInboxDuplicate
 	}
 	return execution, nil
+}
+
+func validCommittedInbox(entry *domain.InboxEntry, envelope *domain.EventEnvelope, ruleSet string) bool {
+	return entry.TenantID == envelope.TenantID && entry.EventID == envelope.ID && entry.RuleSet == ruleSet && entry.Status == domain.InboxStatusCommitted && entry.ExecutionID != ""
+}
+
+func matchingInboxExecution(execution *domain.Execution, entry *domain.InboxEntry, envelope *domain.EventEnvelope, ruleSet string) bool {
+	return execution != nil && execution.ID == entry.ExecutionID && execution.TenantID == envelope.TenantID && execution.EventID == envelope.ID && execution.RuleSet == ruleSet
+}
+
+// Legacy rows without a ruleset cannot safely be attributed to a new execution.
+func rejectUnresolvedLegacyInbox(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope) error {
+	entry, err := repos.Inbox.GetByRuleSet(ctx, envelope.TenantID, envelope.ID, "")
+	if err != nil {
+		return fmt.Errorf("check legacy inbox: %w", err)
+	}
+	if entry != nil {
+		return fmt.Errorf("unresolved legacy inbox entry: %w", domain.ErrInboxDuplicate)
+	}
+	return nil
 }
 
 func resolveInboxConflict(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, ruleSet string) (*domain.Execution, error) {

@@ -18,7 +18,7 @@ func (s *Service) persistExecutionAndOutboxForRuleset(ctx context.Context, repos
 	if err != nil {
 		return nil, err
 	}
-	if err := commitExecutionEffects(ctx, repos, envelope, execution.ID, effects); err != nil {
+	if err := commitExecutionEffects(ctx, repos, envelope, ruleSet, execution.ID, effects); err != nil {
 		return nil, err
 	}
 	return execution, nil
@@ -67,11 +67,11 @@ func newExecutionEffect(effect domain.Effect, execution *domain.Execution) domai
 	}
 }
 
-func commitExecutionEffects(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, executionID string, effects []domain.OutboxEffect) error {
+func commitExecutionEffects(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, ruleSet, executionID string, effects []domain.OutboxEffect) error {
 	if err := repos.Outbox.Insert(ctx, effects); err != nil {
 		return fmt.Errorf("insert outbox: %w", err)
 	}
-	if err := repos.Inbox.MarkCommitted(ctx, envelope.TenantID, envelope.ID, executionID); err != nil {
+	if err := repos.Inbox.MarkCommitted(ctx, envelope.TenantID, envelope.ID, ruleSet, executionID); err != nil {
 		return fmt.Errorf("mark inbox committed: %w", err)
 	}
 	return nil
