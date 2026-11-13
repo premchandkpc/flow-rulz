@@ -51,24 +51,46 @@ func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey
 	if effect == nil {
 		return fmt.Errorf("send effect: effect is nil")
 	}
-	if effect.EffectType == domain.EffectTypeScheduleEvent {
-		if r.scheduled == nil {
-			return fmt.Errorf("schedule event: scheduled-event sender is not configured")
-		}
-		return r.scheduled.Send(ctx, effect, idempotencyKey)
+	switch effect.EffectType {
+	case domain.EffectTypeScheduleEvent:
+		return r.sendScheduledEvent(ctx, effect, idempotencyKey)
+	case domain.EffectTypeServiceEvent:
+		return r.sendServiceEvent(ctx, effect, idempotencyKey)
+	case domain.EffectTypeEmitEvent:
+		return r.sendChildEvent(ctx, effect)
+	default:
+		return r.sendCommand(ctx, effect, idempotencyKey)
 	}
-	if effect.EffectType != domain.EffectTypeEmitEvent {
-		if effect.EffectType == domain.EffectTypeServiceEvent {
-			if r.service == nil {
-				return fmt.Errorf("send subscribed service event: service sender is not configured")
-			}
-			return r.service.Send(ctx, effect, idempotencyKey)
-		}
-		if r.command == nil {
-			return fmt.Errorf("send command or emit effect: sender is not configured")
-		}
-		return r.command.Send(ctx, effect, idempotencyKey)
+}
+
+// sendScheduledEvent forwards schedule intents to the durable scheduled-event sender.
+func (r *Router) sendScheduledEvent(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
+	if r.scheduled == nil {
+		return fmt.Errorf("schedule event: scheduled-event sender is not configured")
 	}
+	return r.scheduled.Send(ctx, effect, idempotencyKey)
+}
+
+// sendServiceEvent forwards subscribed service events to their service sender.
+func (r *Router) sendServiceEvent(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
+	if r.service == nil {
+		return fmt.Errorf("send subscribed service event: service sender is not configured")
+	}
+	return r.service.Send(ctx, effect, idempotencyKey)
+}
+
+// sendCommand forwards command effects to the command sender.
+func (r *Router) sendCommand(ctx context.Context, effect *domain.Effect, idempotencyKey string) error {
+	if r.command == nil {
+		return fmt.Errorf("send command or emit effect: sender is not configured")
+	}
+	return r.command.Send(ctx, effect, idempotencyKey)
+}
+
+// sendChildEvent decodes, validates and publishes a child event. The event
+// type is carried in the envelope. The broker subject must match the stream
+// filter shared by consumers and the scheduler: <baseSubject>.shard.N.
+func (r *Router) sendChildEvent(ctx context.Context, effect *domain.Effect) error {
 	if r.publisher == nil {
 		return fmt.Errorf("publish child event: broker publisher is not configured")
 	}
@@ -79,9 +101,6 @@ func (r *Router) Send(ctx context.Context, effect *domain.Effect, idempotencyKey
 	if err := child.Validate(); err != nil {
 		return fmt.Errorf("validate child event: %w", err)
 	}
-
-	// Event type is carried in the envelope. The broker subject must match the
-	// stream filter shared by consumers and the scheduler: <baseSubject>.shard.N.
 	shard := child.VirtualShard(r.numShards)
 	return r.publisher.PublishToShard(ctx, r.baseSubject, shard, effect.Payload)
 }

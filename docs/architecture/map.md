@@ -180,7 +180,7 @@ The event transaction contains fencing validation, inbox deduplication, ruleset 
 | api/*.json | Public envelope/rule JSON schema source files |
 | migrations | Numbered SQL migrations; no down-script set |
 | sdk/go/runtime | Original standalone envelope, shard, producer, consumer and evaluation helper module |
-| sdk/go/flowrulz | Separate client SDK module with configuration, contracts and the supported NATS event transport; HTTP ingestion, gRPC and local evaluation are unavailable |
+| sdk/go/flowrule | Separate client SDK module with configuration, contracts and the supported NATS event transport; HTTP ingestion, gRPC and local evaluation are unavailable |
 | examples/{banking,ecommerce,food-delivery} | Independent modules with contract/rule/workflow sources and sample applications |
 | tests/contract | In-memory repository contract suites, not full SQL/Mongo conformance |
 | tests/integration | Service behavior tests using mocks/in-memory repositories, not live infrastructure tests |
@@ -224,15 +224,16 @@ Rules:
 | P1 | Mongo adapters previously treated JSON bytes as bson.Raw | JSON payloads/source/context now use BSON binary bytes; keep BSON round-trip tests for each JSON-backed field |
 | P1 | Scheduled SQL claim fields did not exist in migration 011 | Migrations 015/016 add claim and retry fields; expired claims can be reclaimed and settlement is claimant/expiry fenced |
 | P2 | Scheduled event publishing retries with bounded exponential backoff and a terminal attempt limit; validate recovery and adapter parity |
-| P2 | Some tenant-scoped reads/writes remain unscoped and no trusted identity exists | AuthN/AuthZ and resource-level scoping remain release blockers |
+| P2 | Complete tenant-scoped read/write coverage is not proven | Continue cross-tenant negative tests and resource-level authorization review |
 | P1 | Transaction context/fencing leaks into the ports; adapter parity is not fully proven | Validate transaction port methods and add SQL/Mongo atomicity and repository conformance tests |
 | P1 | Contract tests are in-memory-only | Reuse suites against actual SQL and Mongo adapters and test transaction/unique-key semantics |
-| P1 | HTTP decoding is bounded and rejects trailing JSON/multiple YAML docs, but tenant identity is still caller-controlled and resource scoping is incomplete | Implement auth-derived tenant identity and authorize every resource operation |
+| P1 | HTTP decoding is bounded and production tenant identity comes from JWT or trusted proxy; complete resource scoping remains unverified | Audit every resource operation and broker producer authorization |
 | P2 | Workflow service contains not-implemented definition methods | Implement intentionally or remove placeholders and use a clear repository/service boundary |
-| P2 | health is liveness only and no gRPC listener exists | Separate readiness/liveness or document that only liveness is available |
+| P2 | `/health` is liveness; `/ready` checks the API database only; no gRPC listener exists | Monitor NATS and worker progress separately |
 | P2 | No live crash/recovery suite or benchmark evidence | Add live PostgreSQL/NATS failure injection and reproducible benchmarks |
 | P2 | SQL outbox insertion is one insert per effect | Measure throughput then introduce batch insert if warranted |
-| P2 | Scheduler marks every publish error terminally failed | Add retry classification, attempts and backoff, then test crash/restart recovery |
+| P2 | Scheduler retries publish failures with a bounded attempt limit | Test crash/restart recovery and adapter parity; refine retry classification where needed |
+| P0 | Stored Service assignments are not enforced by durable routing | Worker startup rejects deployment identity and targeted events remain retryable; design deployment-scoped routing and test multiple service pools before enabling it |
 | P2 | Batch API reads are now tenant-scoped, but batch processing is not integrated with leases/key queue | Keep non-none worker batch modes rejected until a safe processing path exists |
 
 Do not turn this table into claims of completion without changes and tests. A follow-up audit should identify the reviewed main SHA and workflow runs, and label each old finding fixed/partial/open against current source.
@@ -243,7 +244,7 @@ Do not turn this table into claims of completion without changes and tests. A fo
 
 ## Domain builds
 
-`domains/<domain>/builds/go/` holds typed Go code generated from contracts stored in the database (`make generate-domain DOMAIN=<domain>`). Each is a separate Go module depending on `sdk/go/flowrulz`; example services depend on it through `replace` directives. Run `make verify-generated` to compile them.
+`domains/<domain>/builds/go/` holds typed Go code generated from contracts stored in the database (`make generate-domain DOMAIN=<domain>`). Each is a separate Go module depending on `sdk/go/flowrule`; example services depend on it through `replace` directives. Run `make verify-generated` to compile them.
 
 ## Rule check API
 

@@ -176,79 +176,132 @@ const (
 	ErrorClassInternal ErrorClass = "internal"
 )
 
+// errorClassifiers maps each error class to its matcher. Order is significant:
+// the first matching entry wins, so an error carrying several markers keeps the
+// class it historically received.
+var errorClassifiers = []struct {
+	class ErrorClass
+	match func(error) bool
+}{
+	{ErrorClassValidation, isEventEnvelopeError},
+	{ErrorClassRule, isRuleError},
+	{ErrorClassBroker, isRuleNotReadyError},
+	{ErrorClassEvaluation, isEvaluationError},
+	{ErrorClassExecution, isExecutionError},
+	{ErrorClassEffect, isEffectError},
+	{ErrorClassBroker, isBrokerError},
+	{ErrorClassDatabase, isPersistenceError},
+	{ErrorClassAuthorization, isAuthorizationError},
+	{ErrorClassQuarantine, isQuarantineError},
+}
+
 // ClassifyError provides the classify error.
 func ClassifyError(err error) ErrorClass {
 	if err == nil {
 		return ErrorClassInternal
 	}
-	switch {
-	case errors.Is(err, ErrEventIDRequired),
-		errors.Is(err, ErrEventTypeRequired),
-		errors.Is(err, ErrTenantIDRequired),
-		errors.Is(err, ErrPartitionKeyRequired),
-		errors.Is(err, ErrOccurredAtRequired),
-		errors.Is(err, ErrInvalidEventEnvelope):
-		return ErrorClassValidation
-	case errors.Is(err, ErrRuleIDRequired),
-		errors.Is(err, ErrRevisionRequired),
-		errors.Is(err, ErrRuleSourceRequired),
-		errors.Is(err, ErrInvalidMatchMode),
-		errors.Is(err, ErrInvalidOperator),
-		errors.Is(err, ErrInvalidPredicate),
-		errors.Is(err, ErrInvalidAction),
-		errors.Is(err, ErrDuplicateRuleID),
-		errors.Is(err, ErrAmbiguousPriority),
-		errors.Is(err, ErrUnknownDestination),
-		errors.Is(err, ErrDestinationNotAllowed),
-		errors.Is(err, ErrRuleExceedsLimits),
-		errors.Is(err, ErrInvalidRuleSchema),
-		errors.Is(err, ErrRuleNotFound),
-		errors.Is(err, ErrRuleNotActive),
-		errors.Is(err, ErrContractRequired),
-		errors.Is(err, ErrContractMismatch),
-		errors.Is(err, ErrContractReferenced):
-		return ErrorClassRule
-	case errors.Is(err, ErrRuleNotReady):
-		return ErrorClassBroker
-	case errors.Is(err, ErrEvaluationTimeout),
-		errors.Is(err, ErrEvaluationError),
-		errors.Is(err, ErrFactSnapshotRequired),
-		errors.Is(err, ErrInvalidFactPath):
-		return ErrorClassEvaluation
-	case errors.Is(err, ErrExecutionNotFound),
-		errors.Is(err, ErrInvalidExecutionStatus),
-		errors.Is(err, ErrExecutionAlreadyExists):
-		return ErrorClassExecution
-	case errors.Is(err, ErrEffectIDRequired),
-		errors.Is(err, ErrExecutionIDRequired),
-		errors.Is(err, ErrInvalidEffectType),
-		errors.Is(err, ErrEffectNotFound),
-		errors.Is(err, ErrMaxAttemptsExceeded),
-		errors.Is(err, ErrOutboxClaimLost):
-		return ErrorClassEffect
-	case errors.Is(err, ErrBrokerFetchFailed),
-		errors.Is(err, ErrBrokerAckFailed),
-		errors.Is(err, ErrBrokerRetryFailed):
-		return ErrorClassBroker
-	case errors.Is(err, ErrInboxEntryNotFound),
-		errors.Is(err, ErrInboxDuplicate),
-		errors.Is(err, ErrInboxInvalidStatus),
-		errors.Is(err, ErrLeaseNotFound),
-		errors.Is(err, ErrLeaseExpired),
-		errors.Is(err, ErrLeaseOwnedByOther),
-		errors.Is(err, ErrFencingTokenMismatch),
-		errors.Is(err, ErrDatabaseError),
-		errors.Is(err, ErrTransactionFailed):
-		return ErrorClassDatabase
-	case errors.Is(err, ErrUnauthorized),
-		errors.Is(err, ErrForbidden):
-		return ErrorClassAuthorization
-	case errors.Is(err, ErrQuarantineNotFound),
-		errors.Is(err, ErrQuarantineReplayFailed):
-		return ErrorClassQuarantine
-	default:
-		return ErrorClassInternal
+	for _, classifier := range errorClassifiers {
+		if classifier.match(err) {
+			return classifier.class
+		}
 	}
+	return ErrorClassInternal
+}
+
+// isRuleNotReadyError reports whether err means the rule revision is not ready yet.
+func isRuleNotReadyError(err error) bool {
+	return errors.Is(err, ErrRuleNotReady)
+}
+
+// isEventEnvelopeError reports whether err is an event envelope validation failure.
+func isEventEnvelopeError(err error) bool {
+	return errors.Is(err, ErrEventIDRequired) ||
+		errors.Is(err, ErrEventTypeRequired) ||
+		errors.Is(err, ErrTenantIDRequired) ||
+		errors.Is(err, ErrPartitionKeyRequired) ||
+		errors.Is(err, ErrOccurredAtRequired) ||
+		errors.Is(err, ErrInvalidEventEnvelope)
+}
+
+// isRuleError reports whether err is a rule definition or contract failure.
+func isRuleError(err error) bool {
+	return isRuleIdentityError(err) ||
+		errors.Is(err, ErrInvalidMatchMode) ||
+		errors.Is(err, ErrInvalidOperator) ||
+		errors.Is(err, ErrInvalidPredicate) ||
+		errors.Is(err, ErrInvalidAction) ||
+		errors.Is(err, ErrDuplicateRuleID) ||
+		errors.Is(err, ErrAmbiguousPriority) ||
+		errors.Is(err, ErrUnknownDestination) ||
+		errors.Is(err, ErrDestinationNotAllowed) ||
+		errors.Is(err, ErrRuleExceedsLimits) ||
+		errors.Is(err, ErrInvalidRuleSchema) ||
+		errors.Is(err, ErrRuleNotFound) ||
+		errors.Is(err, ErrRuleNotActive) ||
+		isContractError(err)
+}
+
+func isRuleIdentityError(err error) bool {
+	return errors.Is(err, ErrRuleIDRequired) ||
+		errors.Is(err, ErrRevisionRequired) ||
+		errors.Is(err, ErrRuleSourceRequired)
+}
+
+// isEvaluationError reports whether err is a deterministic evaluation failure.
+func isEvaluationError(err error) bool {
+	return errors.Is(err, ErrEvaluationTimeout) ||
+		errors.Is(err, ErrEvaluationError) ||
+		errors.Is(err, ErrFactSnapshotRequired) ||
+		errors.Is(err, ErrInvalidFactPath)
+}
+
+// isExecutionError reports whether err is an execution record failure.
+func isExecutionError(err error) bool {
+	return errors.Is(err, ErrExecutionNotFound) ||
+		errors.Is(err, ErrInvalidExecutionStatus) ||
+		errors.Is(err, ErrExecutionAlreadyExists)
+}
+
+// isEffectError reports whether err is an effect or outbox failure.
+func isEffectError(err error) bool {
+	return errors.Is(err, ErrEffectIDRequired) ||
+		errors.Is(err, ErrExecutionIDRequired) ||
+		errors.Is(err, ErrInvalidEffectType) ||
+		errors.Is(err, ErrEffectNotFound) ||
+		errors.Is(err, ErrMaxAttemptsExceeded) ||
+		errors.Is(err, ErrOutboxClaimLost)
+}
+
+// isBrokerError reports whether err is a broker publication failure.
+func isBrokerError(err error) bool {
+	return errors.Is(err, ErrBrokerFetchFailed) ||
+		errors.Is(err, ErrBrokerAckFailed) ||
+		errors.Is(err, ErrBrokerRetryFailed)
+}
+
+// isPersistenceError reports whether err is an inbox, lease or database failure.
+func isPersistenceError(err error) bool {
+	return errors.Is(err, ErrInboxEntryNotFound) ||
+		errors.Is(err, ErrInboxDuplicate) ||
+		errors.Is(err, ErrInboxInvalidStatus) ||
+		errors.Is(err, ErrLeaseNotFound) ||
+		errors.Is(err, ErrLeaseExpired) ||
+		errors.Is(err, ErrLeaseOwnedByOther) ||
+		errors.Is(err, ErrFencingTokenMismatch) ||
+		errors.Is(err, ErrDatabaseError) ||
+		errors.Is(err, ErrTransactionFailed)
+}
+
+// isAuthorizationError reports whether err is an authorization failure.
+func isAuthorizationError(err error) bool {
+	return errors.Is(err, ErrUnauthorized) ||
+		errors.Is(err, ErrForbidden)
+}
+
+// isQuarantineError reports whether err is a quarantine lookup or replay failure.
+func isQuarantineError(err error) bool {
+	return errors.Is(err, ErrQuarantineNotFound) ||
+		errors.Is(err, ErrQuarantineReplayFailed)
 }
 
 // IsRetryable provides the is retryable.
@@ -264,4 +317,10 @@ func IsPermanent(err error) bool {
 		cls == ErrorClassRule ||
 		cls == ErrorClassEvaluation ||
 		cls == ErrorClassAuthorization
+}
+
+func isContractError(err error) bool {
+	return errors.Is(err, ErrContractRequired) ||
+		errors.Is(err, ErrContractMismatch) ||
+		errors.Is(err, ErrContractReferenced)
 }

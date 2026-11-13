@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -40,11 +41,11 @@ func writeFrame(writer io.Writer, value any, limit int) error {
 	if err != nil {
 		return err
 	}
-	if len(data) > limit {
+	if len(data) > limit || uint64(len(data)) > math.MaxUint32 {
 		return errors.New("broker frame length exceeds bounds")
 	}
 	frame := make([]byte, 4+len(data))
-	binary.BigEndian.PutUint32(frame[:4], uint32(len(data)))
+	binary.BigEndian.PutUint32(frame[:4], uint32(len(data))) // #nosec G115 -- length is bounded above
 	copy(frame[4:], data)
 	_, err = io.Copy(writer, bytes.NewReader(frame))
 	return err

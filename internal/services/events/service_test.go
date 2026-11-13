@@ -37,14 +37,14 @@ type inboxStub struct {
 	committed bool
 }
 
-func (*inboxStub) Get(context.Context, string, string) (*domain.InboxEntry, error) {
+func (*inboxStub) GetByRuleSet(context.Context, string, string, string) (*domain.InboxEntry, error) {
 	return nil, nil
 }
 func (r *inboxStub) Insert(context.Context, *domain.InboxEntry) (bool, error) {
 	r.inserted = true
 	return true, nil
 }
-func (r *inboxStub) MarkCommitted(context.Context, string, string, string) error {
+func (r *inboxStub) MarkCommitted(context.Context, string, string, string, string) error {
 	r.committed = true
 	return nil
 }

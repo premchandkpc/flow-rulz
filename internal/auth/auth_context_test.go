@@ -2,7 +2,11 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -39,26 +43,85 @@ func TestContextWithNilClaimsDoesNotInventIdentity(t *testing.T) {
 	}
 }
 
+func TestTrustedScopesCannotAmplifyJWTClaims(t *testing.T) {
+	scopes := []string{"admin"}
+	ctx := ContextWithTrustedScopes(context.Background(), scopes)
+	scopes[0] = "changed"
+	if !HasScope(ctx, "admin") {
+		t.Fatal("trusted scope should be copied into the context")
+	}
+	ctx = ContextWithClaims(ctx, &Claims{TenantID: "tenant-a", Scopes: []string{"rules:admin"}})
+	if HasScope(ctx, "admin") || !HasScope(ctx, "rules:admin") {
+		t.Fatal("JWT scopes must take precedence over proxy scopes")
+	}
+}
+
 func TestValidatorAcceptsSingleStringAudienceClaim(t *testing.T) {
 	v := NewValidator([]byte("secret"), "flowrulz", "flowrulz-api")
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
-		TenantID: "tenant-a",
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:   "flowrulz",
-			Audience: jwt.ClaimStrings{"flowrulz-api"},
-		},
-	})
-
-	tokenString, err := token.SignedString([]byte("secret"))
-	if err != nil {
-		t.Fatalf("SignedString() error = %v", err)
-	}
-
+	tokenString := signedAudienceToken(t, "secret")
 	claims, err := v.Validate(context.Background(), tokenString)
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
 	if claims.TenantID != "tenant-a" {
 		t.Fatalf("Validate().TenantID = %q, want tenant-a", claims.TenantID)
+	}
+}
+
+// signedAudienceToken builds and signs a token whose audience claim is encoded
+// as a single string rather than a list.
+func signedAudienceToken(t *testing.T, secret string) string {
+	t.Helper()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
+		TenantID: "tenant-a",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "flowrulz",
+			Audience:  jwt.ClaimStrings{"flowrulz-api"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	})
+	tokenString, err := token.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatalf("SignedString() error = %v", err)
+	}
+	return tokenString
+}
+
+func TestValidatorRejectsMissingOrExpiredExpiration(t *testing.T) {
+	validator := NewValidator([]byte("secret"), "", "")
+	for name, expiry := range map[string]*jwt.NumericDate{
+		"missing": nil,
+		"expired": jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{TenantID: "a", RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: expiry}})
+			signed, err := token.SignedString([]byte("secret"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if claims, err := validator.Validate(context.Background(), signed); err == nil || claims != nil {
+				t.Fatalf("accepted %s expiration: claims=%v err=%v", name, claims, err)
+			}
+		})
+	}
+}
+
+func TestValidatorReturnsNoClaimsWhenIssuerIsRejected(t *testing.T) {
+	validator := NewValidator([]byte("secret"), "other-issuer", "flowrulz-api")
+	claims, err := validator.Validate(context.Background(), signedAudienceToken(t, "secret"))
+	if !errors.Is(err, ErrInvalidIssuer) || claims != nil {
+		t.Fatalf("Validate() = (%#v, %v), want nil claims and invalid issuer", claims, err)
+	}
+}
+
+func TestMiddlewareRejectsAnUngrantedEmptyScope(t *testing.T) {
+	validator := NewValidator([]byte("secret"), "flowrulz", "flowrulz-api")
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Header.Set("Authorization", "Bearer "+signedAudienceToken(t, "secret"))
+	response := httptest.NewRecorder()
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("ungranted scope reached handler") })
+	Middleware(validator, "")(handler).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("response status = %d, want %d", response.Code, http.StatusForbidden)
 	}
 }

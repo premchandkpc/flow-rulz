@@ -31,11 +31,31 @@ func (s *ContractSchema) NormalizeAndValidate() error {
 	if s == nil {
 		return fmt.Errorf("contract is required")
 	}
+	if err := s.normalizeIdentity(); err != nil {
+		return err
+	}
+	if err := s.validateFields(); err != nil {
+		return err
+	}
+	if err := s.validateRelations(); err != nil {
+		return err
+	}
+	return s.applySchemaHash()
+}
+
+// normalizeIdentity trims the contract identity, checks it is present, then
+// resolves and checks its kind before any field validation runs.
+func (s *ContractSchema) normalizeIdentity() error {
 	s.Name = strings.TrimSpace(s.Name)
 	s.Version = strings.TrimSpace(s.Version)
 	if s.Name == "" || s.Version == "" {
 		return fmt.Errorf("contract name and version are required")
 	}
+	return s.normalizeKind()
+}
+
+// normalizeKind defaults the contract kind and rejects unsupported values.
+func (s *ContractSchema) normalizeKind() error {
 	if s.Kind == "" {
 		s.Kind = ContractKindEvent
 	}
@@ -44,6 +64,11 @@ func (s *ContractSchema) NormalizeAndValidate() error {
 	default:
 		return fmt.Errorf("unsupported contract kind %q", s.Kind)
 	}
+	return nil
+}
+
+// validateFields requires a non-empty field map and validates every declared field.
+func (s *ContractSchema) validateFields() error {
 	if len(s.Fields) == 0 {
 		return fmt.Errorf("contract %s@%s must define at least one field", s.Name, s.Version)
 	}
@@ -55,20 +80,38 @@ func (s *ContractSchema) NormalizeAndValidate() error {
 			return err
 		}
 	}
+	return nil
+}
+
+// validateRelations checks the optional parent and every allowed child contract.
+func (s *ContractSchema) validateRelations() error {
 	if s.Parent != nil && (strings.TrimSpace(s.Parent.Name) == "" || strings.TrimSpace(s.Parent.Version) == "") {
 		return fmt.Errorf("parent contract must include name and version")
 	}
 	seen := make(map[string]struct{}, len(s.AllowedChildren))
 	for _, child := range s.AllowedChildren {
-		if child.Name == "" || child.Version == "" {
-			return fmt.Errorf("allowed child contract must include name and version")
+		if err := validateAllowedChild(child, seen); err != nil {
+			return err
 		}
-		key := child.Name + "@" + child.Version
-		if _, ok := seen[key]; ok {
-			return fmt.Errorf("duplicate allowed child contract %s", key)
-		}
-		seen[key] = struct{}{}
 	}
+	return nil
+}
+
+// validateAllowedChild checks one allowed child contract and records its identity.
+func validateAllowedChild(child ContractRef, seen map[string]struct{}) error {
+	if child.Name == "" || child.Version == "" {
+		return fmt.Errorf("allowed child contract must include name and version")
+	}
+	key := child.Name + "@" + child.Version
+	if _, ok := seen[key]; ok {
+		return fmt.Errorf("duplicate allowed child contract %s", key)
+	}
+	seen[key] = struct{}{}
+	return nil
+}
+
+// applySchemaHash verifies a supplied hash against the computed one and stores it.
+func (s *ContractSchema) applySchemaHash() error {
 	hash, err := s.ComputeSchemaHash()
 	if err != nil {
 		return err
@@ -117,27 +160,44 @@ func validateContractField(path string, f ContractField, depth int) error {
 	if depth > 32 {
 		return fmt.Errorf("%s exceeds maximum schema nesting depth", path)
 	}
-	switch f.Type {
-	case "string", "number", "integer", "boolean", "object", "array", "null":
-	default:
-		return fmt.Errorf("%s has unsupported type %q", path, f.Type)
+	if err := validateContractFieldType(path, f.Type); err != nil {
+		return err
 	}
 	if f.Type == "object" {
-		for name, child := range f.Properties {
-			if err := validateContractField(path+"."+name, child, depth+1); err != nil {
-				return err
-			}
-		}
+		return validateContractProperties(path, f.Properties, depth)
 	}
 	if f.Type == "array" {
-		if f.Items == nil {
-			return fmt.Errorf("%s array must define items", path)
-		}
-		if err := validateContractField(path+"[]", *f.Items, depth+1); err != nil {
+		return validateContractItems(path, f.Items, depth)
+	}
+	return nil
+}
+
+// validateContractFieldType rejects schema types the contract language does not define.
+func validateContractFieldType(path, fieldType string) error {
+	switch fieldType {
+	case "string", "number", "integer", "boolean", "object", "array", "null":
+	default:
+		return fmt.Errorf("%s has unsupported type %q", path, fieldType)
+	}
+	return nil
+}
+
+// validateContractProperties validates each declared object property recursively.
+func validateContractProperties(path string, properties map[string]ContractField, depth int) error {
+	for name, child := range properties {
+		if err := validateContractField(path+"."+name, child, depth+1); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// validateContractItems requires and validates an array's item schema.
+func validateContractItems(path string, items *ContractField, depth int) error {
+	if items == nil {
+		return fmt.Errorf("%s array must define items", path)
+	}
+	return validateContractField(path+"[]", *items, depth+1)
 }
 
 func validateObject(path string, value map[string]interface{}, fields map[string]ContractField, depth int) error {
@@ -145,17 +205,28 @@ func validateObject(path string, value map[string]interface{}, fields map[string
 		return fmt.Errorf("%s exceeds maximum payload nesting depth", path)
 	}
 	for name, field := range fields {
-		v, exists := value[name]
-		if !exists {
-			if field.Required {
-				return fmt.Errorf("%s.%s is required", path, name)
-			}
-			continue
-		}
-		if err := validateValue(path+"."+name, v, field, depth+1); err != nil {
+		if err := validateObjectField(path, name, field, value, depth); err != nil {
 			return err
 		}
 	}
+	return validateUndeclaredFields(path, value, fields)
+}
+
+// validateObjectField checks one declared field against the payload object,
+// rejecting a missing required member before validating its value.
+func validateObjectField(path, name string, field ContractField, value map[string]interface{}, depth int) error {
+	v, exists := value[name]
+	if !exists {
+		if field.Required {
+			return fmt.Errorf("%s.%s is required", path, name)
+		}
+		return nil
+	}
+	return validateValue(path+"."+name, v, field, depth+1)
+}
+
+// validateUndeclaredFields rejects payload keys the contract does not declare.
+func validateUndeclaredFields(path string, value map[string]interface{}, fields map[string]ContractField) error {
 	for name := range value {
 		if _, ok := fields[name]; !ok {
 			return fmt.Errorf("%s.%s is not declared by the contract", path, name)
@@ -165,61 +236,90 @@ func validateObject(path string, value map[string]interface{}, fields map[string
 }
 
 func validateValue(path string, value interface{}, field ContractField, depth int) error {
-	valid := false
-	switch field.Type {
-	case "string":
-		_, valid = value.(string)
-	case "boolean":
-		_, valid = value.(bool)
-	case "number":
-		_, valid = value.(float64)
-	case "integer":
-		var n float64
-		n, valid = value.(float64)
-		valid = valid && math.Trunc(n) == n
-	case "object":
-		obj, ok := value.(map[string]interface{})
-		if ok {
-			valid = true
-			if err := validateObject(path, obj, field.Properties, depth+1); err != nil {
-				return err
-			}
-		}
-	case "array":
-		items, ok := value.([]interface{})
-		if ok {
-			valid = true
-			for i, item := range items {
-				if err := validateValue(fmt.Sprintf("%s[%d]", path, i), item, *field.Items, depth+1); err != nil {
-					return err
-				}
-			}
-		}
-	case "null":
-		valid = value == nil
+	if err := validateValueType(path, value, field, depth); err != nil {
+		return err
 	}
-	if !valid {
+	return validateValueEnum(path, value, field)
+}
+
+// validateValueType checks the JSON type of one value against the declared
+// contract type, recursing into object and array members.
+func validateValueType(path string, value interface{}, field ContractField, depth int) error {
+	switch field.Type {
+	case "object":
+		return validateObjectValue(path, value, field, depth)
+	case "array":
+		return validateArrayValue(path, value, field, depth)
+	}
+	if !matchesContractType(value, field.Type) {
 		return fmt.Errorf("%s must be %s", path, field.Type)
 	}
-	if len(field.Enum) > 0 {
-		match := false
-		for _, candidate := range field.Enum {
-			if reflect.DeepEqual(candidate, value) {
-				match = true
-				break
-			}
-		}
-		if !match {
-			values := make([]string, 0, len(field.Enum))
-			for _, v := range field.Enum {
-				raw, _ := json.Marshal(v)
-				values = append(values, string(raw))
-			}
-			sort.Strings(values)
-			return fmt.Errorf("%s must be one of [%s]", path, strings.Join(values, ", "))
+	return nil
+}
+
+// matchesContractType reports whether a scalar JSON value has the declared type.
+func matchesContractType(value interface{}, fieldType string) bool {
+	switch fieldType {
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "number", "integer":
+		n, ok := value.(float64)
+		return ok && (fieldType == "number" || math.Trunc(n) == n)
+	case "null":
+		return value == nil
+	}
+	return false
+}
+
+// validateObjectValue validates a nested object payload against its properties.
+func validateObjectValue(path string, value interface{}, field ContractField, depth int) error {
+	obj, ok := value.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("%s must be %s", path, field.Type)
+	}
+	return validateObject(path, obj, field.Properties, depth+1)
+}
+
+// validateArrayValue validates each array member against the item schema.
+func validateArrayValue(path string, value interface{}, field ContractField, depth int) error {
+	items, ok := value.([]interface{})
+	if !ok {
+		return fmt.Errorf("%s must be %s", path, field.Type)
+	}
+	for i, item := range items {
+		if err := validateValue(fmt.Sprintf("%s[%d]", path, i), item, *field.Items, depth+1); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// validateValueEnum rejects values outside the field's declared enum.
+func validateValueEnum(path string, value interface{}, field ContractField) error {
+	if len(field.Enum) == 0 {
+		return nil
+	}
+	for _, candidate := range field.Enum {
+		if reflect.DeepEqual(candidate, value) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s must be one of [%s]", path, strings.Join(formatEnumValues(field.Enum), ", "))
+}
+
+// formatEnumValues renders enum candidates as sorted canonical JSON strings.
+func formatEnumValues(enum []interface{}) []string {
+	values := make([]string, 0, len(enum))
+	for _, v := range enum {
+		raw, _ := json.Marshal(v)
+		values = append(values, string(raw))
+	}
+	sort.Strings(values)
+	return values
 }
 
 // AllowsChild reports whether this parent contract explicitly permits a child contract identity.

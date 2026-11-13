@@ -67,23 +67,7 @@ func newScenarioEvent(scenario Scenario, tenantID, clientID string, sequence int
 	case ScenarioBanking:
 		// Mirrors domains/banking/contracts/transaction.initiated.yaml.
 		eventType = "transaction.initiated"
-		accountID := fmt.Sprintf("account-%04d", clientNumber(clientID))
-		partitionKey = accountID
-		counterparty := fmt.Sprintf("account-%04d", rng.Intn(1000)+1)
-		if rng.Intn(4) == 0 {
-			counterparty = fmt.Sprintf("intl-account-%04d", rng.Intn(1000)+1)
-		}
-		data = map[string]any{
-			"transaction_id":       fmt.Sprintf("txn-%s-%04d", clientID, sequence),
-			"account_id":           accountID,
-			"amount":               float64(rng.Intn(2_000_000) + 500),
-			"currency":             "USD",
-			"transaction_type":     []string{"transfer", "payment", "withdrawal"}[rng.Intn(3)],
-			"channel":              []string{"mobile", "web", "branch", "api"}[rng.Intn(4)],
-			"counterparty_account": counterparty,
-			"description":          fmt.Sprintf("simulated-transfer-%04d", sequence),
-			"initiated_at":         now.Format(time.RFC3339Nano),
-		}
+		partitionKey, data = bankingScenarioPayload(clientID, sequence, now, rng)
 	case ScenarioFoodDelivery:
 		// Mirrors domains/food-delivery/contracts/order.placed.yaml.
 		eventType = "order.placed"
@@ -133,6 +117,25 @@ func newScenarioEvent(scenario Scenario, tenantID, clientID string, sequence int
 			"scenario":      string(scenario),
 		},
 	}, nil
+}
+
+func bankingScenarioPayload(clientID string, sequence int, now time.Time, rng *rand.Rand) (string, map[string]any) {
+	accountID := fmt.Sprintf("account-%04d", clientNumber(clientID))
+	counterparty := fmt.Sprintf("account-%04d", rng.Intn(1000)+1)
+	if rng.Intn(4) == 0 {
+		counterparty = fmt.Sprintf("intl-account-%04d", rng.Intn(1000)+1)
+	}
+	return accountID, map[string]any{
+		"transaction_id":       fmt.Sprintf("txn-%s-%04d", clientID, sequence),
+		"account_id":           accountID,
+		"amount":               float64(rng.Intn(2_000_000) + 500),
+		"currency":             "USD",
+		"transaction_type":     []string{"transfer", "payment", "withdrawal"}[rng.Intn(3)],
+		"channel":              []string{"mobile", "web", "branch", "api"}[rng.Intn(4)],
+		"counterparty_account": counterparty,
+		"description":          fmt.Sprintf("simulated-transfer-%04d", sequence),
+		"initiated_at":         now.Format(time.RFC3339Nano),
+	}
 }
 
 func clientNumber(clientID string) int {

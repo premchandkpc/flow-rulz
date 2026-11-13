@@ -20,10 +20,7 @@ func TestInterpolateTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got map[string]interface{}
-	if err := json.Unmarshal(out, &got); err != nil {
-		t.Fatal(err)
-	}
+	got := decodePayloadMap(t, out)
 	want := map[string]interface{}{
 		"amount": float64(1500000), "vip": true, "tags": []interface{}{"a", "b"}, "cid": "c-1",
 		"label": "txn t-9 of 1500000", "new": "child-1", "at": "2026-01-02T03:04:05Z", "lit": float64(5),

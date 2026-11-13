@@ -88,7 +88,7 @@ func (n *Node) StartRules(t *testing.T, publisher Publisher) {
 	}
 	var revisions []*domain.RuleRevision
 	for _, name := range []string{"a.json", "processed.json"} {
-		source, err := os.ReadFile("../../examples/direct-worker/rules/" + name)
+		source, err := os.ReadFile("../../examples/direct-worker/rules/" + name) // #nosec G304 -- name comes from the fixed fixture list above
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,10 +133,10 @@ func CheckChain(t *testing.T, input, output ports.BrokerCaller) {
 	if err != nil || response.Code != "message" {
 		t.Fatalf("consume response=%+v err=%v", response, err)
 	}
-	checkAndSettle(t, ctx, output, response)
+	checkAndSettle(ctx, t, output, response)
 }
 
-func checkAndSettle(t *testing.T, ctx context.Context, client ports.BrokerCaller, response ports.BrokerResponse) {
+func checkAndSettle(ctx context.Context, t *testing.T, client ports.BrokerCaller, response ports.BrokerResponse) {
 	t.Helper()
 	var claim broker.Claim
 	if err := json.Unmarshal(response.Data, &claim); err != nil {

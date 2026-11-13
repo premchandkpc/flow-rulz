@@ -24,7 +24,7 @@ func Open(dir string) (*Disk, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, "broker.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	lock, err := os.OpenFile(filepath.Join(dir, "broker.lock"), os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- operator-configured data directory; fixed filename
 	if err != nil {
 		return nil, err
 	}

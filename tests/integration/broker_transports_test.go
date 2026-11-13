@@ -5,12 +5,32 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	brokerhttp "github.com/flowrulz/flow-rulz/internal/adapters/http/broker"
 	"github.com/flowrulz/flow-rulz/internal/adapters/remote"
+	"github.com/flowrulz/flow-rulz/internal/domain"
 	"github.com/flowrulz/flow-rulz/internal/ports"
 	"github.com/flowrulz/flow-rulz/tests/brokertest"
 )
+
+func TestBrokerRejectsUnsupportedServiceTargets(t *testing.T) {
+	node := brokertest.New(t)
+	client := node.Client(t, "inprocess")
+	for name, event := range map[string]*domain.EventEnvelope{
+		"header": {Headers: map[string]string{"flow.service_id": "orders"}},
+		"meta":   {Meta: map[string]any{"target_service_id": "orders"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			event.ID, event.Type, event.TenantID, event.PartitionKey = "id-"+name, "orders", "tenant-a", "key"
+			event.OccurredAt, event.Data = time.Now(), []byte(`{}`)
+			response, err := client.Call(context.Background(), ports.BrokerRequest{Operation: "publish", TenantID: event.TenantID, Event: event})
+			if err != nil || response.Code != "invalid" {
+				t.Fatalf("targeted publish response=%+v err=%v, want invalid", response, err)
+			}
+		})
+	}
+}
 
 func TestBrokerOptionalTransportMatrix(t *testing.T) {
 	for _, inputTransport := range []string{"inprocess", "http", "tcp"} {

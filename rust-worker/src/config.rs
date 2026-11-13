@@ -193,12 +193,8 @@ fn validate_config(config: &Config) -> Result<()> {
     }
 
     validate_rulesets(&config.rulesets)?;
-    match (&config.service_id, config.deployment_revision) {
-        (Some(service_id), Some(revision)) if !service_id.trim().is_empty() && revision > 0 => {}
-        (None, None) => {}
-        _ => bail!(
-            "FLOW_SERVICE_ID and positive FLOW_DEPLOYMENT_REVISION must be configured together"
-        ),
+    if config.service_id.is_some() || config.deployment_revision.is_some() {
+        bail!("service-specific routing and ruleset isolation are not supported");
     }
     validate_lease_settings(config)?;
     validate_delivery_settings(config)
@@ -302,12 +298,12 @@ mod tests {
     }
 
     #[test]
-    fn accepts_legacy_and_pinned_deployment_configurations() {
+    fn rejects_pinned_deployment_until_routing_is_supported() {
         assert!(validate_config(&valid_config()).is_ok());
         let mut config = valid_config();
         config.service_id = Some("domain-a/orders".into());
         config.deployment_revision = Some(3);
-        assert!(validate_config(&config).is_ok());
+        assert!(validate_config(&config).is_err());
     }
 
     #[test]

@@ -72,14 +72,14 @@ func loadDirectRules(dir string) ([]*domain.RuleRevision, error) {
 	return revisions, nil
 }
 
-func readDirectRule(path string) ([]byte, error) {
+func readDirectRule(path string) (source []byte, resultErr error) {
 	const maxRuleBytes = 256 * 1024
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
-	source, err := io.ReadAll(io.LimitReader(f, maxRuleBytes+1))
+	defer func() { resultErr = errors.Join(resultErr, f.Close()) }()
+	source, err = io.ReadAll(io.LimitReader(f, maxRuleBytes+1))
 	if err != nil {
 		return nil, err
 	}

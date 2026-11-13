@@ -12,27 +12,58 @@ func validConfigForTest() *Config {
 		App:      AppConfig{Env: "development", HTTPAddr: "127.0.0.1:8080", ShutdownTimeout: time.Second},
 		Database: DatabaseConfig{StorageBackend: "postgres", DSN: "postgres://localhost/flowrulz"},
 		NATS:     NATSConfig{URL: "nats://localhost:4222", MaxBytes: -1, MaxMsgs: -1},
-		Worker: WorkerConfig{
-			NumShards:               1,
-			WorkerReplicas:          1,
-			MaxGlobalInFlight:       1,
-			FetchBatchSize:          1,
-			EffectPublishIntervalMS: 1,
-			EffectPublishBatchSize:  1,
-			RetryDelayMS:            1,
-			MaxPerKeyQueue:          1,
-			KeyQueueWorkers:         1,
-			BatchMax:                1,
-			BatchWindowMS:           1,
-			SchedulerPollMS:         1,
-			SchedulerBatchSize:      1,
-			LeaseTTLMS:              3,
-			LeaseRenewalIntervalMS:  1,
-			NATSAckWaitMS:           1500,
-			NATSMaxDeliver:          -1,
-			HotKeyThreshold:         1,
-			HotKeyCheckIntervalMS:   2500,
-		},
+		Worker:   validWorkerConfigForTest(),
+	}
+}
+
+// validWorkerConfigForTest returns worker settings accepted by Validate.
+func validWorkerConfigForTest() WorkerConfig {
+	worker := validWorkerCapacityConfigForTest()
+	worker.BatchMax = 1
+	worker.BatchWindowMS = 1
+	worker.SchedulerPollMS = 1
+	worker.SchedulerBatchSize = 1
+	worker.LeaseTTLMS = 3
+	worker.LeaseRenewalIntervalMS = 1
+	worker.NATSAckWaitMS = 1500
+	worker.NATSMaxDeliver = -1
+	worker.HotKeyThreshold = 1
+	worker.HotKeyCheckIntervalMS = 2500
+	return worker
+}
+
+// validWorkerCapacityConfigForTest returns the concurrency and queue settings
+// accepted by Validate.
+func validWorkerCapacityConfigForTest() WorkerConfig {
+	return WorkerConfig{
+		NumShards:               1,
+		WorkerReplicas:          1,
+		MaxGlobalInFlight:       1,
+		FetchBatchSize:          1,
+		EffectPublishIntervalMS: 1,
+		EffectPublishBatchSize:  1,
+		RetryDelayMS:            1,
+		MaxPerKeyQueue:          1,
+		KeyQueueWorkers:         1,
+	}
+}
+
+// configMutation is a test case that invalidates one configuration setting.
+type configMutation struct {
+	name   string
+	mutate func(*Config)
+}
+
+// invalidWorkerRuntimeSettings lists mutations Validate must reject.
+func invalidWorkerRuntimeSettings() []configMutation {
+	return []configMutation{
+		{name: "fetch batch exceeds in-flight limit", mutate: func(c *Config) { c.Worker.FetchBatchSize = 2 }},
+		{name: "worker replicas must be positive", mutate: func(c *Config) { c.Worker.WorkerReplicas = 0 }},
+		{name: "lease renewal exceeds safe interval", mutate: func(c *Config) { c.Worker.LeaseRenewalIntervalMS = 2 }},
+		{name: "NATS ack wait", mutate: func(c *Config) { c.Worker.NATSAckWaitMS = 0 }},
+		{name: "NATS max deliver", mutate: func(c *Config) { c.Worker.NATSMaxDeliver = 0 }},
+		{name: "hot key threshold", mutate: func(c *Config) { c.Worker.HotKeyThreshold = 0 }},
+		{name: "hot key check interval", mutate: func(c *Config) { c.Worker.HotKeyCheckIntervalMS = 0 }},
 	}
 }
 
@@ -53,20 +84,7 @@ func TestValidateRejectsOversizedNATSRuleset(t *testing.T) {
 }
 
 func TestValidateRejectsInvalidWorkerRuntimeSettings(t *testing.T) {
-	tests := []struct {
-		name   string
-		mutate func(*Config)
-	}{
-		{name: "fetch batch exceeds in-flight limit", mutate: func(c *Config) { c.Worker.FetchBatchSize = 2 }},
-		{name: "worker replicas must be positive", mutate: func(c *Config) { c.Worker.WorkerReplicas = 0 }},
-		{name: "lease renewal exceeds safe interval", mutate: func(c *Config) { c.Worker.LeaseRenewalIntervalMS = 2 }},
-		{name: "NATS ack wait", mutate: func(c *Config) { c.Worker.NATSAckWaitMS = 0 }},
-		{name: "NATS max deliver", mutate: func(c *Config) { c.Worker.NATSMaxDeliver = 0 }},
-		{name: "hot key threshold", mutate: func(c *Config) { c.Worker.HotKeyThreshold = 0 }},
-		{name: "hot key check interval", mutate: func(c *Config) { c.Worker.HotKeyCheckIntervalMS = 0 }},
-	}
-
-	for _, tt := range tests {
+	for _, tt := range invalidWorkerRuntimeSettings() {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfigForTest()
 			tt.mutate(cfg)
@@ -111,18 +129,7 @@ func TestLoadRejectsMalformedShutdownTimeout(t *testing.T) {
 
 func TestLoadDefaultsHTTPAddrToLoopback(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
-	previous, wasSet := os.LookupEnv("HTTP_ADDR")
-	if err := os.Unsetenv("HTTP_ADDR"); err != nil {
-		t.Fatalf("Unsetenv(HTTP_ADDR): %v", err)
-	}
-	t.Cleanup(func() {
-		if wasSet {
-			_ = os.Setenv("HTTP_ADDR", previous)
-			return
-		}
-		_ = os.Unsetenv("HTTP_ADDR")
-	})
-
+	unsetEnvForTest(t, "HTTP_ADDR")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -130,6 +137,23 @@ func TestLoadDefaultsHTTPAddrToLoopback(t *testing.T) {
 	if got, want := cfg.App.HTTPAddr, "127.0.0.1:8080"; got != want {
 		t.Fatalf("HTTPAddr = %q, want %q", got, want)
 	}
+}
+
+// unsetEnvForTest removes key for the duration of the test and restores its
+// previous state afterwards.
+func unsetEnvForTest(t *testing.T, key string) {
+	t.Helper()
+	previous, wasSet := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("Unsetenv(%s): %v", key, err)
+	}
+	t.Cleanup(func() {
+		if wasSet {
+			_ = os.Setenv(key, previous)
+			return
+		}
+		_ = os.Unsetenv(key)
+	})
 }
 
 func TestValidateRejectsBatchModeWithoutLeaseAndQueueIntegration(t *testing.T) {
@@ -154,11 +178,24 @@ func TestValidateRejectsProductionWithoutAuthentication(t *testing.T) {
 }
 
 func TestValidateAllowsProductionTrustedProxyAuthentication(t *testing.T) {
-	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", "test-proxy-secret")
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", strings.Repeat("p", 32))
 	cfg := validConfigForTest()
 	cfg.App.Env = "production"
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want trusted-proxy configuration to be accepted", err)
+	}
+}
+
+func TestValidateRejectsWeakProductionProxyCredential(t *testing.T) {
+	for _, token := range []string{"short", " " + strings.Repeat("p", 32)} {
+		t.Run(token[:1], func(t *testing.T) {
+			t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", token)
+			cfg := validConfigForTest()
+			cfg.App.Env = "production"
+			if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "FLOWRULZ_TRUSTED_PROXY_TOKEN") {
+				t.Fatalf("invalid proxy credential must be rejected: %v", err)
+			}
+		})
 	}
 }
 
@@ -173,6 +210,16 @@ func TestValidateAllowsProductionJWTAuthentication(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsWeakOptionalJWTSecret(t *testing.T) {
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", strings.Repeat("p", 32))
+	cfg := validConfigForTest()
+	cfg.App.Env = "production"
+	cfg.Auth.JWTSecret = "weak-secret"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "JWT_SECRET") {
+		t.Fatalf("weak optional JWT secret must be rejected: %v", err)
+	}
+}
+
 func TestLoadRejectsMalformedRequireAuth(t *testing.T) {
 	t.Setenv("REQUIRE_AUTH", "definitely-not-a-boolean")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "REQUIRE_AUTH must be a boolean") {
@@ -182,7 +229,7 @@ func TestLoadRejectsMalformedRequireAuth(t *testing.T) {
 
 func TestLoadDefaultsEnvironmentToProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "")
-	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", "test-proxy-secret")
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", strings.Repeat("p", 32))
 
 	cfg, err := Load()
 	if err != nil {
@@ -210,19 +257,26 @@ func TestValidateAllowsUnlimitedNATSMaxDeliver(t *testing.T) {
 	}
 }
 
-func TestValidateRequiresPairedServiceDeploymentIdentity(t *testing.T) {
-	tests := []struct {
-		name      string
-		serviceID string
-		revision  int64
-		wantError bool
-	}{
+// deploymentIdentityCase is one service/revision pairing checked by Validate.
+type deploymentIdentityCase struct {
+	name      string
+	serviceID string
+	revision  int64
+	wantError bool
+}
+
+// deploymentIdentityCases lists the paired identity combinations Validate must accept or reject.
+func deploymentIdentityCases() []deploymentIdentityCase {
+	return []deploymentIdentityCase{
 		{name: "legacy mode", wantError: false},
 		{name: "service without revision", serviceID: "orders-worker", wantError: true},
 		{name: "revision without service", revision: 2, wantError: true},
-		{name: "pinned deployment", serviceID: "orders-worker", revision: 2, wantError: false},
+		{name: "pinned deployment unsupported", serviceID: "orders-worker", revision: 2, wantError: true},
 	}
-	for _, tt := range tests {
+}
+
+func TestValidateRejectsUnsupportedServiceDeploymentIdentity(t *testing.T) {
+	for _, tt := range deploymentIdentityCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfigForTest()
 			cfg.Worker.ServiceID = tt.serviceID

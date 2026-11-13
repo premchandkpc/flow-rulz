@@ -94,6 +94,10 @@ async fn handle_message(
     let Some(envelope) = decode_or_quarantine(pool, &message).await? else {
         return Ok(());
     };
+    if envelope.has_deployment_target() {
+        let error = anyhow!("service-targeted events require service-specific routing");
+        return retry_event_later(&message, config, shard, &envelope, &error).await;
+    }
     if let Err(error) = validate_message_routing(&envelope, config, shard) {
         quarantine_and_ack(
             pool,
@@ -305,8 +309,6 @@ fn is_permanent_event_error(error: &anyhow::Error) -> bool {
         "resolved an empty partition key",
         "action must contain exactly one supported action",
         "predicate path missing",
-        "inbox duplicate has no committed execution",
-        "inbox points to missing execution",
         "exceeds the 100-service fan-out limit",
         "command destination and name are required",
     ]
@@ -321,6 +323,16 @@ mod deployment_routing_tests {
     use chrono::{DateTime, Utc};
     use serde_json::json;
     use std::{collections::HashMap, time::Duration};
+
+    #[test]
+    fn ambiguous_inbox_state_must_retry_without_acknowledgement() {
+        for reason in [
+            "inbox duplicate has no committed execution; refusing unsafe acknowledgement",
+            "inbox points to missing execution; refusing unsafe acknowledgement",
+        ] {
+            assert!(!is_permanent_event_error(&anyhow!(reason)));
+        }
+    }
 
     fn config(service_id: Option<&str>, revision: Option<i64>) -> Config {
         Config {
@@ -379,6 +391,20 @@ mod deployment_routing_tests {
             message_kind: None,
             correlation_id: None,
             causation_id: None,
+        }
+    }
+
+    #[test]
+    fn detects_deployment_targets_in_metadata_or_headers() {
+        assert!(!event(HashMap::new()).has_deployment_target());
+        for key in ["target_service_id", "deployment_revision"] {
+            let targeted = event(HashMap::from([(key.into(), "3".into())]));
+            assert!(targeted.has_deployment_target());
+        }
+        for key in ["flow.service_id", "flow.deployment_revision"] {
+            let mut targeted = event(HashMap::new());
+            targeted.headers.insert(key.into(), "orders".into());
+            assert!(targeted.has_deployment_target());
         }
     }
 

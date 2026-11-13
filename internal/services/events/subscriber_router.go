@@ -21,13 +21,19 @@ type SubscriberRouter struct{}
 // Route creates one stable service_event outbox effect for each active
 // subscriber matching the event type. The dispatcher publishes these effects
 // after the transaction commits.
-func (SubscriberRouter) Route(
-	ctx context.Context,
-	repository ports.SubscriberRepository,
-	envelope *domain.EventEnvelope,
-	executionID string,
-	now time.Time,
-) ([]domain.OutboxEffect, error) {
+func (SubscriberRouter) Route(ctx context.Context, repository ports.SubscriberRepository, envelope *domain.EventEnvelope, executionID string, now time.Time) ([]domain.OutboxEffect, error) {
+	subscribers, err := eventSubscribers(ctx, repository, envelope)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("marshal subscribed event envelope: %w", err)
+	}
+	return subscriberEffects(subscribers, envelope, executionID, payload, now), nil
+}
+
+func eventSubscribers(ctx context.Context, repository ports.SubscriberRepository, envelope *domain.EventEnvelope) ([]*domain.DomainService, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("subscription repository is not configured")
 	}
@@ -38,37 +44,38 @@ func (SubscriberRouter) Route(
 	if len(subscribers) > maxSubscriberFanout {
 		return nil, fmt.Errorf("event %q exceeds the %d-service fan-out limit", envelope.Type, maxSubscriberFanout)
 	}
+	return subscribers, nil
+}
 
-	payload, err := json.Marshal(envelope)
-	if err != nil {
-		return nil, fmt.Errorf("marshal subscribed event envelope: %w", err)
-	}
-
+func subscriberEffects(subscribers []*domain.DomainService, envelope *domain.EventEnvelope, executionID string, payload json.RawMessage, now time.Time) []domain.OutboxEffect {
 	effects := make([]domain.OutboxEffect, 0, len(subscribers))
 	for _, subscriber := range subscribers {
-		if subscriber == nil || !subscriber.Active {
-			continue
+		if acceptsSubscriber(subscriber, envelope.TenantID) {
+			effects = append(effects, newSubscriberEffect(subscriber.ID, envelope, executionID, payload, now))
 		}
-		// Global subscriptions are configured without tenant identity and may
-		// receive matching events from any tenant. Legacy scoped subscriptions
-		// remain isolated to the event tenant during migration.
-		if subscriber.TenantID != envelope.TenantID && subscriber.TenantID != domain.DomainConfigurationScope {
-			continue
-		}
-		effects = append(effects, domain.OutboxEffect{
-			ID:          domain.ComputeEffectID(envelope.TenantID, envelope.ID, "service-subscription", 1, subscriber.ID, 0),
-			ExecutionID: executionID,
-			TenantID:    envelope.TenantID,
-			Destination: subscriber.ID,
-			Name:        envelope.Type,
-			Payload:     payload,
-			EffectType:  domain.EffectTypeServiceEvent,
-			Status:      domain.OutboxStatusPending,
-			MaxAttempts: 5,
-			AvailableAt: now,
-			CreatedAt:   now,
-			UpdatedAt:   now,
-		})
 	}
-	return effects, nil
+	return effects
+}
+
+// Global subscriptions accept matching events across tenants. Legacy scoped
+// subscriptions accept only their own tenant's events.
+func acceptsSubscriber(subscriber *domain.DomainService, tenantID string) bool {
+	return subscriber != nil && subscriber.Active &&
+		(subscriber.TenantID == tenantID || subscriber.TenantID == domain.DomainConfigurationScope)
+}
+
+func newSubscriberEffect(subscriberID string, envelope *domain.EventEnvelope, executionID string, payload json.RawMessage, now time.Time) domain.OutboxEffect {
+	return domain.OutboxEffect{
+		ID:          domain.ComputeEffectID(envelope.TenantID, envelope.ID, "service-subscription", 1, subscriberID, 0),
+		ExecutionID: executionID, TenantID: envelope.TenantID,
+		Destination: subscriberID,
+		Name:        envelope.Type,
+		Payload:     payload,
+		EffectType:  domain.EffectTypeServiceEvent,
+		Status:      domain.OutboxStatusPending,
+		MaxAttempts: 5,
+		AvailableAt: now,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
 }

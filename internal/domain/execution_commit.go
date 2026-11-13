@@ -38,9 +38,9 @@ type LogOutputRoute struct {
 	Processor     string `json:"processor,omitempty"`
 }
 
-// Validate checks that the route has one supported kind and exactly one target.
-func (r LogOutputRoute) Validate() error {
-	targets := map[string]string{
+// routeTargets maps each supported route kind to its single target field.
+func (r LogOutputRoute) routeTargets() map[string]string {
+	return map[string]string{
 		"consumer": r.Destination,
 		"rule_set": r.RuleSet,
 		"workflow": r.WorkflowID,
@@ -48,6 +48,11 @@ func (r LogOutputRoute) Validate() error {
 		"reply":    r.CorrelationID,
 		"internal": r.Processor,
 	}
+}
+
+// Validate checks that the route has one supported kind and exactly one target.
+func (r LogOutputRoute) Validate() error {
+	targets := r.routeTargets()
 	target, ok := targets[r.Kind]
 	if !ok {
 		return fmt.Errorf("unsupported output route kind %q", r.Kind)
@@ -98,6 +103,33 @@ type ExecutionCommittedPayload struct {
 // Validate enforces the execution/effect atomicity contract before a commit can
 // be appended. The enclosing record supplies the authoritative tenant and event.
 func (p ExecutionCommittedPayload) Validate(tenantID, eventID string) error {
+	if err := p.validateCommitHeader(); err != nil {
+		return err
+	}
+	if err := p.validateRuleRevisions(tenantID); err != nil {
+		return err
+	}
+	return p.validateEffects(tenantID, eventID)
+}
+
+// validateCommitHeader checks identity, outcome, hashes, required arrays and
+// the outcome's permission to emit effects.
+func (p ExecutionCommittedPayload) validateCommitHeader() error {
+	if err := p.validateCommitIdentity(); err != nil {
+		return err
+	}
+	if err := p.validateCommitPayloads(); err != nil {
+		return err
+	}
+	if err := p.validateCommitArrays(); err != nil {
+		return err
+	}
+	return p.validateOutcomeEffects()
+}
+
+// validateCommitIdentity checks the execution identity, outcome and optional
+// outcome details.
+func (p ExecutionCommittedPayload) validateCommitIdentity() error {
 	if strings.TrimSpace(p.ExecutionID) == "" {
 		return errors.New("execution.committed requires execution_id")
 	}
@@ -109,12 +141,23 @@ func (p ExecutionCommittedPayload) Validate(tenantID, eventID string) error {
 	if len(p.OutcomeDetails) > 0 && !json.Valid(p.OutcomeDetails) {
 		return errors.New("execution.committed outcome_details must be valid JSON")
 	}
+	return nil
+}
+
+// validateCommitPayloads checks the decision hash and the result payload.
+func (p ExecutionCommittedPayload) validateCommitPayloads() error {
 	if !isSHA256Hex(p.DecisionHash) {
 		return errors.New("execution.committed requires a SHA-256 decision_hash")
 	}
 	if len(p.ResultPayload) == 0 || !json.Valid(p.ResultPayload) {
 		return errors.New("execution.committed requires a valid result_payload")
 	}
+	return nil
+}
+
+// validateCommitArrays requires explicit rule, match and effect arrays and a
+// positive fencing epoch.
+func (p ExecutionCommittedPayload) validateCommitArrays() error {
 	if p.RuleRevisions == nil {
 		return errors.New("execution.committed requires rule_revisions array")
 	}
@@ -127,59 +170,112 @@ func (p ExecutionCommittedPayload) Validate(tenantID, eventID string) error {
 	if p.FencingEpoch == 0 {
 		return errors.New("execution.committed requires a positive fencing_epoch")
 	}
+	return nil
+}
+
+// validateOutcomeEffects rejects effects on outcomes that cannot emit them.
+func (p ExecutionCommittedPayload) validateOutcomeEffects() error {
 	if (p.Outcome == "quarantined" || p.Outcome == "no_match") && len(p.Effects) != 0 {
 		return fmt.Errorf("%s execution cannot emit effects", p.Outcome)
 	}
+	return nil
+}
+
+// validateRuleRevisions checks every pinned revision against the enclosing tenant.
+func (p ExecutionCommittedPayload) validateRuleRevisions(tenantID string) error {
 	for i, revision := range p.RuleRevisions {
-		if strings.TrimSpace(revision.TenantID) == "" || revision.TenantID != tenantID {
-			return fmt.Errorf("rule_revisions[%d] tenant_id does not match event tenant", i)
-		}
-		if strings.TrimSpace(revision.RuleSet) == "" || revision.Revision <= 0 {
-			return fmt.Errorf("rule_revisions[%d] requires rule_set and positive revision", i)
-		}
-		if !isSHA256Hex(revision.ContentHash) || strings.TrimSpace(revision.CompilerVersion) == "" {
-			return fmt.Errorf("rule_revisions[%d] requires content_hash and compiler_version", i)
+		if err := validateRuleRevision(revision, tenantID, i); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// validateRuleRevision checks one pinned rule revision entry.
+func validateRuleRevision(revision LogRuleRevisionRef, tenantID string, i int) error {
+	if strings.TrimSpace(revision.TenantID) == "" || revision.TenantID != tenantID {
+		return fmt.Errorf("rule_revisions[%d] tenant_id does not match event tenant", i)
+	}
+	if strings.TrimSpace(revision.RuleSet) == "" || revision.Revision <= 0 {
+		return fmt.Errorf("rule_revisions[%d] requires rule_set and positive revision", i)
+	}
+	if !isSHA256Hex(revision.ContentHash) || strings.TrimSpace(revision.CompilerVersion) == "" {
+		return fmt.Errorf("rule_revisions[%d] requires content_hash and compiler_version", i)
+	}
+	return nil
+}
+
+// validateEffects checks every effect intent in order.
+func (p ExecutionCommittedPayload) validateEffects(tenantID, eventID string) error {
 	seenEffectIDs := make(map[string]struct{}, len(p.Effects))
 	for i, effect := range p.Effects {
-		if _, exists := seenEffectIDs[effect.EffectID]; exists {
-			return fmt.Errorf("effects[%d] duplicates effect_id %q", i, effect.EffectID)
+		if err := p.validateEffect(i, effect, seenEffectIDs, tenantID, eventID); err != nil {
+			return err
 		}
-		seenEffectIDs[effect.EffectID] = struct{}{}
-		if strings.TrimSpace(effect.EffectID) == "" || strings.TrimSpace(effect.EffectKey) == "" || strings.TrimSpace(effect.ExecutionID) == "" {
-			return fmt.Errorf("effects[%d] requires effect_id, effect_key and execution_id", i)
-		}
-		expectedEffectID := DeterministicID("effect", tenantID, effect.PartitionKey, eventID, p.ExecutionID, effect.EffectKey)
-		if effect.EffectID != expectedEffectID {
-			return fmt.Errorf("effects[%d] effect_id does not match its deterministic identity", i)
-		}
-		if effect.ExecutionID != p.ExecutionID {
-			return fmt.Errorf("effects[%d] belongs to a different execution", i)
-		}
-		if effect.TenantID != tenantID || effect.SourceEventID != eventID {
-			return fmt.Errorf("effects[%d] tenant or source event does not match enclosing record", i)
-		}
-		if strings.TrimSpace(effect.PartitionKey) == "" {
-			return fmt.Errorf("effects[%d] requires partition_key", i)
-		}
-		if err := validateLogContractRef(effect.OutputContract); err != nil {
-			return fmt.Errorf("effects[%d] output_contract: %w", i, err)
-		}
-		if err := effect.Route.Validate(); err != nil {
-			return fmt.Errorf("effects[%d] route: %w", i, err)
-		}
-		switch effect.Kind {
-		case "publish_event", "invoke_command", "reply", "schedule":
-		default:
-			return fmt.Errorf("effects[%d] has unsupported kind %q", i, effect.Kind)
-		}
-		if len(effect.Payload) == 0 || !json.Valid(effect.Payload) {
-			return fmt.Errorf("effects[%d] requires a valid JSON payload", i)
-		}
-		if !isSHA256Hex(effect.PayloadSHA256) || payloadSHA256(effect.Payload) != effect.PayloadSHA256 {
-			return fmt.Errorf("effects[%d] payload_sha256 does not match payload", i)
-		}
+	}
+	return nil
+}
+
+// validateEffect checks one effect's uniqueness, identity, route and payload.
+func (p ExecutionCommittedPayload) validateEffect(i int, effect LogEffectIntent, seen map[string]struct{}, tenantID, eventID string) error {
+	if _, exists := seen[effect.EffectID]; exists {
+		return fmt.Errorf("effects[%d] duplicates effect_id %q", i, effect.EffectID)
+	}
+	seen[effect.EffectID] = struct{}{}
+	if err := p.validateEffectIdentity(i, effect, tenantID, eventID); err != nil {
+		return err
+	}
+	if err := validateEffectRoute(i, effect); err != nil {
+		return err
+	}
+	return validateEffectPayload(i, effect)
+}
+
+// validateEffectIdentity checks one effect's required fields, deterministic
+// identity and execution and tenant ownership.
+func (p ExecutionCommittedPayload) validateEffectIdentity(i int, effect LogEffectIntent, tenantID, eventID string) error {
+	if strings.TrimSpace(effect.EffectID) == "" || strings.TrimSpace(effect.EffectKey) == "" || strings.TrimSpace(effect.ExecutionID) == "" {
+		return fmt.Errorf("effects[%d] requires effect_id, effect_key and execution_id", i)
+	}
+	expectedEffectID := DeterministicID("effect", tenantID, effect.PartitionKey, eventID, p.ExecutionID, effect.EffectKey)
+	if effect.EffectID != expectedEffectID {
+		return fmt.Errorf("effects[%d] effect_id does not match its deterministic identity", i)
+	}
+	if effect.ExecutionID != p.ExecutionID {
+		return fmt.Errorf("effects[%d] belongs to a different execution", i)
+	}
+	if effect.TenantID != tenantID || effect.SourceEventID != eventID {
+		return fmt.Errorf("effects[%d] tenant or source event does not match enclosing record", i)
+	}
+	return nil
+}
+
+// validateEffectRoute checks the partition key, output contract, route and kind.
+func validateEffectRoute(i int, effect LogEffectIntent) error {
+	if strings.TrimSpace(effect.PartitionKey) == "" {
+		return fmt.Errorf("effects[%d] requires partition_key", i)
+	}
+	if err := validateLogContractRef(effect.OutputContract); err != nil {
+		return fmt.Errorf("effects[%d] output_contract: %w", i, err)
+	}
+	if err := effect.Route.Validate(); err != nil {
+		return fmt.Errorf("effects[%d] route: %w", i, err)
+	}
+	switch effect.Kind {
+	case "publish_event", "invoke_command", "reply", "schedule":
+	default:
+		return fmt.Errorf("effects[%d] has unsupported kind %q", i, effect.Kind)
+	}
+	return nil
+}
+
+// validateEffectPayload requires a valid JSON payload whose hash matches payload_sha256.
+func validateEffectPayload(i int, effect LogEffectIntent) error {
+	if len(effect.Payload) == 0 || !json.Valid(effect.Payload) {
+		return fmt.Errorf("effects[%d] requires a valid JSON payload", i)
+	}
+	if !isSHA256Hex(effect.PayloadSHA256) || payloadSHA256(effect.Payload) != effect.PayloadSHA256 {
+		return fmt.Errorf("effects[%d] payload_sha256 does not match payload", i)
 	}
 	return nil
 }

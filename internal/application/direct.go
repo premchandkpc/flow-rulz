@@ -106,6 +106,9 @@ func (w *DirectWorker) process(ctx context.Context, delivery ports.Delivery) err
 	if err := env.Validate(); err != nil {
 		return err
 	}
+	if err := rejectDeploymentTarget(env); err != nil {
+		return err
+	}
 	if env.Contract != nil {
 		return errors.New("direct mode cannot validate registry contracts; use durable mode")
 	}

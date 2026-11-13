@@ -22,6 +22,7 @@ const (
 	trustedProxyTokenEnv    = "FLOWRULZ_TRUSTED_PROXY_TOKEN"
 	trustedProxyTokenHeader = "X-Proxy-Auth" //nolint:gosec // header name, not credentials
 	trustedTenantHeader     = "X-Authenticated-Tenant-ID"
+	trustedScopesHeader     = "X-Authenticated-Scopes"
 )
 
 // TenantExtractor establishes tenant context. Development and test environments
@@ -36,7 +37,8 @@ func TenantExtractor(next http.Handler) http.Handler {
 		if isGlobalConfigurationRoute(r.URL.Path) {
 			// Global configuration still requires control-plane authentication, but
 			// does not require a tenant identity. Runtime tenant identity is on events.
-			if status := globalConfigurationAuthStatus(r); status != http.StatusOK {
+			request, status := authorizeGlobalConfiguration(r)
+			if status != http.StatusOK {
 				if status == http.StatusServiceUnavailable {
 					http.Error(w, "global configuration authentication is not configured", status)
 				} else {
@@ -44,7 +46,7 @@ func TenantExtractor(next http.Handler) http.Handler {
 				}
 				return
 			}
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, request)
 			return
 		}
 
@@ -63,31 +65,48 @@ func TenantExtractor(next http.Handler) http.Handler {
 	})
 }
 
-func globalConfigurationAuthStatus(r *http.Request) int {
+func authorizeGlobalConfiguration(r *http.Request) (*http.Request, int) {
 	env := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
 	if env == "development" || env == "dev" || env == "test" {
-		return http.StatusOK
+		return r, http.StatusOK
 	}
-	// Global configuration requires an administrative scope, not merely an
-	// authenticated event tenant. Tenant identity belongs to runtime events.
-	for _, scope := range []string{"flowrulz:admin", "admin", "domains:admin", "rules:admin", "contracts:admin", "subscriptions:admin"} {
-		if auth.HasScope(r.Context(), scope) {
-			return http.StatusOK
-		}
+	if hasGlobalScope(r.Context(), globalResourceScope(r.URL.Path)) {
+		return r, http.StatusOK
 	}
 	if _, authenticatedTenant := auth.TenantFromContext(r.Context()); authenticatedTenant {
-		// An authenticated tenant is not automatically a global configuration administrator.
-		return http.StatusForbidden
+		return r, http.StatusForbidden
 	}
 	expected := os.Getenv(trustedProxyTokenEnv)
 	if expected == "" {
-		return http.StatusServiceUnavailable
+		return r, http.StatusServiceUnavailable
 	}
 	provided := r.Header.Get(trustedProxyTokenHeader)
 	if len(provided) != len(expected) || subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
-		return http.StatusUnauthorized
+		return r, http.StatusUnauthorized
 	}
-	return http.StatusOK
+	ctx := auth.ContextWithTrustedScopes(r.Context(), strings.Fields(r.Header.Get(trustedScopesHeader)))
+	if !hasGlobalScope(ctx, globalResourceScope(r.URL.Path)) {
+		return r, http.StatusForbidden
+	}
+	return r.WithContext(ctx), http.StatusOK
+}
+
+func hasGlobalScope(ctx context.Context, resourceScope string) bool {
+	return auth.HasScope(ctx, "admin") || auth.HasScope(ctx, "flowrulz:admin") ||
+		(resourceScope != "" && auth.HasScope(ctx, resourceScope))
+}
+
+func globalResourceScope(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 2 || parts[0] != "v1" {
+		return ""
+	}
+	switch parts[1] {
+	case "domains", "subscriptions", "rules", "contracts":
+		return parts[1] + ":admin"
+	default:
+		return "" // Workflow definitions require a platform-wide admin scope.
+	}
 }
 
 func isGlobalConfigurationRoute(path string) bool {
@@ -98,6 +117,8 @@ func isGlobalConfigurationRoute(path string) bool {
 	switch parts[1] {
 	case "domains", "subscriptions", "rules", "contracts":
 		return true
+	case "workflows":
+		return len(parts) > 2 && parts[2] == "definitions"
 	default:
 		return false
 	}

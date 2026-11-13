@@ -87,7 +87,12 @@ func resolveGeneratedFilePaths(outputDir, relativePath string) (generatedFilePat
 	if !filepath.IsLocal(relativePath) {
 		return generatedFilePaths{}, fmt.Errorf("generated file path must be local to the output directory")
 	}
-	relativePath = filepath.Clean(relativePath)
+	return resolveAbsoluteGeneratedPaths(outputDir, filepath.Clean(relativePath))
+}
+
+// resolveAbsoluteGeneratedPaths resolves the cleaned output directory to an
+// absolute path and verifies that it stays local to its filesystem volume root.
+func resolveAbsoluteGeneratedPaths(outputDir, relativePath string) (generatedFilePaths, error) {
 	absoluteOutputDir, err := filepath.Abs(outputDir)
 	if err != nil {
 		return generatedFilePaths{}, fmt.Errorf("resolve output dir: %w", err)
@@ -100,10 +105,8 @@ func resolveGeneratedFilePaths(outputDir, relativePath string) (generatedFilePat
 	if !filepath.IsLocal(relativeOutputDir) {
 		return generatedFilePaths{}, fmt.Errorf("output directory must be local to its volume root")
 	}
-	return generatedFilePaths{
-		outputDir: outputDir, absoluteOutputDir: absoluteOutputDir, relativePath: relativePath,
-		volumeRoot: volumeRoot, relativeOutputDir: relativeOutputDir,
-	}, nil
+	return generatedFilePaths{outputDir: outputDir, absoluteOutputDir: absoluteOutputDir, relativePath: relativePath,
+		volumeRoot: volumeRoot, relativeOutputDir: relativeOutputDir}, nil
 }
 
 func ensureGeneratedOutputDirectory(volumeRoot, relativeOutputDir string) error {
@@ -120,17 +123,35 @@ func ensureGeneratedOutputDirectory(volumeRoot, relativeOutputDir string) error 
 	return nil
 }
 
+// createFileWithinOutputRoot creates relativePath inside outputDir, creating
+// the parent directory first and closing the directory root exactly once.
 func createFileWithinOutputRoot(outputDir, relativePath string) (*os.File, error) {
 	root, err := os.OpenRoot(outputDir)
 	if err != nil {
 		return nil, fmt.Errorf("open output dir: %w", err)
 	}
-	relativeDir := filepath.Dir(relativePath)
-	if relativeDir != "." {
-		if err := root.MkdirAll(relativeDir, 0755); err != nil {
-			return nil, errors.Join(fmt.Errorf("create generated file directory: %w", err), root.Close())
-		}
+	if err := ensureGeneratedFileParentDir(root, relativePath); err != nil {
+		return nil, err
 	}
+	return createFileAndCloseRoot(root, relativePath)
+}
+
+// ensureGeneratedFileParentDir creates the generated file's parent directory
+// inside root, joining any creation failure with the root close error.
+func ensureGeneratedFileParentDir(root *os.Root, relativePath string) error {
+	relativeDir := filepath.Dir(relativePath)
+	if relativeDir == "." {
+		return nil
+	}
+	if err := root.MkdirAll(relativeDir, 0755); err != nil {
+		return errors.Join(fmt.Errorf("create generated file directory: %w", err), root.Close())
+	}
+	return nil
+}
+
+// createFileAndCloseRoot creates relativePath inside root, closes root, and
+// reports creation or close failures; a failed close closes the new file too.
+func createFileAndCloseRoot(root *os.Root, relativePath string) (*os.File, error) {
 	file, err := root.Create(relativePath)
 	closeErr := root.Close()
 	if err != nil {
@@ -230,108 +251,92 @@ func (g *Generator) GenerateJSONSchema(outputDir string) ([]string, error) {
 	return g.generate(outputDir, TargetJSONSchema, jsonschemaTemplate, jsonSchemaFileExtension)
 }
 
-// GenerateAll generates Go types, runtime components, evaluator, and service scaffolding.
+// GenerateAll generates Go types, runtime components, and — when a rule set
+// is configured — the evaluator and service scaffolding, in that order.
 func (g *Generator) GenerateAll(outputDir string) ([]string, error) {
-	var err error
-	outputDir, err = sanitizeGeneratedOutputDir(outputDir)
+	outputDir, err := sanitizeGeneratedOutputDir(outputDir)
 	if err != nil {
 		return nil, err
 	}
-
-	var allFiles []string
-
-	// Contract types
-	files, err := g.GenerateGo(outputDir)
-	if err != nil {
-		return nil, err
-	}
-	allFiles = append(allFiles, files...)
-
-	// Runtime (envelope, publisher, consumer)
-	files, err = g.GenerateRuntime(outputDir)
-	if err != nil {
-		return nil, err
-	}
-	allFiles = append(allFiles, files...)
-
-	// Evaluator from rules
+	stages := []func(string) ([]string, error){g.GenerateGo, g.GenerateRuntime}
 	if g.ruleSet != nil {
-		files, err = g.GenerateEvaluator(outputDir)
-		if err != nil {
-			return nil, err
-		}
-		allFiles = append(allFiles, files...)
+		stages = append(stages, g.GenerateEvaluator, g.GenerateService)
+	}
+	return collectGeneratedFiles(outputDir, stages)
+}
 
-		// Service bootstrap
-		files, err = g.GenerateService(outputDir)
+// collectGeneratedFiles runs each generation stage in order and concatenates
+// their outputs, returning nil as soon as a stage fails.
+func collectGeneratedFiles(outputDir string, stages []func(string) ([]string, error)) ([]string, error) {
+	var allFiles []string
+	for _, stage := range stages {
+		files, err := stage(outputDir)
 		if err != nil {
 			return nil, err
 		}
 		allFiles = append(allFiles, files...)
 	}
-
 	return allFiles, nil
 }
 
-// GenerateRuntime generates Go envelope, publisher, and consumer types.
 // GenerateRuntime generates envelope, publisher, and consumer runtime components.
 func (g *Generator) GenerateRuntime(outputDir string) ([]string, error) {
-	var err error
-	outputDir, err = sanitizeGeneratedOutputDir(outputDir)
+	outputDir, err := sanitizeGeneratedOutputDir(outputDir)
 	if err != nil {
 		return nil, err
 	}
-
 	var allFiles []string
-
-	files, err := g.generateEnvelope(outputDir)
-	if err != nil {
-		return nil, err
+	for _, component := range runtimeComponents {
+		files, err := g.generateRuntimeComponent(outputDir, component)
+		if err != nil {
+			return nil, err
+		}
+		allFiles = append(allFiles, files...)
 	}
-	allFiles = append(allFiles, files...)
-
-	files, err = g.generatePublisher(outputDir)
-	if err != nil {
-		return nil, err
-	}
-	allFiles = append(allFiles, files...)
-
-	files, err = g.generateConsumer(outputDir)
-	if err != nil {
-		return nil, err
-	}
-	allFiles = append(allFiles, files...)
-
 	return allFiles, nil
+}
+
+// prepareRuleSetOutput sanitizes the output directory and requires a loaded
+// rule set for rule-driven generation such as evaluators and services.
+func (g *Generator) prepareRuleSetOutput(outputDir, generation string) (string, error) {
+	outputDir, err := sanitizeGeneratedOutputDir(outputDir)
+	if err != nil {
+		return "", err
+	}
+	if g.ruleSet == nil {
+		return "", fmt.Errorf("rule set required for %s", generation)
+	}
+	return outputDir, nil
 }
 
 // GenerateEvaluator generates a compiled rule evaluator for the configured rule set.
 // GenerateEvaluator generates a Go evaluator from the rule set.
 func (g *Generator) GenerateEvaluator(outputDir string) ([]string, error) {
-	outputDir, err := sanitizeGeneratedOutputDir(outputDir)
+	outputDir, err := g.prepareRuleSetOutput(outputDir, "evaluator generation")
 	if err != nil {
 		return nil, err
 	}
-	if g.ruleSet == nil {
-		return nil, fmt.Errorf("rule set required for evaluator generation")
-	}
-
 	file, filePath, err := createGeneratedFile(outputDir, filepath.Join(TargetGo, runtimeDirectoryName, "evaluator.go"))
 	if err != nil {
 		return nil, fmt.Errorf("create evaluator.go: %w", err)
 	}
 	defer file.Close()
-
-	pkgName := sanitizePackageName(g.schema.Name)
-	typeName := toPascalCase(g.schema.Name)
-	writeGeneratedEvaluatorHeader(file)
-	writeGeneratedEvaluatorTypes(file)
-	writeGeneratedEvaluatorConstructor(file, g)
-	writeGeneratedEvaluatorMethod(file, pkgName, typeName)
-	if err := writeGeneratedEvaluatorHelpers(file); err != nil {
+	if err := writeGeneratedEvaluator(file, g); err != nil {
 		return nil, fmt.Errorf("write getString: %w", err)
 	}
 	return []string{filePath}, nil
+}
+
+// writeGeneratedEvaluator emits the evaluator source: header, types,
+// constructor, Evaluate method, and helper functions.
+func writeGeneratedEvaluator(file *os.File, generator *Generator) error {
+	pkgName := sanitizePackageName(generator.schema.Name)
+	typeName := toPascalCase(generator.schema.Name)
+	writeGeneratedEvaluatorHeader(file)
+	writeGeneratedEvaluatorTypes(file)
+	writeGeneratedEvaluatorConstructor(file, generator)
+	writeGeneratedEvaluatorMethod(file, pkgName, typeName)
+	return writeGeneratedEvaluatorHelpers(file)
 }
 
 func writeGeneratedEvaluatorHeader(file *os.File) {
@@ -435,6 +440,14 @@ func writeGeneratedEffectTemplate(file *os.File, effect EffectTemplateData) {
 }
 
 func writeGeneratedEvaluatorMethod(file *os.File, packageName, typeName string) {
+	writeGeneratedEvaluatorSignature(file, packageName, typeName)
+	writeGeneratedEvaluatorEffects(file)
+	fmt.Fprint(file, "}\n\n")
+}
+
+// writeGeneratedEvaluatorSignature writes the Evaluate method signature and
+// converts the typed payload into a map for rule evaluation.
+func writeGeneratedEvaluatorSignature(file *os.File, packageName, typeName string) {
 	fmt.Fprint(file, "// Evaluate runs all rules against the payload and returns matching effects\n")
 	fmt.Fprintf(file, "func (e *Evaluator) Evaluate(payload *%s.%s) ([]Effect, error) {\n", packageName, typeName)
 	fmt.Fprint(file, "\t// Convert payload to map for evaluation\n")
@@ -442,6 +455,11 @@ func writeGeneratedEvaluatorMethod(file *os.File, packageName, typeName string) 
 	fmt.Fprint(file, "\tif err != nil {\n\t\treturn nil, err\n\t}\n")
 	fmt.Fprint(file, "\tvar payloadMap map[string]any\n")
 	fmt.Fprint(file, "\tif err := json.Unmarshal(data, &payloadMap); err != nil {\n\t\treturn nil, err\n\t}\n\n")
+}
+
+// writeGeneratedEvaluatorEffects writes the rule loop that appends every
+// matching rule effect to the result slice.
+func writeGeneratedEvaluatorEffects(file *os.File) {
 	fmt.Fprint(file, "\tvar effects []Effect\n")
 	fmt.Fprint(file, "\tfor _, rule := range e.rules {\n")
 	fmt.Fprint(file, "\t\tif rule.Condition(payloadMap) {\n")
@@ -454,7 +472,6 @@ func writeGeneratedEvaluatorMethod(file *os.File, packageName, typeName string) 
 	fmt.Fprint(file, "\t\t\t\teffects = append(effects, effect)\n")
 	fmt.Fprint(file, "\t\t\t}\n\t\t}\n\t}\n")
 	fmt.Fprint(file, "\treturn effects, nil\n")
-	fmt.Fprint(file, "}\n\n")
 }
 
 func writeGeneratedEvaluatorHelpers(file *os.File) error {
@@ -525,110 +542,122 @@ func writeGeneratedSubstituteValue(file *os.File) {
 // GenerateService generates a service that wires together consumer, evaluator, and publishers.
 // GenerateService generates a Go service bootstrap from the rule set.
 func (g *Generator) GenerateService(outputDir string) ([]string, error) {
-	var err error
-	outputDir, err = sanitizeGeneratedOutputDir(outputDir)
+	outputDir, err := g.prepareRuleSetOutput(outputDir, "service generation")
 	if err != nil {
 		return nil, err
 	}
-
-	if g.ruleSet == nil {
-		return nil, fmt.Errorf("rule set required for service generation")
-	}
-
-	pkgName := sanitizePackageName(g.schema.Name)
 	f, filePath, err := createGeneratedFile(outputDir, filepath.Join(TargetGo, runtimeDirectoryName, "service.go"))
 	if err != nil {
 		return nil, fmt.Errorf("create service.go: %w", err)
 	}
 	defer f.Close()
+	if err := serviceTemplate.Execute(f, g.buildServiceTemplateData()); err != nil {
+		return nil, fmt.Errorf("execute service template: %w", err)
+	}
+	return []string{filePath}, nil
+}
 
+// serviceTemplateData carries the fields the service template renders.
+type serviceTemplateData struct {
+	Schema       *domain.ContractSchema
+	TypeName     string
+	PackageName  string
+	EventName    string
+	ContractPkg  string
+	ContractType string
+	RuleSet      *RuleSet
+	OutputEvents []string
+	NumShards    uint32
+}
+
+// buildServiceTemplateData assembles the service template data, collecting the
+// unique output event types emitted by the rule set's actions.
+func (g *Generator) buildServiceTemplateData() serviceTemplateData {
+	pkgName := sanitizePackageName(g.schema.Name)
 	typeName := toPascalCase(g.schema.Name)
+	return serviceTemplateData{
+		Schema: g.schema, TypeName: typeName, PackageName: pkgName,
+		EventName: g.schema.Name, ContractPkg: pkgName, ContractType: typeName,
+		RuleSet: g.ruleSet, OutputEvents: collectRuleOutputEvents(g.ruleSet), NumShards: 4096,
+	}
+}
 
-	// Collect unique output event types from rules
+// collectRuleOutputEvents returns the unique event types emitted by rule
+// actions; the order follows map iteration and is unspecified.
+func collectRuleOutputEvents(ruleSet *RuleSet) []string {
 	outputEvents := make(map[string]bool)
-	for _, rule := range g.ruleSet.Rules {
+	for _, rule := range ruleSet.Rules {
 		for _, action := range rule.Then {
 			if action.EmitEvent != nil {
 				outputEvents[action.EmitEvent.Type] = true
 			}
 		}
 	}
-
-	// Convert to sorted slice
 	var outputEventTypes []string
 	for k := range outputEvents {
 		outputEventTypes = append(outputEventTypes, k)
 	}
-
-	data := struct {
-		Schema       *domain.ContractSchema
-		TypeName     string
-		PackageName  string
-		EventName    string
-		ContractPkg  string
-		ContractType string
-		RuleSet      *RuleSet
-		OutputEvents []string
-		NumShards    uint32
-	}{
-		Schema:       g.schema,
-		TypeName:     typeName,
-		PackageName:  pkgName,
-		EventName:    g.schema.Name,
-		ContractPkg:  pkgName,
-		ContractType: typeName,
-		RuleSet:      g.ruleSet,
-		OutputEvents: outputEventTypes,
-		NumShards:    4096,
-	}
-
-	if err := serviceTemplate.Execute(f, data); err != nil {
-		return nil, fmt.Errorf("execute service template: %w", err)
-	}
-
-	return []string{filePath}, nil
+	return outputEventTypes
 }
 
 func (g *Generator) generate(outputDir, subdir string, tmpl *template.Template, ext string) ([]string, error) {
-	var err error
-	outputDir, err = sanitizeGeneratedOutputDir(outputDir)
+	outputDir, err := sanitizeGeneratedOutputDir(outputDir)
 	if err != nil {
 		return nil, err
 	}
-
-	typeName := toPascalCase(g.schema.Name)
-	if err := validateGeneratedTypeName(typeName); err != nil {
+	typeName, err := g.contractTypeName()
+	if err != nil {
 		return nil, err
 	}
-	fileName := strings.ToLower(typeName) + ext
-	f, filePath, err := createGeneratedFile(outputDir, filepath.Join(subdir, fileName))
+	return g.renderContractTemplate(outputDir, subdir, typeName, tmpl, ext)
+}
+
+// contractTypeName derives the Pascal-case type name from the schema and
+// validates that it is safe to use as a generated path component.
+func (g *Generator) contractTypeName() (string, error) {
+	typeName := toPascalCase(g.schema.Name)
+	if err := validateGeneratedTypeName(typeName); err != nil {
+		return "", err
+	}
+	return typeName, nil
+}
+
+// renderContractTemplate creates the target file for the contract and
+// executes the language template over it.
+func (g *Generator) renderContractTemplate(outputDir, subdir, typeName string, tmpl *template.Template, ext string) ([]string, error) {
+	f, filePath, err := createGeneratedFile(outputDir, filepath.Join(subdir, strings.ToLower(typeName)+ext))
 	if err != nil {
 		return nil, fmt.Errorf("create file: %w", err)
 	}
 	defer f.Close()
+	if err := tmpl.Execute(f, g.buildContractTemplateData(typeName)); err != nil {
+		return nil, fmt.Errorf("execute template: %w", err)
+	}
+	return []string{filePath}, nil
+}
 
-	data := struct {
-		Schema        *domain.ContractSchema
-		TypeName      string
-		PackageName   string
-		GoPackageName string
-		Namespace     string
-		Fields        []FieldInfo
-		NestedTypes   []NestedType
-	}{
-		Schema:        g.schema,
-		TypeName:      typeName,
+// contractTemplateData carries the fields the contract templates render.
+type contractTemplateData struct {
+	Schema        *domain.ContractSchema
+	TypeName      string
+	PackageName   string
+	GoPackageName string
+	Namespace     string
+	Fields        []FieldInfo
+	NestedTypes   []NestedType
+}
+
+// buildContractTemplateData assembles the template data and resolves the
+// contract's fields, including any nested object types they introduce.
+func (g *Generator) buildContractTemplateData(typeName string) contractTemplateData {
+	data := contractTemplateData{
+		Schema: g.schema, TypeName: typeName,
 		PackageName:   strings.ToLower(g.schema.Name),
 		GoPackageName: sanitizePackageName(g.schema.Name),
 		Namespace:     g.schema.Namespace,
 	}
 	data.Fields, data.NestedTypes = g.buildFieldsAndNestedTypes()
-
-	if err := tmpl.Execute(f, data); err != nil {
-		return nil, fmt.Errorf("execute template: %w", err)
-	}
-
-	return []string{filePath}, nil
+	return data
 }
 
 var generatedTypeNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
@@ -642,35 +671,39 @@ func validateGeneratedTypeName(name string) error {
 }
 
 func (g *Generator) generateTypedClient(outputDir string) (string, error) {
-	var err error
-	outputDir, err = sanitizeGeneratedOutputDir(outputDir)
+	outputDir, err := sanitizeGeneratedOutputDir(outputDir)
 	if err != nil {
 		return "", err
 	}
-
-	typeName := toPascalCase(g.schema.Name)
-	if err := validateGeneratedTypeName(typeName); err != nil {
+	typeName, err := g.contractTypeName()
+	if err != nil {
 		return "", err
 	}
+	return g.renderTypedClient(outputDir, typeName)
+}
+
+// renderTypedClient creates the typed client file and executes the client
+// template over it.
+func (g *Generator) renderTypedClient(outputDir, typeName string) (string, error) {
 	file, filePath, err := createGeneratedFile(outputDir, filepath.Join(TargetGo, strings.ToLower(typeName)+"_client.go"))
 	if err != nil {
 		return "", fmt.Errorf("create Go client file: %w", err)
 	}
 	defer file.Close()
-
-	data := struct {
-		Schema        *domain.ContractSchema
-		TypeName      string
-		GoPackageName string
-	}{
-		Schema:        g.schema,
-		TypeName:      typeName,
-		GoPackageName: sanitizePackageName(g.schema.Name),
+	data := typedClientTemplateData{
+		Schema: g.schema, TypeName: typeName, GoPackageName: sanitizePackageName(g.schema.Name),
 	}
 	if err := typedClientTemplate.Execute(file, data); err != nil {
 		return "", fmt.Errorf("execute Go client template: %w", err)
 	}
 	return filePath, nil
+}
+
+// typedClientTemplateData carries the fields the typed client template renders.
+type typedClientTemplateData struct {
+	Schema        *domain.ContractSchema
+	TypeName      string
+	GoPackageName string
 }
 
 // FieldInfo represents a field for code generation templates.
@@ -716,104 +749,133 @@ func (g *Generator) goFieldType(name string, field domain.ContractField, nested 
 
 func (g *Generator) fieldInfos(source map[string]domain.ContractField, nested *[]NestedType) []FieldInfo {
 	var fields []FieldInfo
+	for _, name := range sortedContractFieldNames(source) {
+		fields = append(fields, g.fieldInfo(name, source[name], nested))
+	}
+	return fields
+}
+
+// sortedContractFieldNames returns the source field names in a deterministic
+// order so generated output does not depend on map iteration.
+func sortedContractFieldNames(source map[string]domain.ContractField) []string {
 	names := make([]string, 0, len(source))
 	for name := range source {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	for _, name := range names {
-		field := source[name]
-		f := FieldInfo{
-			Name:        name,
-			GoName:      toGoIdentifier(name),
-			GoType:      g.goFieldType(name, field, nested),
-			JavaType:    g.mapJavaType(field.Type),
-			ProtoType:   g.mapProtoType(field.Type),
-			JSONSchema:  g.mapJSONSchema(field),
-			Required:    field.Required,
-			Description: field.Description,
-		}
-		fields = append(fields, f)
+	return names
+}
+
+// fieldInfo builds one template field, discovering nested object types while
+// mapping the property to its Go type.
+func (g *Generator) fieldInfo(name string, field domain.ContractField, nested *[]NestedType) FieldInfo {
+	return FieldInfo{
+		Name:        name,
+		GoName:      toGoIdentifier(name),
+		GoType:      g.goFieldType(name, field, nested),
+		JavaType:    g.mapJavaType(field.Type),
+		ProtoType:   g.mapProtoType(field.Type),
+		JSONSchema:  g.mapJSONSchema(field),
+		Required:    field.Required,
+		Description: field.Description,
 	}
-	return fields
+}
+
+// goTypeByContractType maps contract schema types to generated Go types.
+var goTypeByContractType = map[string]string{
+	"string":  "string",
+	"integer": "int64",
+	"int":     "int64",
+	"int64":   "int64",
+	"number":  "float64",
+	"float":   "float64",
+	"double":  "float64",
+	"boolean": "bool",
+	"bool":    "bool",
+	"object":  "map[string]interface{}",
+	"array":   "[]interface{}",
 }
 
 func (g *Generator) mapGoType(t string) string {
-	switch t {
-	case "string":
-		return "string"
-	case "integer", "int", "int64":
-		return "int64"
-	case "number", "float", "double":
-		return "float64"
-	case "boolean", "bool":
-		return "bool"
-	case "object":
-		return "map[string]interface{}"
-	case "array":
-		return "[]interface{}"
-	default:
-		return "interface{}"
+	if mapped, ok := goTypeByContractType[t]; ok {
+		return mapped
 	}
+	return "interface{}"
+}
+
+// javaTypeByContractType maps contract schema types to generated Java types.
+var javaTypeByContractType = map[string]string{
+	"string":  "String",
+	"integer": "Long",
+	"int":     "Long",
+	"int64":   "Long",
+	"number":  "Double",
+	"float":   "Double",
+	"double":  "Double",
+	"boolean": "Boolean",
+	"bool":    "Boolean",
+	"object":  "Map<String, Object>",
+	"array":   "List<Object>",
 }
 
 func (g *Generator) mapJavaType(t string) string {
-	switch t {
-	case "string":
-		return "String"
-	case "integer", "int", "int64":
-		return "Long"
-	case "number", "float", "double":
-		return "Double"
-	case "boolean", "bool":
-		return "Boolean"
-	case "object":
-		return "Map<String, Object>"
-	case "array":
-		return "List<Object>"
-	default:
-		return "Object"
+	if mapped, ok := javaTypeByContractType[t]; ok {
+		return mapped
 	}
+	return "Object"
+}
+
+// protoTypeByContractType maps contract schema types to generated Protocol
+// Buffers types.
+var protoTypeByContractType = map[string]string{
+	"string":  "string",
+	"integer": "int64",
+	"int":     "int64",
+	"int64":   "int64",
+	"number":  "double",
+	"float":   "double",
+	"double":  "double",
+	"boolean": "bool",
+	"bool":    "bool",
+	"object":  "google.protobuf.Struct",
+	"array":   "repeated google.protobuf.Value",
 }
 
 func (g *Generator) mapProtoType(t string) string {
-	switch t {
-	case "string":
-		return "string"
-	case "integer", "int", "int64":
-		return "int64"
-	case "number", "float", "double":
-		return "double"
-	case "boolean", "bool":
-		return "bool"
-	case "object":
-		return "google.protobuf.Struct"
-	case "array":
-		return "repeated google.protobuf.Value"
-	default:
-		return "string"
+	if mapped, ok := protoTypeByContractType[t]; ok {
+		return mapped
+	}
+	return "string"
+}
+
+// jsonSchemaOptionalField is one optional JSON Schema attribute copied from a
+// contract field when its source value is present.
+type jsonSchemaOptionalField struct {
+	present bool
+	key     string
+	value   interface{}
+}
+
+// addOptionalJSONSchemaFields copies a field's optional metadata into the
+// schema, omitting keys whose source value is empty.
+func addOptionalJSONSchemaFields(schema map[string]interface{}, field domain.ContractField) {
+	entries := []jsonSchemaOptionalField{
+		{field.Description != "", "description", field.Description},
+		{field.Format != "", "format", field.Format},
+		{len(field.Enum) > 0, "enum", field.Enum},
+		{field.Default != nil, "default", field.Default},
+		{field.Items != nil, "items", field.Items},
+	}
+	for _, entry := range entries {
+		if entry.present {
+			schema[entry.key] = entry.value
+		}
 	}
 }
 
 func (g *Generator) mapJSONSchema(field domain.ContractField) map[string]interface{} {
-	schema := map[string]interface{}{
-		"type": field.Type,
-	}
-	if field.Description != "" {
-		schema["description"] = field.Description
-	}
-	if field.Format != "" {
-		schema["format"] = field.Format
-	}
-	if len(field.Enum) > 0 {
-		schema["enum"] = field.Enum
-	}
-	if field.Default != nil {
-		schema["default"] = field.Default
-	}
-	if field.Items != nil {
-		schema["items"] = field.Items
-	}
+	schema := map[string]interface{}{"type": field.Type}
+	addOptionalJSONSchemaFields(schema, field)
 	if field.Properties != nil {
 		props := make(map[string]interface{})
 		for k, v := range field.Properties {
@@ -1280,27 +1342,43 @@ func sanitizePackageName(name string) string {
 	return strings.ToLower(name)
 }
 
+// toGoIdentifier converts a contract field name into a Go identifier,
+// defaulting to "Field" when the name contains no letters or digits.
 func toGoIdentifier(name string) string {
+	identifier := buildGoIdentifier(name)
+	if identifier == "" {
+		return "Field"
+	}
+	return identifier
+}
+
+// buildGoIdentifier converts a contract field name into a Go identifier body,
+// capitalizing each segment and prefixing a leading digit with "Field". It
+// returns an empty string when the name has no letters or digits.
+func buildGoIdentifier(name string) string {
 	var identifier strings.Builder
 	capitalize := true
 	for _, char := range name {
-		if !unicode.IsLetter(char) && !unicode.IsDigit(char) {
-			capitalize = true
-			continue
-		}
-		if identifier.Len() == 0 && unicode.IsDigit(char) {
-			identifier.WriteString("Field")
-		}
-		if capitalize {
-			char = unicode.ToUpper(char)
-			capitalize = false
-		}
-		identifier.WriteRune(char)
-	}
-	if identifier.Len() == 0 {
-		return "Field"
+		capitalize = writeGoIdentifierChar(&identifier, char, capitalize)
 	}
 	return identifier.String()
+}
+
+// writeGoIdentifierChar appends char to identifier, normalizing it into the
+// identifier, and reports whether the next letter must be capitalized.
+func writeGoIdentifierChar(identifier *strings.Builder, char rune, capitalize bool) bool {
+	if !unicode.IsLetter(char) && !unicode.IsDigit(char) {
+		return true
+	}
+	if identifier.Len() == 0 && unicode.IsDigit(char) {
+		identifier.WriteString("Field")
+	}
+	if capitalize {
+		char = unicode.ToUpper(char)
+		capitalize = false
+	}
+	identifier.WriteRune(char)
+	return capitalize
 }
 
 // CompiledRuleData represents a compiled rule for code generation templates.
@@ -1322,31 +1400,35 @@ func (g *Generator) buildCompiledRules() []CompiledRuleData {
 	if g.ruleSet == nil {
 		return nil
 	}
-
 	var compiled []CompiledRuleData
 	for _, rule := range g.ruleSet.Rules {
-		conditionCode := g.buildConditionCode(rule.When)
-
-		var effects []EffectTemplateData
-		for _, action := range rule.Then {
-			if action.EmitEvent != nil {
-				effects = append(effects, EffectTemplateData{
-					EventType:          action.EmitEvent.Type,
-					PartitionKeyPolicy: action.EmitEvent.PartitionKeyPolicy,
-					DataTemplate:       action.EmitEvent.Data,
-				})
-			}
-		}
-
-		compiled = append(compiled, CompiledRuleData{
-			ID:            rule.ID,
-			Priority:      rule.Priority,
-			ConditionCode: conditionCode,
-			Effects:       effects,
-		})
+		compiled = append(compiled, g.buildCompiledRule(rule))
 	}
+	sortCompiledRulesByPriority(compiled)
+	return compiled
+}
 
-	// Sort by priority descending
+// buildCompiledRule compiles one rule into its condition code and emit
+// effects, skipping actions that do not emit an event.
+func (g *Generator) buildCompiledRule(rule Rule) CompiledRuleData {
+	conditionCode := g.buildConditionCode(rule.When)
+	var effects []EffectTemplateData
+	for _, action := range rule.Then {
+		if action.EmitEvent != nil {
+			effects = append(effects, EffectTemplateData{
+				EventType:          action.EmitEvent.Type,
+				PartitionKeyPolicy: action.EmitEvent.PartitionKeyPolicy,
+				DataTemplate:       action.EmitEvent.Data,
+			})
+		}
+	}
+	return CompiledRuleData{
+		ID: rule.ID, Priority: rule.Priority, ConditionCode: conditionCode, Effects: effects,
+	}
+}
+
+// sortCompiledRulesByPriority orders compiled rules by priority descending.
+func sortCompiledRulesByPriority(compiled []CompiledRuleData) {
 	for i := 0; i < len(compiled)-1; i++ {
 		for j := i + 1; j < len(compiled); j++ {
 			if compiled[i].Priority < compiled[j].Priority {
@@ -1354,34 +1436,46 @@ func (g *Generator) buildCompiledRules() []CompiledRuleData {
 			}
 		}
 	}
-
-	return compiled
 }
 
-func (g *Generator) buildConditionCode(cond Condition) string {
-	path := strings.TrimPrefix(cond.Path, "$.")
-
-	var op string
-	switch cond.Op {
+// conditionOperator maps a rule operator to its Go comparison operator,
+// defaulting to equality for unknown operators.
+func conditionOperator(op string) string {
+	switch op {
 	case "gt":
-		op = ">"
+		return ">"
 	case "gte":
-		op = ">="
+		return ">="
 	case "lt":
-		op = "<"
+		return "<"
 	case "lte":
-		op = "<="
+		return "<="
 	case "eq":
-		op = "=="
+		return "=="
 	case "neq":
-		op = "!="
+		return "!="
+	}
+	return "=="
+}
+
+// conditionPredicate returns the full predicate for operators that do not
+// compile to a comparison, or "" when the operator is a comparison.
+func conditionPredicate(path string, cond Condition) string {
+	switch cond.Op {
 	case "contains":
 		return fmt.Sprintf("strings.Contains(getString(payload, %q), %v)", path, cond.Value)
 	case "in":
 		return fmt.Sprintf("containsString(payload, %q, %v)", path, cond.Value)
-	default:
-		op = "=="
 	}
+	return ""
+}
+
+func (g *Generator) buildConditionCode(cond Condition) string {
+	path := strings.TrimPrefix(cond.Path, "$.")
+	if predicate := conditionPredicate(path, cond); predicate != "" {
+		return predicate
+	}
+	op := conditionOperator(cond.Op)
 
 	// For numeric comparisons
 	if isNumeric(cond.Value) {
@@ -1404,101 +1498,52 @@ func isNumeric(v any) bool {
 	return false
 }
 
-func (g *Generator) generateEnvelope(outputDir string) ([]string, error) {
-	pkgName := sanitizePackageName(g.schema.Name)
-	f, filePath, err := createGeneratedFile(outputDir, filepath.Join(TargetGo, runtimeDirectoryName, "envelope.go"))
-	if err != nil {
-		return nil, fmt.Errorf("create envelope.go: %w", err)
-	}
-	defer f.Close()
-
-	typeName := toPascalCase(g.schema.Name)
-
-	data := struct {
-		Schema       *domain.ContractSchema
-		TypeName     string
-		PackageName  string
-		EventName    string
-		ContractPkg  string
-		ContractType string
-	}{
-		Schema:       g.schema,
-		TypeName:     typeName,
-		PackageName:  pkgName,
-		EventName:    g.schema.Name,
-		ContractPkg:  pkgName,
-		ContractType: typeName,
-	}
-
-	if err := envelopeTemplate.Execute(f, data); err != nil {
-		return nil, fmt.Errorf("execute envelope template: %w", err)
-	}
-
-	return []string{filePath}, nil
+// runtimeComponent names one runtime file that GenerateRuntime renders from
+// its template.
+type runtimeComponent struct {
+	kind     string
+	template *template.Template
 }
 
-func (g *Generator) generatePublisher(outputDir string) ([]string, error) {
-	pkgName := sanitizePackageName(g.schema.Name)
-	f, filePath, err := createGeneratedFile(outputDir, filepath.Join(TargetGo, runtimeDirectoryName, "publisher.go"))
-	if err != nil {
-		return nil, fmt.Errorf("create publisher.go: %w", err)
-	}
-	defer f.Close()
-
-	typeName := toPascalCase(g.schema.Name)
-
-	data := struct {
-		Schema       *domain.ContractSchema
-		TypeName     string
-		PackageName  string
-		EventName    string
-		ContractPkg  string
-		ContractType string
-	}{
-		Schema:       g.schema,
-		TypeName:     typeName,
-		PackageName:  pkgName,
-		EventName:    g.schema.Name,
-		ContractPkg:  pkgName,
-		ContractType: typeName,
-	}
-
-	if err := publisherTemplate.Execute(f, data); err != nil {
-		return nil, fmt.Errorf("execute publisher template: %w", err)
-	}
-
-	return []string{filePath}, nil
+// runtimeComponents lists the runtime files in generation order.
+var runtimeComponents = []runtimeComponent{
+	{kind: "envelope", template: envelopeTemplate},
+	{kind: "publisher", template: publisherTemplate},
+	{kind: "consumer", template: consumerTemplate},
 }
 
-func (g *Generator) generateConsumer(outputDir string) ([]string, error) {
+// runtimeTemplateData carries the fields the envelope, publisher, and
+// consumer templates render.
+type runtimeTemplateData struct {
+	Schema       *domain.ContractSchema
+	TypeName     string
+	PackageName  string
+	EventName    string
+	ContractPkg  string
+	ContractType string
+}
+
+// buildRuntimeTemplateData assembles the template data shared by the runtime
+// component templates.
+func (g *Generator) buildRuntimeTemplateData() runtimeTemplateData {
 	pkgName := sanitizePackageName(g.schema.Name)
-	f, filePath, err := createGeneratedFile(outputDir, filepath.Join(TargetGo, runtimeDirectoryName, "consumer.go"))
+	typeName := toPascalCase(g.schema.Name)
+	return runtimeTemplateData{
+		Schema: g.schema, TypeName: typeName, PackageName: pkgName,
+		EventName: g.schema.Name, ContractPkg: pkgName, ContractType: typeName,
+	}
+}
+
+// generateRuntimeComponent renders one runtime component into
+// <outputDir>/go/runtime/<kind>.go.
+func (g *Generator) generateRuntimeComponent(outputDir string, component runtimeComponent) ([]string, error) {
+	f, filePath, err := createGeneratedFile(outputDir, filepath.Join(TargetGo, runtimeDirectoryName, component.kind+".go"))
 	if err != nil {
-		return nil, fmt.Errorf("create consumer.go: %w", err)
+		return nil, fmt.Errorf("create %s.go: %w", component.kind, err)
 	}
 	defer f.Close()
-
-	typeName := toPascalCase(g.schema.Name)
-
-	data := struct {
-		Schema       *domain.ContractSchema
-		TypeName     string
-		PackageName  string
-		EventName    string
-		ContractPkg  string
-		ContractType string
-	}{
-		Schema:       g.schema,
-		TypeName:     typeName,
-		PackageName:  pkgName,
-		EventName:    g.schema.Name,
-		ContractPkg:  pkgName,
-		ContractType: typeName,
+	if err := component.template.Execute(f, g.buildRuntimeTemplateData()); err != nil {
+		return nil, fmt.Errorf("execute %s template: %w", component.kind, err)
 	}
-
-	if err := consumerTemplate.Execute(f, data); err != nil {
-		return nil, fmt.Errorf("execute consumer template: %w", err)
-	}
-
 	return []string{filePath}, nil
 }

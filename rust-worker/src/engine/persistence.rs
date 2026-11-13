@@ -34,7 +34,9 @@ pub(super) async fn insert_inbox(
 ) -> Result<bool> {
     let affected = sqlx::query(
         "INSERT INTO inbox (tenant_id,event_id,status,first_seen_at,partition_key,rule_set,payload) \
-         VALUES ($1,$2,'processing',NOW(),$3,$4,$5) ON CONFLICT (tenant_id,event_id) DO NOTHING"
+         SELECT $1,$2,'processing',NOW(),$3,$4,$5 \
+         WHERE NOT EXISTS (SELECT 1 FROM inbox WHERE tenant_id=$1 AND event_id=$2 AND rule_set='') \
+         ON CONFLICT (tenant_id,event_id,rule_set) DO NOTHING"
     ).bind(&event.tenant_id).bind(&event.id).bind(&event.partition_key)
      .bind(&event.event_type).bind(&event.data).execute(&mut **tx).await
      .context("insert inbox row")?.rows_affected();
@@ -46,20 +48,25 @@ pub(super) async fn load_duplicate_execution(
     event: &EventEnvelope,
 ) -> Result<String> {
     let execution_id: Option<String> =
-        sqlx::query_scalar("SELECT execution_id FROM inbox WHERE tenant_id=$1 AND event_id=$2")
+        sqlx::query_scalar("SELECT execution_id FROM inbox WHERE tenant_id=$1 AND event_id=$2 AND rule_set=$3 AND status='committed'")
             .bind(&event.tenant_id)
             .bind(&event.id)
+            .bind(&event.event_type)
             .fetch_optional(&mut **tx)
             .await?
             .flatten();
     let Some(execution_id) = execution_id else {
         bail!("inbox duplicate has no committed execution; refusing unsafe acknowledgement");
     };
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM executions WHERE execution_id=$1)")
-            .bind(&execution_id)
-            .fetch_one(&mut **tx)
-            .await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM executions WHERE execution_id=$1 AND tenant_id=$2 AND event_id=$3 AND rule_set=$4)",
+    )
+    .bind(&execution_id)
+    .bind(&event.tenant_id)
+    .bind(&event.id)
+    .bind(&event.event_type)
+    .fetch_one(&mut **tx)
+    .await?;
     if !exists {
         bail!("inbox points to missing execution; refusing unsafe acknowledgement");
     }
@@ -132,8 +139,8 @@ pub(super) async fn mark_inbox_committed(
     execution_id: &str,
 ) -> Result<()> {
     let affected = sqlx::query(
-        "UPDATE inbox SET status='committed',execution_id=$3,committed_at=NOW() WHERE tenant_id=$1 AND event_id=$2 AND status='processing'"
-    ).bind(&event.tenant_id).bind(&event.id).bind(execution_id).execute(&mut **tx).await
+        "UPDATE inbox SET status='committed',execution_id=$4,committed_at=NOW() WHERE tenant_id=$1 AND event_id=$2 AND rule_set=$3 AND status='processing'"
+    ).bind(&event.tenant_id).bind(&event.id).bind(&event.event_type).bind(execution_id).execute(&mut **tx).await
      .context("mark inbox committed")?.rows_affected();
     if affected != 1 {
         bail!("inbox commit transition affected {affected} rows");

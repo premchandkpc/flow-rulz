@@ -55,48 +55,65 @@ func (v *Validator) Validate(_ context.Context, tokenString string) (*Claims, er
 	if tokenString == "" {
 		return nil, ErrNoCredentials
 	}
+	claims, err := v.parseClaims(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	if err := v.validateClaimValues(claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
+}
 
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, ErrInvalidToken
-		}
-		return v.SigningKey, nil
-	}, jwt.WithTimeFunc(v.Clock))
-
+// parseClaims parses the signed token and classifies parse failures as either an
+// expired token or an invalid token.
+func (v *Validator) parseClaims(tokenString string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, v.signingKeyFunc, jwt.WithTimeFunc(v.Clock), jwt.WithExpirationRequired())
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrTokenExpired
 		}
 		return nil, ErrInvalidToken
 	}
-
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
 		return nil, ErrInvalidToken
 	}
-
-	if v.ExpectedIssuer != "" && claims.Issuer != v.ExpectedIssuer {
-		return nil, ErrInvalidIssuer
-	}
-
-	if v.ExpectedAudience != "" {
-		found := false
-		for _, aud := range claims.Audience {
-			if aud == v.ExpectedAudience {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, ErrInvalidAudience
-		}
-	}
-
-	if claims.TenantID == "" {
-		return nil, ErrMissingTenantID
-	}
-
 	return claims, nil
+}
+
+// signingKeyFunc rejects tokens that are not HMAC-signed and otherwise supplies
+// the validator key.
+func (v *Validator) signingKeyFunc(token *jwt.Token) (interface{}, error) {
+	if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		return nil, ErrInvalidToken
+	}
+	return v.SigningKey, nil
+}
+
+// validateClaimValues enforces the issuer, audience and tenant requirements on
+// already-verified claims.
+func (v *Validator) validateClaimValues(claims *Claims) error {
+	if v.ExpectedIssuer != "" && claims.Issuer != v.ExpectedIssuer {
+		return ErrInvalidIssuer
+	}
+	if v.ExpectedAudience != "" && !audienceContains(claims.Audience, v.ExpectedAudience) {
+		return ErrInvalidAudience
+	}
+	if claims.TenantID == "" {
+		return ErrMissingTenantID
+	}
+	return nil
+}
+
+// audienceContains reports whether the expected audience appears in the claim list.
+func audienceContains(audience jwt.ClaimStrings, expected string) bool {
+	for _, aud := range audience {
+		if aud == expected {
+			return true
+		}
+	}
+	return false
 }
 
 // ExtractToken extracts Bearer token from Authorization header
@@ -131,14 +148,25 @@ func ContextWithClaims(ctx context.Context, claims *Claims) context.Context {
 	return context.WithValue(ctx, claimsKey{}, claims)
 }
 
-// HasScope reports whether validated claims in ctx contain the requested scope.
+// ContextWithTrustedScopes records scopes asserted by an authenticated proxy.
+// The caller must first validate the proxy credential and its header-stripping boundary.
+func ContextWithTrustedScopes(ctx context.Context, scopes []string) context.Context {
+	return context.WithValue(ctx, trustedScopesKey{}, append([]string(nil), scopes...))
+}
+
+// HasScope reports whether validated JWT claims or trusted proxy scopes grant scope.
 func HasScope(ctx context.Context, scope string) bool {
 	claims, ok := ctx.Value(claimsKey{}).(*Claims)
-	return ok && claims != nil && claims.HasScope(scope)
+	if ok && claims != nil {
+		return claims.HasScope(scope)
+	}
+	scopes, _ := ctx.Value(trustedScopesKey{}).([]string)
+	return (&Claims{Scopes: scopes}).HasScope(scope)
 }
 
 type tenantKey struct{}
 type claimsKey struct{}
+type trustedScopesKey struct{}
 
 // HasScope checks if claims have a specific scope
 func (c *Claims) HasScope(scope string) bool {
