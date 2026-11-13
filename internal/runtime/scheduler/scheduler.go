@@ -18,13 +18,13 @@ const maxScheduledEventAttempts = 8
 
 // Scheduler periodically claims and publishes due scheduled events.
 type Scheduler struct {
-	repo         ports.ScheduledEventRepository
+	repo              ports.ScheduledEventRepository
 	publisher         ports.EventPublisher
 	envelopePublisher ports.EnvelopePublisher
-	clock        ports.Clock
-	pollInterval time.Duration
-	batchSize    int
-	numShards    uint32
+	clock             ports.Clock
+	pollInterval      time.Duration
+	batchSize         int
+	numShards         uint32
 
 	mu       sync.Mutex
 	running  bool

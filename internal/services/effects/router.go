@@ -14,11 +14,11 @@ import (
 type Router struct {
 	publisher         ports.EventPublisher
 	envelopePublisher ports.EnvelopePublisher
-	command     ports.EffectSender
-	service     ports.EffectSender
-	scheduled   ports.EffectSender
-	baseSubject string
-	numShards   uint32
+	command           ports.EffectSender
+	service           ports.EffectSender
+	scheduled         ports.EffectSender
+	baseSubject       string
+	numShards         uint32
 }
 
 // NewRouter creates a router using the default event subject and shard count.
