@@ -64,3 +64,33 @@ func TestRetryDelayForDeliveryUsesDefaultForNonPositiveBase(t *testing.T) {
 		t.Fatalf("retry delay = %s, want within [2.5s, 5s]", got)
 	}
 }
+
+type delayedRetryDelivery struct {
+	retryTestDelivery
+	retries int
+	delay   time.Duration
+	naks    int
+}
+
+func (d *delayedRetryDelivery) Retry(_ context.Context, delay time.Duration) error {
+	d.retries++
+	d.delay = delay
+	return nil
+}
+
+func (d *delayedRetryDelivery) Nak(context.Context) error {
+	d.naks++
+	return nil
+}
+
+func TestSettleRetryUsesDelayedRedeliveryInsteadOfImmediateNak(t *testing.T) {
+	delivery := &delayedRetryDelivery{}
+	delay := 3 * time.Second
+	if err := settleRetry(context.Background(), delivery, delay); err != nil {
+		t.Fatalf("settle retry: %v", err)
+	}
+	if delivery.retries != 1 || delivery.naks != 0 || delivery.delay != delay {
+		t.Fatalf("retries=%d naks=%d delay=%s; want retries=1 naks=0 delay=%s",
+			delivery.retries, delivery.naks, delivery.delay, delay)
+	}
+}
