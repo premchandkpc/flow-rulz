@@ -151,8 +151,8 @@ func (w *Worker) processSingleDelivery(ctx context.Context, delivery ports.Deliv
 
 	vshard := w.shardService.VirtualShardForEvent(env)
 	if !w.shardService.IsOwner(vshard) {
-		if err := settleNak(ctx, delivery); err != nil {
-			log.Printf("nak non-owned shard %d: %v", vshard, err)
+		if err := settleRetry(ctx, delivery, retryDelayForDelivery(w.config.RetryDelay, delivery)); err != nil {
+			log.Printf("delay non-owned shard %d: %v", vshard, err)
 		}
 		return nil
 	}
@@ -206,6 +206,13 @@ func (w *Worker) quarantineInvalidDelivery(ctx context.Context, delivery ports.D
 	if err := delivery.Ack(settleCtx); err != nil {
 		log.Printf("ack quarantined invalid event %s: %v", sourceID, err)
 	}
+}
+
+// settleRetry delays redelivery when another worker owns the shard, avoiding a hot NAK loop.
+func settleRetry(ctx context.Context, delivery ports.Delivery, delay time.Duration) error {
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return delivery.Retry(settleCtx, delay)
 }
 
 func settleNak(ctx context.Context, delivery ports.Delivery) error {
