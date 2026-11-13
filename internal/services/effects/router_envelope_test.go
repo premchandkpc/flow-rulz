@@ -12,7 +12,7 @@ import (
 
 type recordingEffectEnvelopePublisher struct {
 	event *domain.EventEnvelope
-	err error
+	err   error
 }
 
 func (p *recordingEffectEnvelopePublisher) PublishEvent(_ context.Context, event *domain.EventEnvelope) error {
@@ -26,7 +26,9 @@ func TestEnvelopeRouterPublishesChildEvent(t *testing.T) {
 		PartitionKey: "account-1", OccurredAt: time.Now().UTC(), Data: json.RawMessage("{}"),
 	}
 	data, err := json.Marshal(event)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	publisher := &recordingEffectEnvelopePublisher{}
 	router := NewEnvelopeRouter(publisher, nil, nil, nil)
 	if err := router.Send(context.Background(), &domain.Effect{EffectType: domain.EffectTypeEmitEvent, Payload: data}, "effect-1"); err != nil {
@@ -44,7 +46,9 @@ func TestEnvelopeRouterPropagatesPublishError(t *testing.T) {
 		PartitionKey: "account-1", OccurredAt: time.Now().UTC(),
 	}
 	data, err := json.Marshal(event)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	publisher := &recordingEffectEnvelopePublisher{err: want}
 	router := NewEnvelopeRouter(publisher, nil, nil, nil)
 	if err := router.Send(context.Background(), &domain.Effect{EffectType: domain.EffectTypeEmitEvent, Payload: data}, "effect-1"); !errors.Is(err, want) {
