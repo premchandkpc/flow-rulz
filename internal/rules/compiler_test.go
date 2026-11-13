@@ -81,42 +81,27 @@ func TestCompileRejectsFactsPathInComposite(t *testing.T) {
 	}
 }
 
-func TestCompileStableSortEqualPriority(t *testing.T) {
-	// Rules with different priorities should be ordered by priority (highest first)
-	// Rules with same priority should be ordered by rule ID for deterministic evaluation
-	source := json.RawMessage(`{"rule_set":"test","revision":1,"mode":"first_match","rules":[
-		{"id":"z-rule","priority":12,"when":{"path":"$.x","op":"eq","value":1},"then":[{"emit":{"topic":"z","data":{}}}]},
-		{"id":"a-rule","priority":10,"when":{"path":"$.x","op":"eq","value":2},"then":[{"emit":{"topic":"a","data":{}}}]},
-		{"id":"m-rule","priority":11,"when":{"path":"$.x","op":"eq","value":3},"then":[{"emit":{"topic":"m","data":{}}}]}
-	]}`)
+// stableSortRuleSet has rules in non-priority order so compilation must sort
+// them: different priorities order by priority (highest first), equal
+// priorities tie-break by rule ID for deterministic evaluation.
+const stableSortRuleSet = `{"rule_set":"test","revision":1,"mode":"first_match","rules":[
+	{"id":"z-rule","priority":12,"when":{"path":"$.x","op":"eq","value":1},"then":[{"emit":{"topic":"z","data":{}}}]},
+	{"id":"a-rule","priority":10,"when":{"path":"$.x","op":"eq","value":2},"then":[{"emit":{"topic":"a","data":{}}}]},
+	{"id":"m-rule","priority":11,"when":{"path":"$.x","op":"eq","value":3},"then":[{"emit":{"topic":"m","data":{}}}]}
+]}`
 
-	rev, err := NewCompiler(DefaultLimits()).Compile(source)
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
+func TestCompileStableSortEqualPriority(t *testing.T) {
+	rev := mustCompile(t, stableSortRuleSet)
 
 	// Should be sorted by priority: z-rule (12), m-rule (11), a-rule (10)
-	if len(rev.Compiled) != 3 {
-		t.Fatalf("expected 3 rules, got %d", len(rev.Compiled))
-	}
-	if rev.Compiled[0].ID != "z-rule" || rev.Compiled[1].ID != "m-rule" || rev.Compiled[2].ID != "a-rule" {
-		t.Errorf("expected order [z-rule, m-rule, a-rule], got [%s, %s, %s]",
-			rev.Compiled[0].ID, rev.Compiled[1].ID, rev.Compiled[2].ID)
-	}
+	assertCompiledOrder(t, rev, "z-rule", "m-rule", "a-rule")
 
 	// Evaluate with x=2 should match a-rule (lowest priority, last in sorted order)
-	eval := NewEvaluator(domain.SystemClock{})
-	event := &domain.EventEnvelope{
+	decision := mustEvaluate(t, rev, &domain.EventEnvelope{
 		ID: "evt-1", Type: "test", TenantID: "t1", PartitionKey: "k1",
 		Data: json.RawMessage(`{"x": 2}`),
-	}
-	decision, err := eval.Evaluate(rev, event, nil)
-	if err != nil {
-		t.Fatalf("evaluate: %v", err)
-	}
-	if len(decision.MatchedRules) != 1 || decision.MatchedRules[0] != "a-rule" {
-		t.Errorf("expected a-rule to match, got %v", decision.MatchedRules)
-	}
+	})
+	assertMatchedRules(t, decision, "a-rule")
 }
 
 func TestCompileStableSortSamePriorityByID(t *testing.T) {
@@ -137,21 +122,23 @@ func TestCompileStableSortSamePriorityByID(t *testing.T) {
 	}
 }
 
-func TestCompileRejectsInvalidScheduledEventDelay(t *testing.T) {
-	source := json.RawMessage(`{
-		"rule_set":"order.created","revision":1,"mode":"first_match",
-		"rules":[{
-			"id":"bad-schedule","priority":1,
-			"when":{"path":"$.order_id","op":"exists"},
-			"then":[{
-				"schedule_event":{
-					"type":"order.reminder","delay_seconds":0,
-					"partition_key_policy":"inherit","data":{}
-				}
-			}]
+// invalidDelayRuleSet schedules an event with a zero delay, which is out of range.
+const invalidDelayRuleSet = `{
+	"rule_set":"order.created","revision":1,"mode":"first_match",
+	"rules":[{
+		"id":"bad-schedule","priority":1,
+		"when":{"path":"$.order_id","op":"exists"},
+		"then":[{
+			"schedule_event":{
+				"type":"order.reminder","delay_seconds":0,
+				"partition_key_policy":"inherit","data":{}
+			}
 		}]
-	}`)
-	_, err := NewCompiler(DefaultLimits()).Compile(source)
+	}]
+}`
+
+func TestCompileRejectsInvalidScheduledEventDelay(t *testing.T) {
+	err := compileError(t, invalidDelayRuleSet)
 	if !errors.Is(err, domain.ErrInvalidAction) {
 		t.Fatalf("Compile() error = %v, want ErrInvalidAction", err)
 	}

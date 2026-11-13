@@ -19,6 +19,20 @@ func TestLoadDirectWorkerWithoutDatabaseOrAPIAuth(t *testing.T) {
 	}
 }
 
+// assertDirectWorkerRejected requires validateWorker to reject a direct-mode
+// configuration after mutate invalidates it.
+func assertDirectWorkerRejected(t *testing.T, mutate func(*Config)) {
+	t.Helper()
+	cfg := validConfigForTest()
+	cfg.Worker.Mode = "direct"
+	cfg.Worker.RulesDir = "rules"
+	cfg.Worker.InputSubject = "events.shard.*"
+	mutate(cfg)
+	if err := cfg.validateWorker(); err == nil {
+		t.Fatal("accepted invalid direct configuration")
+	}
+}
+
 func TestDirectWorkerRejectsInvalidSettings(t *testing.T) {
 	for _, mutate := range []func(*Config){
 		func(c *Config) { c.Worker.Mode = "typo" },
@@ -29,13 +43,6 @@ func TestDirectWorkerRejectsInvalidSettings(t *testing.T) {
 		func(c *Config) { c.NATS.RuleSets = []string{"a"} },
 		func(c *Config) { c.Worker.ServiceID = "b" },
 	} {
-		cfg := validConfigForTest()
-		cfg.Worker.Mode = "direct"
-		cfg.Worker.RulesDir = "rules"
-		cfg.Worker.InputSubject = "events.shard.*"
-		mutate(cfg)
-		if err := cfg.validateWorker(); err == nil {
-			t.Fatal("accepted invalid direct configuration")
-		}
+		assertDirectWorkerRejected(t, mutate)
 	}
 }

@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -41,6 +44,20 @@ func TestContextWithNilClaimsDoesNotInventIdentity(t *testing.T) {
 
 func TestValidatorAcceptsSingleStringAudienceClaim(t *testing.T) {
 	v := NewValidator([]byte("secret"), "flowrulz", "flowrulz-api")
+	tokenString := signedAudienceToken(t, "secret")
+	claims, err := v.Validate(context.Background(), tokenString)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if claims.TenantID != "tenant-a" {
+		t.Fatalf("Validate().TenantID = %q, want tenant-a", claims.TenantID)
+	}
+}
+
+// signedAudienceToken builds and signs a token whose audience claim is encoded
+// as a single string rather than a list.
+func signedAudienceToken(t *testing.T, secret string) string {
+	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
 		TenantID: "tenant-a",
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -48,17 +65,29 @@ func TestValidatorAcceptsSingleStringAudienceClaim(t *testing.T) {
 			Audience: jwt.ClaimStrings{"flowrulz-api"},
 		},
 	})
-
-	tokenString, err := token.SignedString([]byte("secret"))
+	tokenString, err := token.SignedString([]byte(secret))
 	if err != nil {
 		t.Fatalf("SignedString() error = %v", err)
 	}
+	return tokenString
+}
 
-	claims, err := v.Validate(context.Background(), tokenString)
-	if err != nil {
-		t.Fatalf("Validate() error = %v", err)
+func TestValidatorReturnsNoClaimsWhenIssuerIsRejected(t *testing.T) {
+	validator := NewValidator([]byte("secret"), "other-issuer", "flowrulz-api")
+	claims, err := validator.Validate(context.Background(), signedAudienceToken(t, "secret"))
+	if !errors.Is(err, ErrInvalidIssuer) || claims != nil {
+		t.Fatalf("Validate() = (%#v, %v), want nil claims and invalid issuer", claims, err)
 	}
-	if claims.TenantID != "tenant-a" {
-		t.Fatalf("Validate().TenantID = %q, want tenant-a", claims.TenantID)
+}
+
+func TestMiddlewareRejectsAnUngrantedEmptyScope(t *testing.T) {
+	validator := NewValidator([]byte("secret"), "flowrulz", "flowrulz-api")
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Header.Set("Authorization", "Bearer "+signedAudienceToken(t, "secret"))
+	response := httptest.NewRecorder()
+	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("ungranted scope reached handler") })
+	Middleware(validator, "")(handler).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("response status = %d, want %d", response.Code, http.StatusForbidden)
 	}
 }

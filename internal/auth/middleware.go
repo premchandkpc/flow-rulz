@@ -10,32 +10,44 @@ import (
 func Middleware(validator *Validator, requiredScopes ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			tokenString := ExtractToken(authHeader)
-
-			if tokenString == "" {
-				responses.WriteError(w, http.StatusUnauthorized, ErrNoCredentials.Error(), responses.CodeUnauthorized)
-				return
-			}
-
-			claims, err := validator.Validate(r.Context(), tokenString)
+			claims, err := authorize(validator, w, r)
 			if err != nil {
-				responses.WriteError(w, http.StatusUnauthorized, err.Error(), responses.CodeUnauthorized)
 				return
 			}
-
 			// Check required scopes
-			for _, scope := range requiredScopes {
-				if !claims.HasScope(scope) {
-					responses.WriteError(w, http.StatusForbidden, "insufficient scope: "+scope, responses.CodeForbidden)
-					return
-				}
+			if scope, missing := missingScope(claims, requiredScopes); missing {
+				responses.WriteError(w, http.StatusForbidden, "insufficient scope: "+scope, responses.CodeForbidden)
+				return
 			}
-
-			ctx := ContextWithClaims(r.Context(), claims)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			next.ServeHTTP(w, r.WithContext(ContextWithClaims(r.Context(), claims)))
 		})
 	}
+}
+
+// authorize extracts and validates the bearer token, writing the 401 response
+// when credentials are missing or rejected.
+func authorize(validator *Validator, w http.ResponseWriter, r *http.Request) (*Claims, error) {
+	tokenString := ExtractToken(r.Header.Get("Authorization"))
+	if tokenString == "" {
+		responses.WriteError(w, http.StatusUnauthorized, ErrNoCredentials.Error(), responses.CodeUnauthorized)
+		return nil, ErrNoCredentials
+	}
+	claims, err := validator.Validate(r.Context(), tokenString)
+	if err != nil {
+		responses.WriteError(w, http.StatusUnauthorized, err.Error(), responses.CodeUnauthorized)
+		return nil, err
+	}
+	return claims, nil
+}
+
+// missingScope returns the first ungranted required scope and whether one exists.
+func missingScope(claims *Claims, requiredScopes []string) (string, bool) {
+	for _, scope := range requiredScopes {
+		if !claims.HasScope(scope) {
+			return scope, true
+		}
+	}
+	return "", false
 }
 
 // OptionalAuthMiddleware creates optional authentication middleware (doesn't require auth but extracts if present)

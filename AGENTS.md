@@ -456,7 +456,7 @@ Whenever a contract, configuration option, service or runtime behavior changes, 
 
 ### 12.2 Function decomposition, logical chunks and file structure
 
-Functions should read like a short, understandable explanation of one operation. Split by **responsibility and control-flow meaning**, not by an arbitrary line count.
+Functions must contain at most 15 code lines across all languages, including tests and generated code. Split by **responsibility and control-flow meaning** while meeting this limit. Update generators and verify their output when changing generated functions.
 
 #### How to decompose a function
 
@@ -479,7 +479,7 @@ Functions should read like a short, understandable explanation of one operation.
 
 #### Function size and abstraction quality
 
-- Large functions are a **review signal**, not an automatic mandate to split. Assess cognitive load, number of responsibilities, nested branching, repeated logic, side effects and difficulty testing before deciding.
+- Enforce the 15-code-line maximum for every function. Use cohesive validation, transformation, I/O and orchestration boundaries. Preserve readable formatting and review cognitive load, nesting, side effects and testability.
 - Do not split every few lines into a one-line wrapper, create a chain of trivial functions, or extract a helper whose name merely restates the next statement. That increases navigation cost without improving cohesion.
 - Do not keep a long function intact merely to avoid adding a helper. If a reviewer must hold validation, domain policy, I/O, retries and response mapping in working memory at once, separate the meaningful phases.
 - Avoid boolean mode flags and many optional parameters when they make a helper's behavior ambiguous. Prefer separate cohesive operations or a small typed input when that clarifies a real multi-field contract.
