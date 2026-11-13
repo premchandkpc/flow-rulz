@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"sync"
 	"time"
 
@@ -17,12 +18,13 @@ const maxScheduledEventAttempts = 8
 
 // Scheduler periodically claims and publishes due scheduled events.
 type Scheduler struct {
-	repo         ports.ScheduledEventRepository
-	publisher    ports.EventPublisher
-	clock        ports.Clock
-	pollInterval time.Duration
-	batchSize    int
-	numShards    uint32
+	repo              ports.ScheduledEventRepository
+	publisher         ports.EventPublisher
+	envelopePublisher ports.EnvelopePublisher
+	clock             ports.Clock
+	pollInterval      time.Duration
+	batchSize         int
+	numShards         uint32
 
 	mu       sync.Mutex
 	running  bool
@@ -58,6 +60,14 @@ func NewScheduler(
 		numShards:    numShards,
 		stopChan:     make(chan struct{}),
 	}
+}
+
+// NewEnvelopeScheduler uses a domain-envelope publisher in durable mode.
+// The original constructor remains for older broker callers.
+func NewEnvelopeScheduler(repo ports.ScheduledEventRepository, publisher ports.EnvelopePublisher, clock ports.Clock, pollInterval time.Duration, batchSize int) *Scheduler {
+	s := NewScheduler(repo, nil, clock, pollInterval, batchSize, 0)
+	s.envelopePublisher = publisher
+	return s
 }
 
 // Start begins the scheduler once. Scheduler instances cannot be restarted after Stop.
@@ -215,7 +225,7 @@ func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent
 		CausationID:   evt.Headers["flowrulz_parent_event_id"],
 		OccurredAt:    s.clock.Now(),
 		Data:          evt.Payload,
-		Headers:       evt.Headers,
+		Headers:       maps.Clone(evt.Headers),
 	}
 
 	// Add idempotency key to headers
@@ -224,6 +234,9 @@ func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent
 	}
 	env.Headers["Idempotency-Key"] = idempotencyKey
 
+	if s.envelopePublisher != nil {
+		return s.envelopePublisher.PublishEvent(ctx, env)
+	}
 	data, err := json.Marshal(env)
 	if err != nil {
 		return fmt.Errorf("marshal event: %w", err)

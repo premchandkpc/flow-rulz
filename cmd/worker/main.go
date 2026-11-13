@@ -144,6 +144,7 @@ func runDurable(ctx context.Context, cfg *config.Config) (runErr error) {
 
 // newDurableRuntime composes the transactional event processor and scheduler.
 func newDurableRuntime(cfg *config.Config, repositories storage.Repositories, consumer *nats.Consumer, publisher *nats.Publisher, workerID string) (*application.Worker, *scheduler.Scheduler, error) {
+	eventPublisher := nats.NewEventPublisher(publisher, eventSubject, cfg.Worker.NumShards)
 	compiler := rules.NewCompiler(rules.DefaultLimits())
 	clock := domain.SystemClock{}
 	evaluator := rules.NewEvaluator(clock)
@@ -157,8 +158,8 @@ func newDurableRuntime(cfg *config.Config, repositories storage.Repositories, co
 	// Each registered service has a unique subject for durable fan-out.
 	serviceSender := effects.NewDomainServiceSender(repositories.DomainServices, publisher)
 	scheduledEventSender := effects.NewScheduledEventSender(repositories.ScheduledEvents)
-	effectSender := svceffects.NewRouterWithConfig(
-		publisher, commandSender, eventSubject, cfg.Worker.NumShards, serviceSender, scheduledEventSender,
+	effectSender := svceffects.NewEnvelopeRouter(
+		eventPublisher, commandSender, serviceSender, scheduledEventSender,
 	)
 	eventsSvc := svcevents.NewService(
 		compiler,
@@ -216,13 +217,12 @@ func newDurableRuntime(cfg *config.Config, repositories storage.Repositories, co
 	if err != nil {
 		return nil, nil, fmt.Errorf("construct worker: %w", err)
 	}
-	sched := scheduler.NewScheduler(
+	sched := scheduler.NewEnvelopeScheduler(
 		repositories.ScheduledEvents,
-		publisher,
+		eventPublisher,
 		clock,
 		cfg.SchedulerPollInterval(),
 		cfg.Worker.SchedulerBatchSize,
-		cfg.Worker.NumShards,
 	)
 
 	return worker, sched, nil

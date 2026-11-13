@@ -68,6 +68,13 @@ type EventPublisher interface {
 	Close() error
 }
 
+// EnvelopePublisher publishes a domain event without exposing transport routing.
+// The adapter owns serialization and shard selection; the legacy EventPublisher
+// stays available for direct and embedded broker callers.
+type EnvelopePublisher interface {
+	PublishEvent(ctx context.Context, event *domain.EventEnvelope) error
+}
+
 // OrderEventBroker is a domain-specific contract for order event flows.
 // It deliberately exposes payloads and deliveries, never broker client types.
 type OrderEventBroker interface {

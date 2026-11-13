@@ -12,12 +12,13 @@ import (
 
 // Router sends child events and command/service effects through selected senders.
 type Router struct {
-	publisher   ports.EventPublisher
-	command     ports.EffectSender
-	service     ports.EffectSender
-	scheduled   ports.EffectSender
-	baseSubject string
-	numShards   uint32
+	publisher         ports.EventPublisher
+	envelopePublisher ports.EnvelopePublisher
+	command           ports.EffectSender
+	service           ports.EffectSender
+	scheduled         ports.EffectSender
+	baseSubject       string
+	numShards         uint32
 }
 
 // NewRouter creates a router using the default event subject and shard count.
@@ -42,6 +43,12 @@ func NewRouterWithConfig(publisher ports.EventPublisher, commandSender ports.Eff
 		router.scheduled = serviceSenders[1]
 	}
 	return router
+}
+
+// NewEnvelopeRouter keeps broker routing out of durable effect processing.
+// Direct and embedded modes retain NewRouterWithConfig for compatibility.
+func NewEnvelopeRouter(publisher ports.EnvelopePublisher, command, service, scheduled ports.EffectSender) *Router {
+	return &Router{envelopePublisher: publisher, command: command, service: service, scheduled: scheduled}
 }
 
 // Send routes an effect to the appropriate destination based on its type.
@@ -91,7 +98,7 @@ func (r *Router) sendCommand(ctx context.Context, effect *domain.Effect, idempot
 // type is carried in the envelope. The broker subject must match the stream
 // filter shared by consumers and the scheduler: <baseSubject>.shard.N.
 func (r *Router) sendChildEvent(ctx context.Context, effect *domain.Effect) error {
-	if r.publisher == nil {
+	if r.publisher == nil && r.envelopePublisher == nil {
 		return fmt.Errorf("publish child event: broker publisher is not configured")
 	}
 	var child domain.EventEnvelope
@@ -100,6 +107,9 @@ func (r *Router) sendChildEvent(ctx context.Context, effect *domain.Effect) erro
 	}
 	if err := child.Validate(); err != nil {
 		return fmt.Errorf("validate child event: %w", err)
+	}
+	if r.envelopePublisher != nil {
+		return r.envelopePublisher.PublishEvent(ctx, &child)
 	}
 	shard := child.VirtualShard(r.numShards)
 	return r.publisher.PublishToShard(ctx, r.baseSubject, shard, effect.Payload)
