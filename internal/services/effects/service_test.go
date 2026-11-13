@@ -102,13 +102,11 @@ func TestPublishBatchUsesUniqueClaimTokenForDelivery(t *testing.T) {
 
 func TestPublishBatchPropagatesRetrySettlementFailure(t *testing.T) {
 	retryErr := errors.New("database unavailable")
-	outbox := &testOutboxRepository{
-		effects: []domain.OutboxEffect{{
-			ID: "effect-2", Destination: "orders", Name: "created", Payload: []byte(`{}`),
-			EffectType: domain.EffectTypeCommand, Attempts: 0, MaxAttempts: 3,
-		}},
-		retryErr: retryErr,
-	}
+	outbox := singleEffectOutbox(domain.OutboxEffect{
+		ID: "effect-2", Destination: "orders", Name: "created", Payload: []byte(`{}`),
+		EffectType: domain.EffectTypeCommand, Attempts: 0, MaxAttempts: 3,
+	})
+	outbox.retryErr = retryErr
 	svc := NewService(outbox, &testEffectSender{err: errors.New("destination down")}, &testQuarantineRepository{}, domain.SystemClock{}, "publisher")
 
 	err := svc.PublishBatch(context.Background(), 10)
@@ -120,15 +118,15 @@ func TestPublishBatchPropagatesRetrySettlementFailure(t *testing.T) {
 	}
 }
 
+// singleEffectOutbox returns an outbox repository that claims exactly one effect.
+func singleEffectOutbox(effect domain.OutboxEffect) *testOutboxRepository {
+	return &testOutboxRepository{effects: []domain.OutboxEffect{effect}}
+}
+
 func TestPublishBatchRemovesQuarantineRecordWhenClaimWasLost(t *testing.T) {
 	claimErr := domain.ErrOutboxClaimLost
-	outbox := &testOutboxRepository{
-		effects: []domain.OutboxEffect{{
-			ID: "effect-3", Destination: "orders", Name: "created", Payload: []byte(`{}`),
-			EffectType: domain.EffectTypeCommand, Attempts: 0, MaxAttempts: 1,
-		}},
-		quarantineErr: claimErr,
-	}
+	outbox := singleEffectOutbox(domain.OutboxEffect{ID: "effect-3", Destination: "orders", Name: "created", Payload: []byte(`{}`), EffectType: domain.EffectTypeCommand, Attempts: 0, MaxAttempts: 1})
+	outbox.quarantineErr = claimErr
 	quarantine := &testQuarantineRepository{}
 	svc := NewService(outbox, &testEffectSender{err: errors.New("permanent destination error")}, quarantine, domain.SystemClock{}, "publisher")
 
@@ -139,23 +137,28 @@ func TestPublishBatchRemovesQuarantineRecordWhenClaimWasLost(t *testing.T) {
 	if outbox.quarantineToken != outbox.claimToken || outbox.quarantineCalls != 1 {
 		t.Fatalf("Quarantine token=%q claim token=%q calls=%d", outbox.quarantineToken, outbox.claimToken, outbox.quarantineCalls)
 	}
+	assertClaimSpecificQuarantineCleanup(t, quarantine, "effect-effect-3-")
+}
+
+// assertClaimSpecificQuarantineCleanup verifies the claim-specific record was
+// saved and deleted again after the outbox claim was lost.
+func assertClaimSpecificQuarantineCleanup(t *testing.T, quarantine *testQuarantineRepository, effectIDPrefix string) {
+	t.Helper()
 	if len(quarantine.saved) != 1 || len(quarantine.deleted) != 1 || quarantine.deleted[0] != quarantine.saved[0].ID {
 		t.Fatalf("quarantine saved=%v deleted=%v; want claim-specific record removed after lost claim", quarantine.saved, quarantine.deleted)
 	}
-	if !strings.HasPrefix(quarantine.saved[0].ID, "effect-effect-3-") {
+	if !strings.HasPrefix(quarantine.saved[0].ID, effectIDPrefix) {
 		t.Fatalf("quarantine ID = %q, expected claim-specific effect ID", quarantine.saved[0].ID)
 	}
 }
 
 func TestPublishBatchPropagatesDeliverySettlementFailure(t *testing.T) {
 	settleErr := errors.New("claim no longer owned")
-	outbox := &testOutboxRepository{
-		effects: []domain.OutboxEffect{{
-			ID: "effect-4", Destination: "orders", Name: "created", Payload: []byte(`{}`),
-			EffectType: domain.EffectTypeCommand, MaxAttempts: 3,
-		}},
-		deliveredErr: settleErr,
-	}
+	outbox := singleEffectOutbox(domain.OutboxEffect{
+		ID: "effect-4", Destination: "orders", Name: "created", Payload: []byte(`{}`),
+		EffectType: domain.EffectTypeCommand, MaxAttempts: 3,
+	})
+	outbox.deliveredErr = settleErr
 	svc := NewService(outbox, &testEffectSender{}, &testQuarantineRepository{}, domain.SystemClock{}, "publisher")
 
 	err := svc.PublishBatch(context.Background(), 10)

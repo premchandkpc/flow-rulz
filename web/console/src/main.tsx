@@ -5,4 +5,8 @@ import "./styles.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element #root was not found");
-createRoot(root).render(<React.StrictMode><App /></React.StrictMode>);
+createRoot(root).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);

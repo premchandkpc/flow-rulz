@@ -8,6 +8,7 @@ import (
 	"github.com/flowrulz/flow-rulz/internal/adapters/nats"
 	"github.com/flowrulz/flow-rulz/internal/application"
 	"github.com/flowrulz/flow-rulz/internal/config"
+	"github.com/flowrulz/flow-rulz/internal/observability"
 	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
@@ -47,5 +48,6 @@ func newWorkerConfig(cfg *config.Config) application.WorkerConfig {
 	workerConfig.KeyQueueWorkers = cfg.Worker.KeyQueueWorkers
 	workerConfig.HotKeyThreshold = cfg.Worker.HotKeyThreshold
 	workerConfig.HotKeyCheckInterval = cfg.HotKeyCheckInterval()
+	workerConfig.ObserveDeliveryStage = observability.ObserveWorkerDeliveryStage
 	return workerConfig
 }

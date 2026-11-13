@@ -2,7 +2,12 @@
 use anyhow::Result;
 use sqlx::{PgPool, Row};
 
-pub(crate) async fn acquire_lease(pool: &PgPool, shard: u32, owner: &str, ttl_ms: i64) -> Result<Option<i64>> {
+pub(crate) async fn acquire_lease(
+    pool: &PgPool,
+    shard: u32,
+    owner: &str,
+    ttl_ms: i64,
+) -> Result<Option<i64>> {
     let row = sqlx::query(
         "INSERT INTO shard_leases (virtual_shard,owner,fencing_token,expires_at,routing_epoch) \
          VALUES ($1,$2,1,NOW()+($3 * INTERVAL '1 millisecond'),0) \
@@ -18,16 +23,33 @@ pub(crate) async fn acquire_lease(pool: &PgPool, shard: u32, owner: &str, ttl_ms
     Ok((lease_owner == owner && active).then_some(token))
 }
 
-pub(crate) async fn renew_lease(pool: &PgPool, shard: u32, owner: &str, token: i64, ttl_ms: i64) -> Result<bool> {
+pub(crate) async fn renew_lease(
+    pool: &PgPool,
+    shard: u32,
+    owner: &str,
+    token: i64,
+    ttl_ms: i64,
+) -> Result<bool> {
     let affected = sqlx::query(
         "UPDATE shard_leases SET expires_at=NOW()+($4 * INTERVAL '1 millisecond') \
-         WHERE virtual_shard=$1 AND owner=$2 AND fencing_token=$3 AND expires_at>NOW()"
-    ).bind(i32::try_from(shard)?).bind(owner).bind(token).bind(ttl_ms)
-     .execute(pool).await?.rows_affected();
+         WHERE virtual_shard=$1 AND owner=$2 AND fencing_token=$3 AND expires_at>NOW()",
+    )
+    .bind(i32::try_from(shard)?)
+    .bind(owner)
+    .bind(token)
+    .bind(ttl_ms)
+    .execute(pool)
+    .await?
+    .rows_affected();
     Ok(affected == 1)
 }
 
-pub(crate) async fn release_lease(pool: &PgPool, shard: u32, owner: &str, token: i64) -> Result<()> {
+pub(crate) async fn release_lease(
+    pool: &PgPool,
+    shard: u32,
+    owner: &str,
+    token: i64,
+) -> Result<()> {
     sqlx::query("UPDATE shard_leases SET expires_at=NOW()-INTERVAL '1 millisecond' WHERE virtual_shard=$1 AND owner=$2 AND fencing_token=$3")
         .bind(i32::try_from(shard)?).bind(owner).bind(token).execute(pool).await?;
     Ok(())

@@ -9,8 +9,8 @@ cd "$SCRIPT_DIR"
 API_URL="${FLOWRULZ_API:-http://localhost:8080}"
 DOMAIN_FILE="$SCRIPT_DIR/domain.json"
 AUTH_ARGS=()
-if [[ -n "${FLOWRULZ_TRUSTED_PROXY_TOKEN:-}" ]]; then
-  AUTH_ARGS=(-H "X-Proxy-Auth: ${FLOWRULZ_TRUSTED_PROXY_TOKEN}")
+if [[ -n "${FLOWRULZ_API_TOKEN:-}" ]]; then
+  AUTH_ARGS=(-H "Authorization: Bearer ${FLOWRULZ_API_TOKEN}")
 fi
 
 command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }

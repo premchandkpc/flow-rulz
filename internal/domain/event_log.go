@@ -78,9 +78,31 @@ func DeterministicLogRecordID(kind LogRecordKind, tenantID, partitionKey, eventI
 
 // Validate checks the required identity and payload invariants for a log record.
 func (r EventLogRecord) Validate() error {
+	if err := r.validateIdentity(); err != nil {
+		return err
+	}
+	if err := r.validateKindAndPayload(); err != nil {
+		return err
+	}
+	if r.Kind == LogRecordExecutionCommitted {
+		if err := r.validateExecutionCommittedPayload(); err != nil {
+			return err
+		}
+	}
+	return r.validateRecordID()
+}
+
+// validateIdentity requires the record's core identity fields.
+func (r EventLogRecord) validateIdentity() error {
 	if r.RecordID == "" || r.TenantID == "" || r.PartitionKey == "" || r.EventID == "" {
 		return errors.New("log record requires record_id, tenant_id, partition_key, and event_id")
 	}
+	return nil
+}
+
+// validateKindAndPayload checks the record kind, JSON payload, timestamp and the
+// kind-specific execution/effect identities.
+func (r EventLogRecord) validateKindAndPayload() error {
 	switch r.Kind {
 	case LogRecordEventAccepted, LogRecordExecutionCommitted, LogRecordEffectRequested, LogRecordEffectSettled, LogRecordEventQuarantined, LogRecordScheduleRequested, LogRecordScheduleCancelled, LogRecordScheduleFired, LogRecordConsumerProgressed, LogRecordFenceAdvanced:
 	default:
@@ -92,25 +114,41 @@ func (r EventLogRecord) Validate() error {
 	if r.OccurredAt.IsZero() {
 		return errors.New("log record occurred_at is required")
 	}
+	return r.validateRecordIdentities()
+}
+
+// validateRecordIdentities requires execution_id or effect_id for the kinds that
+// carry them.
+func (r EventLogRecord) validateRecordIdentities() error {
 	if r.Kind == LogRecordExecutionCommitted && r.ExecutionID == "" {
 		return errors.New("execution.committed requires execution_id")
 	}
 	if (r.Kind == LogRecordEffectRequested || r.Kind == LogRecordEffectSettled) && r.EffectID == "" {
 		return errors.New("effect record requires effect_id")
 	}
-	if r.Kind == LogRecordExecutionCommitted {
-		var committed ExecutionCommittedPayload
-		if err := json.Unmarshal(r.Payload, &committed); err != nil {
-			return fmt.Errorf("execution.committed payload is invalid: %w", err)
-		}
-		expectedExecutionID := DeterministicID("execution", r.TenantID, r.PartitionKey, r.EventID)
-		if committed.ExecutionID != r.ExecutionID || committed.ExecutionID != expectedExecutionID {
-			return errors.New("execution.committed execution_id must match its deterministic event identity")
-		}
-		if err := committed.Validate(r.TenantID, r.EventID); err != nil {
-			return fmt.Errorf("invalid execution.committed payload: %w", err)
-		}
+	return nil
+}
+
+// validateExecutionCommittedPayload checks the embedded commit payload against
+// the record's deterministic event identity.
+func (r EventLogRecord) validateExecutionCommittedPayload() error {
+	var committed ExecutionCommittedPayload
+	if err := json.Unmarshal(r.Payload, &committed); err != nil {
+		return fmt.Errorf("execution.committed payload is invalid: %w", err)
 	}
+	expectedExecutionID := DeterministicID("execution", r.TenantID, r.PartitionKey, r.EventID)
+	if committed.ExecutionID != r.ExecutionID || committed.ExecutionID != expectedExecutionID {
+		return errors.New("execution.committed execution_id must match its deterministic event identity")
+	}
+	if err := committed.Validate(r.TenantID, r.EventID); err != nil {
+		return fmt.Errorf("invalid execution.committed payload: %w", err)
+	}
+	return nil
+}
+
+// validateRecordID requires the record ID to equal its deterministic identity
+// for the record's kind.
+func (r EventLogRecord) validateRecordID() error {
 	discriminator := ""
 	switch r.Kind {
 	case LogRecordExecutionCommitted:

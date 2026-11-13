@@ -3,6 +3,7 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"maps"
@@ -18,10 +19,12 @@ const maxScheduledEventAttempts = 8
 // Scheduler periodically claims and publishes due scheduled events.
 type Scheduler struct {
 	repo         ports.ScheduledEventRepository
-	publisher    ports.EventPublisher
+	publisher         ports.EventPublisher
+	envelopePublisher ports.EnvelopePublisher
 	clock        ports.Clock
 	pollInterval time.Duration
 	batchSize    int
+	numShards    uint32
 
 	mu       sync.Mutex
 	running  bool
@@ -37,6 +40,7 @@ func NewScheduler(
 	clock ports.Clock,
 	pollInterval time.Duration,
 	batchSize int,
+	numShards uint32,
 ) *Scheduler {
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
@@ -44,14 +48,26 @@ func NewScheduler(
 	if batchSize <= 0 {
 		batchSize = 100
 	}
+	if numShards == 0 {
+		numShards = 4096
+	}
 	return &Scheduler{
 		repo:         repo,
 		publisher:    publisher,
 		clock:        clock,
 		pollInterval: pollInterval,
 		batchSize:    batchSize,
+		numShards:    numShards,
 		stopChan:     make(chan struct{}),
 	}
+}
+
+// NewEnvelopeScheduler uses a domain-envelope publisher in durable mode.
+// The original constructor remains for older broker callers.
+func NewEnvelopeScheduler(repo ports.ScheduledEventRepository, publisher ports.EnvelopePublisher, clock ports.Clock, pollInterval time.Duration, batchSize int) *Scheduler {
+	s := NewScheduler(repo, nil, clock, pollInterval, batchSize, 0)
+	s.envelopePublisher = publisher
+	return s
 }
 
 // Start begins the scheduler once. Scheduler instances cannot be restarted after Stop.
@@ -218,5 +234,16 @@ func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent
 	}
 	env.Headers["Idempotency-Key"] = idempotencyKey
 
-	return s.publisher.PublishEvent(ctx, env)
+	if s.envelopePublisher != nil {
+		return s.envelopePublisher.PublishEvent(ctx, env)
+	}
+	data, err := json.Marshal(env)
+	if err != nil {
+		return fmt.Errorf("marshal event: %w", err)
+	}
+
+	// Publish to shard-specific subject using the shared base subject
+	shard := env.VirtualShard(s.numShards)
+	baseSubject := "events" // Must match consumer stream subject pattern
+	return s.publisher.PublishToShard(ctx, baseSubject, shard, data)
 }

@@ -52,4 +52,4 @@ func (p *EventPublisher) PublishEvent(ctx context.Context, event *domain.EventEn
 	return p.publisher.PublishToShard(ctx, p.baseSubject, event.VirtualShard(p.numShards), data)
 }
 
-var _ ports.EventPublisher = (*EventPublisher)(nil)
+var _ ports.EnvelopePublisher = (*EventPublisher)(nil)

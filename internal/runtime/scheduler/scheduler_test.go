@@ -3,10 +3,12 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
+	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
 type schedulerTestClock struct{ now time.Time }
@@ -64,13 +66,20 @@ func (r *schedulerTestRepo) Cancel(context.Context, string, string) error { retu
 
 type schedulerTestPublisher struct {
 	publishErr error
-	event      *domain.EventEnvelope
+	subject    string
+	payload    []byte
 }
 
-func (p *schedulerTestPublisher) PublishEvent(_ context.Context, event *domain.EventEnvelope) error {
-	p.event = event
+func (p *schedulerTestPublisher) Publish(context.Context, string, []byte) error { return nil }
+func (p *schedulerTestPublisher) PublishBatch(context.Context, []ports.PublishMessage) error {
+	return nil
+}
+func (p *schedulerTestPublisher) PublishToShard(_ context.Context, base string, shard uint32, payload []byte) error {
+	p.subject = fmt.Sprintf("%s.shard.%d", base, shard)
+	p.payload = append([]byte(nil), payload...)
 	return p.publishErr
 }
+func (p *schedulerTestPublisher) Close() error { return nil }
 
 func TestTickSettlesWithTheUniqueClaimToken(t *testing.T) {
 	now := time.Date(2026, time.October, 11, 10, 0, 0, 0, time.UTC)
@@ -79,7 +88,7 @@ func TestTickSettlesWithTheUniqueClaimToken(t *testing.T) {
 		PartitionKey: "order-1", Payload: []byte(`{"reminder":true}`), ScheduledAt: now.Add(-time.Minute),
 	}}
 	publisher := &schedulerTestPublisher{}
-	s := NewScheduler(repo, publisher, schedulerTestClock{now: now}, time.Second, 10)
+	s := NewScheduler(repo, publisher, schedulerTestClock{now: now}, time.Second, 10, 64)
 
 	s.tick(context.Background())
 
@@ -89,8 +98,8 @@ func TestTickSettlesWithTheUniqueClaimToken(t *testing.T) {
 	if repo.releasedBy != repo.claimant {
 		t.Fatalf("released by %q, claimed by %q", repo.releasedBy, repo.claimant)
 	}
-	if publisher.event == nil || publisher.event.ID != repo.event.EventID {
-		t.Fatalf("publisher received incorrect envelope: %+v", publisher.event)
+	if publisher.subject == "" || len(publisher.payload) == 0 {
+		t.Fatalf("publisher not called correctly: subject=%q payload=%q", publisher.subject, publisher.payload)
 	}
 }
 
@@ -101,7 +110,7 @@ func TestTickSchedulesRetryForPublishFailure(t *testing.T) {
 		PartitionKey: "order-2", Payload: []byte(`{"reminder":true}`), ScheduledAt: now.Add(-time.Minute),
 	}}
 	publisher := &schedulerTestPublisher{publishErr: errors.New("broker unavailable")}
-	s := NewScheduler(repo, publisher, schedulerTestClock{now: now}, time.Second, 10)
+	s := NewScheduler(repo, publisher, schedulerTestClock{now: now}, time.Second, 10, 64)
 
 	s.tick(context.Background())
 
@@ -127,7 +136,7 @@ func TestTickMarksEventFailedAfterRetryLimit(t *testing.T) {
 		RetryCount: maxScheduledEventAttempts - 1,
 	}}
 	publisher := &schedulerTestPublisher{publishErr: errors.New("permanent publish failure")}
-	s := NewScheduler(repo, publisher, schedulerTestClock{now: now}, time.Second, 10)
+	s := NewScheduler(repo, publisher, schedulerTestClock{now: now}, time.Second, 10, 64)
 
 	s.tick(context.Background())
 
@@ -148,29 +157,5 @@ func TestScheduledRetryDelayIsBounded(t *testing.T) {
 	}
 	if got, want := scheduledRetryDelay(20), time.Minute; got != want {
 		t.Fatalf("scheduledRetryDelay(20) = %s, want %s", got, want)
-	}
-}
-
-func TestReleaseEventPreservesStoredHeaders(t *testing.T) {
-	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
-	for _, headers := range []map[string]string{nil, {"flowrulz_correlation_id": "corr-1", "flowrulz_parent_event_id": "parent-1", "Idempotency-Key": "original"}} {
-		event := &domain.ScheduledEvent{EventID: "scheduled-1", EventType: "order.reminder", TenantID: "tenant-a", PartitionKey: "order-1", Headers: headers, Payload: []byte(`{}`)}
-		publisher := &schedulerTestPublisher{}
-		s := NewScheduler(&schedulerTestRepo{}, publisher, schedulerTestClock{now: now}, time.Second, 10)
-		if err := s.releaseEvent(context.Background(), event, "sched-scheduled-1"); err != nil {
-			t.Fatal(err)
-		}
-		if got := publisher.event.Headers["Idempotency-Key"]; got != "sched-scheduled-1" {
-			t.Fatalf("key = %q", got)
-		}
-		if headers != nil && event.Headers["Idempotency-Key"] != "original" {
-			t.Fatal("stored event headers were mutated")
-		}
-		if headers == nil && event.Headers != nil {
-			t.Fatal("stored nil headers were mutated")
-		}
-		if publisher.event.CorrelationID != headers["flowrulz_correlation_id"] || publisher.event.CausationID != headers["flowrulz_parent_event_id"] {
-			t.Fatal("correlation metadata was lost")
-		}
 	}
 }

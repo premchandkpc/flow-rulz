@@ -66,16 +66,27 @@ function SortIcon({ direction }: { direction: "asc" | "desc" }) {
 
 function FilterIcon({ active }: { active: boolean }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ opacity: active ? 1 : 0.4 }}>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      style={{ opacity: active ? 1 : 0.4 }}
+    >
       <path d="M7 1.5L12.5 7.5H1.5L7 1.5Z" stroke="currentColor" strokeWidth="1.5" />
       <path d="M3 10.5H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
 
-function Checkbox({ checked, indeterminate, onChange, disabled }: { 
-  checked: boolean; 
-  indeterminate?: boolean; 
+function Checkbox({
+  checked,
+  indeterminate,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
   onChange?: (checked: boolean) => void;
   disabled?: boolean;
 }) {
@@ -129,52 +140,67 @@ export function DataTable<T>({
   const [filterFocus, setFilterFocus] = useState<string | null>(null);
 
   const selectedKeys = selection || new Set();
-  const allSelected = data.length > 0 && data.every(row => selectedKeys.has(keyExtractor(row)));
-  const someSelected = data.some(row => selectedKeys.has(keyExtractor(row)));
+  const allSelected = data.length > 0 && data.every((row) => selectedKeys.has(keyExtractor(row)));
+  const someSelected = data.some((row) => selectedKeys.has(keyExtractor(row)));
 
-  const handleSelectAll = useCallback((checked: boolean) => {
-    if (onSelectionChange) {
-      const newSelection = new Set(selectedKeys);
-      if (checked) {
-        data.forEach(row => newSelection.add(keyExtractor(row)));
-      } else {
-        data.forEach(row => newSelection.delete(keyExtractor(row)));
+  const handleSelectAll = useCallback(
+    (checked: boolean) => {
+      if (onSelectionChange) {
+        const newSelection = new Set(selectedKeys);
+        if (checked) {
+          data.forEach((row) => newSelection.add(keyExtractor(row)));
+        } else {
+          data.forEach((row) => newSelection.delete(keyExtractor(row)));
+        }
+        onSelectionChange(newSelection);
       }
-      onSelectionChange(newSelection);
-    }
-  }, [data, keyExtractor, onSelectionChange, selectedKeys]);
+    },
+    [data, keyExtractor, onSelectionChange, selectedKeys],
+  );
 
-  const handleRowSelect = useCallback((rowKey: string, checked: boolean) => {
-    if (onSelectionChange) {
-      const newSelection = new Set(selectedKeys);
-      if (checked) newSelection.add(rowKey);
-      else newSelection.delete(rowKey);
-      onSelectionChange(newSelection);
-    }
-  }, [onSelectionChange, selectedKeys]);
+  const handleRowSelect = useCallback(
+    (rowKey: string, checked: boolean) => {
+      if (onSelectionChange) {
+        const newSelection = new Set(selectedKeys);
+        if (checked) newSelection.add(rowKey);
+        else newSelection.delete(rowKey);
+        onSelectionChange(newSelection);
+      }
+    },
+    [onSelectionChange, selectedKeys],
+  );
 
-  const handleSort = useCallback((columnKey: string) => {
-    if (!onSort) return;
-    const column = columns.find(c => c.key === columnKey);
-    if (!column?.sortable) return;
-    const direction = sortColumn === columnKey && sortDirection === "asc" ? "desc" : "asc";
-    onSort(columnKey, direction);
-  }, [columns, onSort, sortColumn, sortDirection]);
+  const handleSort = useCallback(
+    (columnKey: string) => {
+      if (!onSort) return;
+      const column = columns.find((c) => c.key === columnKey);
+      if (!column?.sortable) return;
+      const direction = sortColumn === columnKey && sortDirection === "asc" ? "desc" : "asc";
+      onSort(columnKey, direction);
+    },
+    [columns, onSort, sortColumn, sortDirection],
+  );
 
-  const handleFilter = useCallback((columnKey: string, value: string) => {
-    onFilterChange?.(columnKey, value);
-  }, [onFilterChange]);
+  const handleFilter = useCallback(
+    (columnKey: string, value: string) => {
+      onFilterChange?.(columnKey, value);
+    },
+    [onFilterChange],
+  );
 
-  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTableRowElement>, row: T, rowKey: string) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onRowClick?.(row);
-    }
-    if (event.key === " " && event.shiftKey) {
-      event.preventDefault();
-      handleRowSelect(rowKey, !selectedKeys.has(rowKey));
-    }
-  }, [onRowClick, handleRowSelect, selectedKeys]);
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTableRowElement>, row: T, rowKey: string) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onRowClick?.(row);
+      }
+      if (event.key === " " && event.shiftKey) {
+        event.preventDefault();
+        handleRowSelect(rowKey, !selectedKeys.has(rowKey));
+      }
+    },
+    [onRowClick, handleRowSelect, selectedKeys],
+  );
 
   if (loading) {
     return (
@@ -188,9 +214,12 @@ export function DataTable<T>({
   }
 
   return (
-    <div className={`datatable-container ${className}`} style={{ maxHeight, display: "flex", flexDirection: "column" }}>
+    <div
+      className={`datatable-container ${className}`}
+      style={{ maxHeight, display: "flex", flexDirection: "column" }}
+    >
       {toolbar && <div className="datatable-toolbar">{toolbar}</div>}
-      
+
       <div className="datatable-wrapper" style={{ overflow: "auto", position: "relative" }}>
         <table className="datatable" role="grid">
           <thead className={stickyHeader ? "datatable-sticky-header" : ""}>
@@ -219,18 +248,38 @@ export function DataTable<T>({
                     background: "var(--surface, #fff)",
                   }}
                   role="columnheader"
-                  aria-sort={sortColumn === column.key ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}
+                  aria-sort={
+                    sortColumn === column.key
+                      ? sortDirection === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
+                  }
                 >
-                  <div className="datatable-th-content" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <div
+                    className="datatable-th-content"
+                    style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                  >
                     <span>{column.header}</span>
                     {column.sortable && (
                       <button
                         className="datatable-sort-btn"
                         onClick={() => handleSort(column.key)}
                         aria-label={`Sort by ${column.header} ${sortColumn === column.key ? (sortDirection === "asc" ? "descending" : "ascending") : "ascending"}`}
-                        style={{ padding: "2px", marginLeft: "auto", background: "transparent", border: "none", cursor: "pointer", color: "var(--muted, #7a8699)" }}
+                        style={{
+                          padding: "2px",
+                          marginLeft: "auto",
+                          background: "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "var(--muted, #7a8699)",
+                        }}
                       >
-                        <SortIcon direction={sortColumn === column.key && sortDirection ? sortDirection : "asc"} />
+                        <SortIcon
+                          direction={
+                            sortColumn === column.key && sortDirection ? sortDirection : "asc"
+                          }
+                        />
                       </button>
                     )}
                   </div>
@@ -263,7 +312,15 @@ export function DataTable<T>({
           <tbody className="datatable-tbody">
             {data.length === 0 ? (
               <tr>
-                <td colSpan={columns.length + ((selection || rowActions) ? 1 : 0)} className="datatable-empty" style={{ textAlign: "center", padding: "48px 24px", color: "var(--muted, #7a8699)" }}>
+                <td
+                  colSpan={columns.length + (selection || rowActions ? 1 : 0)}
+                  className="datatable-empty"
+                  style={{
+                    textAlign: "center",
+                    padding: "48px 24px",
+                    color: "var(--muted, #7a8699)",
+                  }}
+                >
                   {emptyMessage}
                 </td>
               </tr>
@@ -310,31 +367,40 @@ export function DataTable<T>({
                         }}
                         role="gridcell"
                       >
-                        {column.render 
-                          ? column.render(row, rowIndex) 
+                        {column.render
+                          ? column.render(row, rowIndex)
                           : String((row as any)[column.key] ?? "")}
                       </td>
                     ))}
                     {rowActions && rowActions.length > 0 && (
-                      <td className="datatable-actions-col" style={{ width: "1px", whiteSpace: "nowrap" }}>
-                        <div className="datatable-row-actions" style={{ display: "flex", gap: "4px", justifyContent: "flex-end" }}>
-                          {rowActions.map((action, idx) => (
-                            !action.hidden?.(row) && (
-                              <button
-                                key={idx}
-                                className={`button ${action.className || "text-button"} ${action.disabled?.(row) ? "disabled" : ""}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (!action.disabled?.(row)) action.onClick(row, e);
-                                }}
-                                disabled={action.disabled?.(row)}
-                                style={{ padding: "4px 8px", fontSize: "11px" }}
-                              >
-                                {action.icon && <span style={{ marginRight: "4px" }}>{action.icon}</span>}
-                                {action.label}
-                              </button>
-                            )
-                          ))}
+                      <td
+                        className="datatable-actions-col"
+                        style={{ width: "1px", whiteSpace: "nowrap" }}
+                      >
+                        <div
+                          className="datatable-row-actions"
+                          style={{ display: "flex", gap: "4px", justifyContent: "flex-end" }}
+                        >
+                          {rowActions.map(
+                            (action, idx) =>
+                              !action.hidden?.(row) && (
+                                <button
+                                  key={idx}
+                                  className={`button ${action.className || "text-button"} ${action.disabled?.(row) ? "disabled" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!action.disabled?.(row)) action.onClick(row, e);
+                                  }}
+                                  disabled={action.disabled?.(row)}
+                                  style={{ padding: "4px 8px", fontSize: "11px" }}
+                                >
+                                  {action.icon && (
+                                    <span style={{ marginRight: "4px" }}>{action.icon}</span>
+                                  )}
+                                  {action.label}
+                                </button>
+                              ),
+                          )}
                         </div>
                       </td>
                     )}
@@ -346,20 +412,61 @@ export function DataTable<T>({
         </table>
       </div>
 
-      {footer && <div className="datatable-footer" style={{ padding: "12px 16px", borderTop: "1px solid var(--line, #d9dee7)", background: "#fafbfc" }}>{footer}</div>}
+      {footer && (
+        <div
+          className="datatable-footer"
+          style={{
+            padding: "12px 16px",
+            borderTop: "1px solid var(--line, #d9dee7)",
+            background: "#fafbfc",
+          }}
+        >
+          {footer}
+        </div>
+      )}
 
       {pagination && (
-        <div className="datatable-pagination" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: "1px solid var(--line, #d9dee7)", background: "#fafbfc", flexWrap: "wrap", gap: "12px" }}>
-          <div className="datatable-pagination-info" style={{ fontSize: "12px", color: "var(--muted, #7a8699)" }}>
-            Showing {Math.min((pagination.page - 1) * pagination.pageSize + 1, pagination.total)}–{Math.min(pagination.page * pagination.pageSize, pagination.total)} of {pagination.total}
+        <div
+          className="datatable-pagination"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "12px 16px",
+            borderTop: "1px solid var(--line, #d9dee7)",
+            background: "#fafbfc",
+            flexWrap: "wrap",
+            gap: "12px",
+          }}
+        >
+          <div
+            className="datatable-pagination-info"
+            style={{ fontSize: "12px", color: "var(--muted, #7a8699)" }}
+          >
+            Showing {Math.min((pagination.page - 1) * pagination.pageSize + 1, pagination.total)}–
+            {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{" "}
+            {pagination.total}
           </div>
-          <div className="datatable-pagination-controls" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div
+            className="datatable-pagination-controls"
+            style={{ display: "flex", alignItems: "center", gap: "8px" }}
+          >
             <select
               value={pagination.pageSize}
               onChange={(e) => pagination.onPageSizeChange(Number(e.target.value))}
-              style={{ padding: "4px 8px", fontSize: "11px", border: "1px solid var(--line, #d9dee7)", borderRadius: "4px", background: "white" }}
+              style={{
+                padding: "4px 8px",
+                fontSize: "11px",
+                border: "1px solid var(--line, #d9dee7)",
+                borderRadius: "4px",
+                background: "white",
+              }}
             >
-              {[10, 25, 50, 100].map(size => <option key={size} value={size}>{size} per page</option>)}
+              {[10, 25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size} per page
+                </option>
+              ))}
             </select>
             <button
               className="button text-button"
@@ -369,7 +476,14 @@ export function DataTable<T>({
             >
               Previous
             </button>
-            <span style={{ fontSize: "12px", color: "var(--muted, #7a8699)", minWidth: "60px", textAlign: "center" }}>
+            <span
+              style={{
+                fontSize: "12px",
+                color: "var(--muted, #7a8699)",
+                minWidth: "60px",
+                textAlign: "center",
+              }}
+            >
               Page {pagination.page} of {Math.ceil(pagination.total / pagination.pageSize)}
             </span>
             <button
@@ -387,11 +501,18 @@ export function DataTable<T>({
   );
 }
 
-export function createColumn<T>(key: string, header: string, options: Partial<Column<T>> = {}): Column<T> {
+export function createColumn<T>(
+  key: string,
+  header: string,
+  options: Partial<Column<T>> = {},
+): Column<T> {
   return { key, header, ...options };
 }
 
-export function renderBadge(text: string, variant: "default" | "success" | "warning" | "error" | "info" = "default") {
+export function renderBadge(
+  text: string,
+  variant: "default" | "success" | "warning" | "error" | "info" = "default",
+) {
   const styles: Record<string, string> = {
     default: "bg-gray-100 text-gray-700",
     success: "bg-green-100 text-green-700",

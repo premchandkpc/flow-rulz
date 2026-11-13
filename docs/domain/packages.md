@@ -13,7 +13,7 @@ domains/<domain>/
     └── go/     # generated Go code, in its own module
 ```
 
-Run a deploy script from any directory; it resolves files relative to its own location. Set `FLOWRULZ_API` to the API base URL. For production control-plane authentication, set `FLOWRULZ_TRUSTED_PROXY_TOKEN` to the value configured by the API and the script will send it as `X-Proxy-Auth`. Development/test mode can use the API's configured development authentication behavior.
+Run a deploy script from any directory; it resolves files relative to its own location. Set `FLOWRULZ_API` to the API base URL. For production, set `FLOWRULZ_API_TOKEN` to an authorized bearer token, or authenticate through a trusted proxy. Do not distribute the API's proxy credential to clients. Development/test mode can use the API's configured development authentication behavior.
 
 The deployment script publishes contracts and rulesets first, then creates or replaces the Domain using `domain.json`. The Domain payload contains only `name` and `services`; it does not contain event tenant identity, partition keys, or event-type lists.
 

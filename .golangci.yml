@@ -13,7 +13,14 @@ linters:
     - bodyclose
     - gocritic
     - revive
+    - funlen
   settings:
+    # Catch unusually large production functions without fragmenting cohesive
+    # operations. Tests can keep setup, action and assertions together.
+    funlen:
+      lines: 100
+      statements: 80
+      ignore-comments: true
     depguard:
       rules:
         domain-pure:
@@ -40,10 +47,12 @@ linters:
             - pkg: "github.com/flowrulz/flow-rulz/internal/adapters"
               desc: "core must not see adapters"
   exclusions:
+    generated: disable
     rules:
       - path: _test\.go
         linters:
           - gosec
+          - funlen
       - path: cmd/
         linters:
           - gosec
@@ -55,3 +64,9 @@ linters:
 
 run:
   timeout: 5m
+
+# Keep every diagnostic visible, including findings sharing a source line.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false

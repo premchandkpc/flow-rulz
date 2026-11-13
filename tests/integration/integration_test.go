@@ -15,16 +15,18 @@ import (
 )
 
 type mockInbox struct {
-	entries map[string]*domain.InboxEntry
+	entries map[inboxKey]*domain.InboxEntry
 }
 
+type inboxKey struct{ tenant, event, ruleSet string }
+
 func newMockInbox() *mockInbox {
-	return &mockInbox{entries: make(map[string]*domain.InboxEntry)}
+	return &mockInbox{entries: make(map[inboxKey]*domain.InboxEntry)}
 }
 
 // Insert persists the supplied value.
 func (m *mockInbox) Insert(_ context.Context, entry *domain.InboxEntry) (bool, error) {
-	key := entry.TenantID + ":" + entry.EventID
+	key := inboxKey{entry.TenantID, entry.EventID, entry.RuleSet}
 	if _, exists := m.entries[key]; exists {
 		return false, nil
 	}
@@ -34,26 +36,30 @@ func (m *mockInbox) Insert(_ context.Context, entry *domain.InboxEntry) (bool, e
 
 // Get retrieves the requested value.
 func (m *mockInbox) Get(_ context.Context, tenantID string, eventID string) (*domain.InboxEntry, error) {
-	key := tenantID + ":" + eventID
-	return m.entries[key], nil
+	for key, entry := range m.entries {
+		if key.tenant == tenantID && key.event == eventID {
+			return entry, nil
+		}
+	}
+	return nil, nil
 }
 
 // GetByRuleSet retrieves the requested value by tenant, event ID, and ruleset.
 func (m *mockInbox) GetByRuleSet(_ context.Context, tenantID, eventID, ruleSet string) (*domain.InboxEntry, error) {
-	key := tenantID + ":" + eventID + ":" + ruleSet
-	return m.entries[key], nil
+	return m.entries[inboxKey{tenantID, eventID, ruleSet}], nil
 }
 
 // MarkCommitted persists the supplied value.
-func (m *mockInbox) MarkCommitted(_ context.Context, tenantID string, eventID string, executionID string) error {
-	key := tenantID + ":" + eventID
-	if entry, ok := m.entries[key]; ok {
+func (m *mockInbox) MarkCommitted(_ context.Context, tenantID, eventID, ruleSet, executionID string) error {
+	key := inboxKey{tenantID, eventID, ruleSet}
+	if entry, ok := m.entries[key]; ok && entry.Status == domain.InboxStatusProcessing {
 		entry.Status = domain.InboxStatusCommitted
 		entry.ExecutionID = executionID
 		now := time.Now().UTC()
 		entry.CommittedAt = &now
+		return nil
 	}
-	return nil
+	return domain.ErrInboxInvalidStatus
 }
 
 type mockActivation struct {
@@ -633,7 +639,7 @@ func TestGivenActiveRule_WhenEventArrives_ThenExecutionAndOutboxAreCreated(t *te
 	if exec == nil {
 		t.Fatal("expected execution")
 	}
-	if inbox.entries["test-tenant:evt-given-1"].Status != domain.InboxStatusCommitted {
+	if inbox.entries[inboxKey{"test-tenant", "evt-given-1", "order.created"}].Status != domain.InboxStatusCommitted {
 		t.Fatal("expected inbox entry to be committed")
 	}
 	if len(executions.executions) != 1 {

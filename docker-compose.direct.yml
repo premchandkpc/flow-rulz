@@ -1,0 +1,33 @@
+name: flow-rulz-direct
+services:
+  nats:
+    image: nats:2.11-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "127.0.0.1:4222:4222"
+    volumes:
+      - direct_nats:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8222/healthz >/dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      WORKER_MODE: direct
+      WORKER_RULES_DIR: /rules
+      WORKER_INPUT_SUBJECT: events.shard.*
+      NATS_URL: nats://nats:4222
+      NATS_STREAM: flowrulz-direct
+      NATS_CONSUMER: flowrulz-direct-worker
+      NUM_SHARDS: 16
+    volumes:
+      - ./examples/direct-worker/rules:/rules:ro
+    depends_on:
+      nats:
+        condition: service_healthy
+volumes:
+  direct_nats:

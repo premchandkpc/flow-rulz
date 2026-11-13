@@ -34,116 +34,22 @@ type EventEnvelope struct {
 	Meta          map[string]any    `json:"meta,omitempty"`
 }
 
-// MarshalJSON keeps runtime identity and extensible event metadata inside the meta object.
-func (e EventEnvelope) MarshalJSON() ([]byte, error) {
-	type wireEvent struct {
-		ID            string            `json:"id"`
-		Type          string            `json:"type"`
-		WorkflowID    string            `json:"workflow_id,omitempty"`
-		OccurredAt    time.Time         `json:"occurred_at"`
-		Data          json.RawMessage   `json:"data"`
-		Contract      *ContractRef      `json:"contract,omitempty"`
-		MessageKind   string            `json:"message_kind,omitempty"`
-		CorrelationID string            `json:"correlation_id,omitempty"`
-		CausationID   string            `json:"causation_id,omitempty"`
-		Headers       map[string]string `json:"headers,omitempty"`
-		Meta          map[string]any    `json:"meta"`
+// HasDeploymentTarget reports reserved routing metadata that current workers cannot honor.
+func (e *EventEnvelope) HasDeploymentTarget() bool {
+	if e == nil {
+		return false
 	}
-
-	meta := make(map[string]any, len(e.Meta)+2)
-	for key, value := range e.Meta {
-		meta[key] = value
-	}
-	tenantID, err := canonicalMetaIdentity(meta, "tenant_id", e.TenantID)
-	if err != nil {
-		return nil, err
-	}
-	partitionKey, err := canonicalMetaIdentity(meta, "partition_key", e.PartitionKey)
-	if err != nil {
-		return nil, err
-	}
-	meta["tenant_id"] = tenantID
-	meta["partition_key"] = partitionKey
-
-	return json.Marshal(wireEvent{
-		ID: e.ID, Type: e.Type, WorkflowID: e.WorkflowID, OccurredAt: e.OccurredAt,
-		Data: e.Data, Contract: e.Contract, MessageKind: e.MessageKind,
-		CorrelationID: e.CorrelationID, CausationID: e.CausationID, Headers: e.Headers, Meta: meta,
-	})
-}
-
-func canonicalMetaIdentity(meta map[string]any, key, fieldValue string) (string, error) {
-	metaValue, present := meta[key]
-	if present {
-		value, ok := metaValue.(string)
-		if !ok {
-			return "", fmt.Errorf("meta.%s must be a string", key)
-		}
-		if strings.TrimSpace(value) == "" {
-			return "", fmt.Errorf("meta.%s must be a non-empty string", key)
-		}
-		if fieldValue != "" && fieldValue != value {
-			return "", fmt.Errorf("event field and meta.%s disagree", key)
-		}
-		return value, nil
-	}
-	if strings.TrimSpace(fieldValue) == "" {
-		return "", fmt.Errorf("meta.%s is required", key)
-	}
-	return fieldValue, nil
-}
-
-// UnmarshalJSON reads the canonical event envelope. Runtime identity is accepted only inside meta.
-func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	allowed := map[string]bool{
-		"id": true, "type": true, "occurred_at": true, "workflow_id": true, "data": true,
-		"contract": true, "message_kind": true, "correlation_id": true, "causation_id": true,
-		"headers": true, "meta": true,
-	}
-	for key := range fields {
-		if !allowed[key] {
-			return fmt.Errorf("unknown event envelope field %q; runtime metadata belongs under meta", key)
+	for _, key := range []string{"flow.service_id", "flow.deployment_revision"} {
+		if _, exists := e.Headers[key]; exists {
+			return true
 		}
 	}
-	type wireEvent struct {
-		ID            string            `json:"id"`
-		Type          string            `json:"type"`
-		WorkflowID    string            `json:"workflow_id"`
-		OccurredAt    time.Time         `json:"occurred_at"`
-		Data          json.RawMessage   `json:"data"`
-		Contract      *ContractRef      `json:"contract"`
-		MessageKind   string            `json:"message_kind"`
-		CorrelationID string            `json:"correlation_id"`
-		CausationID   string            `json:"causation_id"`
-		Headers       map[string]string `json:"headers"`
-		Meta          map[string]any    `json:"meta"`
+	for _, key := range []string{"target_service_id", "deployment_revision"} {
+		if _, exists := e.Meta[key]; exists {
+			return true
+		}
 	}
-	var wire wireEvent
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return err
-	}
-	if wire.Meta == nil {
-		return fmt.Errorf("meta is required")
-	}
-	tenantID, err := canonicalMetaIdentity(wire.Meta, "tenant_id", "")
-	if err != nil {
-		return err
-	}
-	partitionKey, err := canonicalMetaIdentity(wire.Meta, "partition_key", "")
-	if err != nil {
-		return err
-	}
-	*e = EventEnvelope{
-		ID: wire.ID, Type: wire.Type, TenantID: tenantID, PartitionKey: partitionKey,
-		WorkflowID: wire.WorkflowID, OccurredAt: wire.OccurredAt, Data: wire.Data,
-		Contract: wire.Contract, MessageKind: wire.MessageKind, CorrelationID: wire.CorrelationID,
-		CausationID: wire.CausationID, Headers: wire.Headers, Meta: wire.Meta,
-	}
-	return nil
+	return false
 }
 
 // VirtualShard provides the virtual shard.
@@ -164,6 +70,16 @@ func ShardHash(key string) uint32 {
 
 // Validate provides the validate.
 func (e *EventEnvelope) Validate() error {
+	if err := e.validateIdentity(); err != nil {
+		return err
+	}
+	if e.OccurredAt.IsZero() {
+		return ErrOccurredAtRequired
+	}
+	return nil
+}
+
+func (e *EventEnvelope) validateIdentity() error {
 	if e.ID == "" {
 		return ErrEventIDRequired
 	}
@@ -175,9 +91,6 @@ func (e *EventEnvelope) Validate() error {
 	}
 	if strings.TrimSpace(e.PartitionKey) == "" {
 		return ErrPartitionKeyRequired
-	}
-	if e.OccurredAt.IsZero() {
-		return ErrOccurredAtRequired
 	}
 	return nil
 }

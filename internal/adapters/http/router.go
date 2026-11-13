@@ -66,11 +66,7 @@ func NewRouterWithConfig(
 	handler = middleware.TenantExtractor(handler)
 	if cfg.RequireAuth {
 		if cfg.AuthValidator == nil {
-			handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/health" {
-					mux.ServeHTTP(w, r)
-					return
-				}
+			handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				responses.WriteError(w, http.StatusServiceUnavailable, "required authentication is not configured", responses.CodeInternalError)
 			})
 		} else {
@@ -101,7 +97,22 @@ func NewRouterWithConfig(
 		handlers.NewEventTraceHandler(cfg.InboxRepo, cfg.ExecutionRepo, cfg.OutboxRepo, numShards).RegisterRoutes(mux)
 	}
 
-	return &Router{handler: handler}
+	return &Router{handler: publicProbes(handler, middleware.Recovery(mux), !cfg.RequireAuth || cfg.AuthValidator != nil)}
+}
+
+// publicProbes exposes only the GET probes without management credentials.
+func publicProbes(protected, probes http.Handler, authenticationReady bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && (r.URL.Path == "/health" || r.URL.Path == "/ready") {
+			if r.URL.Path == "/ready" && !authenticationReady {
+				responses.WriteError(w, http.StatusServiceUnavailable, "required authentication is not configured", responses.CodeInternalError)
+				return
+			}
+			probes.ServeHTTP(w, r)
+			return
+		}
+		protected.ServeHTTP(w, r)
+	})
 }
 
 // ServeHTTP implements http.Handler.

@@ -65,7 +65,7 @@ func (r *InboxRepository) GetByRuleSet(ctx context.Context, tenantID, eventID, r
 	err := coll.FindOne(ctx, bson.M{
 		"tenant_id": tenantID,
 		"event_id":  eventID,
-		"rule_set":  ruleSet,
+		"rule_set":  inboxRuleSetFilter(ruleSet),
 	}).Decode(&doc)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -76,14 +76,23 @@ func (r *InboxRepository) GetByRuleSet(ctx context.Context, tenantID, eventID, r
 	return doc.ToDomain(), nil
 }
 
-// MarkCommitted persists the supplied value.
-func (r *InboxRepository) MarkCommitted(ctx context.Context, tenantID string, eventID string, executionID string) error {
+// Pre-ruleset documents may omit the field entirely.
+func inboxRuleSetFilter(ruleSet string) any {
+	if ruleSet == "" {
+		return bson.M{"$in": bson.A{"", nil}}
+	}
+	return ruleSet
+}
+
+// MarkCommitted transitions exactly one ruleset's processing entry to committed.
+func (r *InboxRepository) MarkCommitted(ctx context.Context, tenantID, eventID, ruleSet, executionID string) error {
 	coll := r.collection(collectionInbox)
 	now := time.Now().UTC()
-	_, err := coll.UpdateOne(ctx,
+	result, err := coll.UpdateOne(ctx,
 		bson.M{
 			"tenant_id": tenantID,
 			"event_id":  eventID,
+			"rule_set":  ruleSet,
 			"status":    domain.InboxStatusProcessing,
 		},
 		bson.M{
@@ -96,6 +105,9 @@ func (r *InboxRepository) MarkCommitted(ctx context.Context, tenantID string, ev
 	)
 	if err != nil {
 		return fmt.Errorf("mark committed: %w", err)
+	}
+	if result.MatchedCount != 1 {
+		return fmt.Errorf("mark committed: %w for ruleset %q", domain.ErrInboxInvalidStatus, ruleSet)
 	}
 	return nil
 }

@@ -40,7 +40,7 @@ func (r *InboxRepository) Insert(ctx context.Context, entry *domain.InboxEntry) 
 func (r *InboxRepository) Get(ctx context.Context, tenantID string, eventID string) (*domain.InboxEntry, error) {
 	entry := &domain.InboxEntry{}
 	err := r.db.QueryRow(ctx, `
-		SELECT tenant_id, event_id, rule_set, status, execution_id, first_seen_at, committed_at,
+		SELECT tenant_id, event_id, rule_set, status, COALESCE(execution_id, ''), first_seen_at, committed_at,
 		       COALESCE(partition_key, ''), payload, COALESCE(batch_id, '')
 		FROM inbox
 		WHERE tenant_id = $1 AND event_id = $2
@@ -63,7 +63,7 @@ func (r *InboxRepository) Get(ctx context.Context, tenantID string, eventID stri
 func (r *InboxRepository) GetByRuleSet(ctx context.Context, tenantID, eventID, ruleSet string) (*domain.InboxEntry, error) {
 	entry := &domain.InboxEntry{}
 	err := r.db.QueryRow(ctx, `
-		SELECT tenant_id, event_id, rule_set, status, execution_id, first_seen_at, committed_at,
+		SELECT tenant_id, event_id, rule_set, status, COALESCE(execution_id, ''), first_seen_at, committed_at,
 		       COALESCE(partition_key, ''), payload, COALESCE(batch_id, '')
 		FROM inbox
 		WHERE tenant_id = $1 AND event_id = $2 AND rule_set = $3
@@ -81,15 +81,18 @@ func (r *InboxRepository) GetByRuleSet(ctx context.Context, tenantID, eventID, r
 	return entry, nil
 }
 
-// MarkCommitted marks an inbox entry as committed and records its execution ID.
-func (r *InboxRepository) MarkCommitted(ctx context.Context, tenantID string, eventID string, executionID string) error {
+// MarkCommitted transitions exactly one ruleset's processing entry to committed.
+func (r *InboxRepository) MarkCommitted(ctx context.Context, tenantID, eventID, ruleSet, executionID string) error {
 	now := time.Now().UTC()
-	_, err := r.db.Exec(ctx, `
-		UPDATE inbox SET status = 'committed', execution_id = $3, committed_at = $4
-		WHERE tenant_id = $1 AND event_id = $2
-	`, tenantID, eventID, executionID, now)
+	tag, err := r.db.Exec(ctx, `
+		UPDATE inbox SET status = 'committed', execution_id = $4, committed_at = $5
+		WHERE tenant_id = $1 AND event_id = $2 AND rule_set = $3 AND status = 'processing'
+	`, tenantID, eventID, ruleSet, executionID, now)
 	if err != nil {
 		return fmt.Errorf("mark committed: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return fmt.Errorf("mark committed: %w for ruleset %q", domain.ErrInboxInvalidStatus, ruleSet)
 	}
 	return nil
 }

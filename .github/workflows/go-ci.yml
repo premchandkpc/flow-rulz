@@ -25,7 +25,8 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.15.0
+          install-only: true
 
       - name: Check Go formatting
         run: make check-fmt
@@ -139,9 +140,6 @@ jobs:
       - name: Vet root-module packages
         run: go vet ./...
 
-      - name: Lint root-module packages
-        run: golangci-lint run ./...
-
       - name: Test standalone Go SDK
         working-directory: sdk/go
         run: go test -race -count=1 ./...
@@ -161,6 +159,9 @@ jobs:
       - name: Test food-delivery example module
         working-directory: examples/food-delivery
         run: go test -race -count=1 ./...
+
+      - name: Lint root-module packages
+        run: golangci-lint run ./...
 
   console:
     name: Build React operations console

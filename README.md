@@ -13,13 +13,28 @@ FlowRulz is a Go-based, event-driven rules runtime. NATS JetStream retains the d
 | Code generator | cmd/codegen | Generate Go, Java, Protobuf, and JSON Schema artifacts from a contract already registered in storage |
 | Migration CLI | cmd/migrate | Apply pending migrations; only the up command is implemented |
 
-The root module uses Go 1.26.0. Both sdk/go and the newer sdk/go/flowrulz client are separate Go modules; each example application also has its own module. CI tests every module separately because nested go.mod files are not included in a parent-module ./... command.
+The root module uses Go 1.26.0. Both sdk/go and the newer sdk/go/flowrule client are separate Go modules; each example application also has its own module. CI tests every module separately because nested go.mod files are not included in a parent-module ./... command.
 
 ## Control plane / data plane boundary
 
 The HTTP API is a control-plane service. It creates and validates configuration (Domains and nested Services/rulesets, contracts, rule revisions, workflow definitions, and generic subscriptions) and exposes management/read-only operational views. It does not accept business events and does not connect to NATS to publish them. Producers publish `EventEnvelope` messages directly to NATS JetStream using the configured subject and shard contract. Only `cmd/worker` consumes business events and evaluates rules. The Go SDK's HTTP event transport is rejected; configure `FLOWRULZ_TRANSPORT=nats` for event publication. A `schedule_event` rule action is persisted through the transactional outbox and then the worker-owned scheduler. Correlated workflow `wait`/resume semantics are not yet supported.
 
 ## Event lifecycle
+
+To connect producers and consumers directly to a worker-hosted broker, use
+[`WORKER_MODE=broker`](docs/embedded-broker.md). It hosts partitioned topics,
+consumer groups, ACKs/retries, and rule processing in one process, with memory or
+local-disk storage. `BROKER_TRANSPORTS=http,tcp,nats` enables any desired ingress
+adapters; `none` keeps only in-process access. `BROKER_OUTPUT_TRANSPORT` selects
+local topics or an HTTP/TCP/NATS peer independently. Start the sample with
+`WORKER_MODE=broker WORKER_RULES_DIR=examples/direct-worker/rules NUM_SHARDS=16 go run ./cmd/worker`.
+
+For a minimal `A → broker → rules worker → broker → B` path, use
+[`WORKER_MODE=direct`](docs/direct-worker.md). It needs only NATS and local rule
+files, publishes results immediately, and ACKs after publication. Database,
+inbox/outbox, leases, scheduler and the API are absent from this mode. Outputs may
+repeat on retries. Start it with `docker compose -f docker-compose.direct.yml up --build`.
+The lifecycle below describes the default **durable** mode.
 
 1. A producer publishes an EventEnvelope to the NATS JetStream subject family events.shard.N. N is computed from tenant ID and partition key using the configured shard count. File-backed, limits-retention streams keep acknowledged messages available for replay until configured retention or storage limits remove them. Configure `NATS_STREAM_MAX_AGE`, `NATS_STREAM_MAX_BYTES`, and `NATS_STREAM_MAX_MSGS`; zero age and `-1` limits mean unlimited, which requires capacity monitoring.
 2. The worker consumes only shards for which it owns a lease. The key queue serializes work for each partition key within this worker process and can allow concurrency across keys. This alone does not guarantee end-to-end per-key ordering across redelivery, lease handoff, or concurrent outbox publishers.
@@ -57,6 +72,8 @@ Example:
 
 Generic subscriber fan-out remains a separate routing stage, independent of rule evaluation and execution Service deployments. Receiver registrations use `/v1/subscriptions`; they are not the execution Services nested inside a Domain. The router creates stable delivery intents in the same transaction as the event execution. Delivery is at-least-once, so receivers must deduplicate using the effect's idempotency key. HTTP callback URLs are not the delivery path.
 
+Service assignments are stored as configuration, but workers do not yet resolve them into isolated service streams or restrict evaluation to pinned revisions. Service-specific worker configuration fails at startup. Durable/direct workers retry targeted events without acknowledgement; worker-hosted brokers reject new targeted publications. Do not treat Service configuration as enforced workload isolation; see the [architecture review](docs/reports/2026-11-13-architecture-review.md).
+
 The management API does not accept tenant identity as configuration. Runtime event envelopes carry `meta.tenant_id` and `meta.partition_key`; these are event-level identity and ordering fields, not Domain fields. Future runtime context belongs in the same extensible `meta` object. Configure broker credentials and subject permissions separately; hashed subjects are routing identifiers, not authorization.
 
 ## Run locally
@@ -86,7 +103,7 @@ Test the nested modules separately:
 
 ~~~sh
 (cd sdk/go && go test -race -count=1 ./...)
-(cd sdk/go/flowrulz && go test -race -count=1 ./...)
+(cd sdk/go/flowrule && go test -race -count=1 ./...)
 (cd examples/banking && go test -race -count=1 ./...)
 (cd examples/ecommerce && go test -race -count=1 ./...)
 (cd examples/food-delivery && go test -race -count=1 ./...)
@@ -114,6 +131,25 @@ Generated `Subscribe` methods use live core NATS subscriptions and are available
 
 Environment variable names and local defaults are documented in .env.example. API and worker startup initialize storage/migrations. The Go worker publishes all command and service effects through NATS JetStream; no HTTP destination URL is required.
 
+## Code formatting
+
+Run `npm ci --prefix web/console` once to install the console dependencies, including
+the pinned Prettier formatter. With Go, Cargo, Node.js/npm and
+[uv](https://docs.astral.sh/uv/) installed, use:
+
+```sh
+make fmt-all
+make check-fmt-all
+```
+
+These commands cover Go sources in all modules, Rust sources, console TypeScript,
+JavaScript, CSS, HTML and JSON, and Python broker tests. `make fmt` and
+`make check-fmt` remain Go-only; `fmt-rust`, `fmt-web` and `fmt-python` are also
+available individually. Python formatting uses a pinned Ruff version through
+`uvx`, which downloads the formatter on first use. `.editorconfig` supplies shared
+indentation, newline and whitespace settings. Generated build output and local
+runtime data are excluded from formatting.
+
 ## Repository map
 
 - cmd contains the process entrypoints.
@@ -125,8 +161,8 @@ Environment variable names and local defaults are documented in .env.example. AP
 - internal/adapters contains HTTP management handlers, PostgreSQL, MongoDB, NATS, Redis, fake test destinations, and NATS effect destinations.
 - internal/storage selects and wires the configured persistence backend.
 - sdk/go/runtime is the original standalone producer/consumer SDK module.
-- sdk/go/flowrulz is a separate client SDK module. NATS is the supported event transport; HTTP ingestion, gRPC transport and local evaluation are not available in the current runtime.
-- examples contains banking, e-commerce, and food-delivery contracts, rules, workflows, and sample applications. Typed domain code lives in `domains/<domain>/builds/go` (separate Go modules) and is produced by `make generate-domain DOMAIN=<domain>` from the contracts stored in the database; example services import it from there and the SDK from `sdk/go/flowrulz`.
+- sdk/go/flowrule is a separate client SDK module. NATS is the supported event transport; HTTP ingestion, gRPC transport and local evaluation are not available in the current runtime.
+- examples contains banking, e-commerce, and food-delivery contracts, rules, workflows, and sample applications. Typed domain code lives in `domains/<domain>/builds/go` (separate Go modules) and is produced by `make generate-domain DOMAIN=<domain>` from the contracts stored in the database; example services import it from there and the SDK from `sdk/go/flowrule`.
 - migrations contains numbered PostgreSQL migrations.
 - All human-maintained engineering documentation is organized under [`docs/`](docs/README.md), including specifications, plans, domain references, testing, reports, examples, and operations.
 - `README.md`, `AGENTS.md`, and `SECURITY.md` stay at the repository root because GitHub and engineering tools expect them there. Tool-specific templates and skills remain under `.github/` and `.opencode/`.
@@ -138,14 +174,14 @@ Start with docs/README.md for the documentation index.
 ## Important limitations
 
 - Domain configuration has no tenant field. Runtime events must carry `meta.tenant_id` and `meta.partition_key`; authenticate producers before trusting those fields. Control-plane API authentication remains separate and must be enabled before exposing it to untrusted networks.
-- /health is a liveness endpoint only. Use /ready for database and NATS reachability; neither endpoint proves workers are processing.
+- /health is a liveness endpoint only. The API's /ready probes its configured database; it does not check NATS or worker progress.
 - The API starts HTTP only. No gRPC server is implemented; the SDK's gRPC transport requires a compatible server deployed separately.
 - Migration rollback/status commands and live infrastructure-backed chaos tests are not implemented.
 - Tests under tests/integration use mocks/in-memory repositories, not live PostgreSQL and NATS. Validate storage atomicity, redelivery, lease expiry, and crash recovery against real infrastructure before making production guarantees.
 - MongoDB transaction behavior and parity must be verified for the exact deployment configuration before relying on it for the same guarantees as PostgreSQL. JSON-backed fields are stored as BSON binary bytes and covered by BSON round-trip tests; live adapter conformance tests remain outstanding.
-- Scheduled-event SQL claim columns are introduced in migration 015. Expired claims can be reclaimed; list/get/cancel are tenant-filtered and cancel only pending events. Publish errors still mark scheduled events failed without retry/backoff.
+- Scheduled-event claims can expire and be reclaimed. Publish failures retry with bounded exponential backoff and eventually become terminal; recovery against real infrastructure still needs verification.
 - Batch reads are tenant-scoped, but batch event execution has not been integrated with owned-shard fencing and the per-key queue. Non-none BATCH_MODE values are rejected until this is fixed; do not bypass the validation guard.
-- The shard lease manager currently targets NUM_SHARDS/3 per worker without membership/rebalancing, so the current implementation implicitly assumes three worker replicas. Validate all shards remain assigned before changing replica count.
+- The shard lease manager targets ceil(NUM_SHARDS / WORKER_REPLICAS) per worker. Configure a consistent fixed replica count; dynamic membership and coordinated rebalancing are not implemented.
 - Subscription routing is platform-level behavior, separate from rule evaluation. The Go and Rust paths use a generic subscriber router to create durable delivery intents; verify runtime parity and transaction behavior before enabling the experimental Rust worker in production.
 
 ## Random producer simulation

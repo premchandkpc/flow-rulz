@@ -28,81 +28,104 @@ func NewEvaluator(clock ports.Clock) *Evaluator {
 
 // Evaluate runs the rule evaluation against an event and returns a Decision.
 func (e *Evaluator) Evaluate(revision *domain.RuleRevision, event *domain.EventEnvelope, facts map[string]json.RawMessage) (*domain.Decision, error) {
-	matched, effects, explanations, err := e.evaluateRules(revision, event, facts)
+	acc, err := e.evaluateRules(revision, event, facts)
 	if err != nil {
 		return nil, err
 	}
-
-	hash := domain.ComputeDecisionHash(revision.ContentHash, event.ID, "", matched, effects)
-
+	hash := domain.ComputeDecisionHash(revision.ContentHash, event.ID, "", acc.matched, acc.effects)
 	return &domain.Decision{
-		MatchedRules: matched,
-		Effects:      effects,
+		MatchedRules: acc.matched,
+		Effects:      acc.effects,
 		Hash:         hash,
-		Explanations: explanations,
+		Explanations: acc.explanations,
 	}, nil
 }
 
+// decisionAccumulator carries the growing decision state across rule evaluations.
+type decisionAccumulator struct {
+	matched      []string
+	effects      []domain.Effect
+	explanations []domain.RuleExplanation
+}
+
+// newDecisionAccumulator allocates the decision state for a rule set of the
+// given size, preserving the original empty-slice (not nil) semantics.
+func newDecisionAccumulator(ruleCount int) *decisionAccumulator {
+	return &decisionAccumulator{
+		matched:      make([]string, 0),
+		effects:      make([]domain.Effect, 0),
+		explanations: make([]domain.RuleExplanation, 0, ruleCount),
+	}
+}
+
 // evaluateRules iterates through compiled rules, evaluates predicates, and builds effects/explanations.
-func (e *Evaluator) evaluateRules(revision *domain.RuleRevision, event *domain.EventEnvelope, facts map[string]json.RawMessage) ([]string, []domain.Effect, []domain.RuleExplanation, error) {
-	matched := make([]string, 0)
-	effects := make([]domain.Effect, 0)
-	explanations := make([]domain.RuleExplanation, 0, len(revision.Compiled))
-
+func (e *Evaluator) evaluateRules(revision *domain.RuleRevision, event *domain.EventEnvelope, facts map[string]json.RawMessage) (*decisionAccumulator, error) {
+	acc := newDecisionAccumulator(len(revision.Compiled))
 	for _, rule := range revision.Compiled {
-		ok, err := e.evalPredicate(rule.When, event.Data, facts)
+		ok, err := e.evalRule(revision, event, facts, rule, acc)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("rule %s: %w: %w", rule.ID, domain.ErrEvaluationError, err)
-		}
-
-		matched, effects, explanations, err = e.processRuleResult(rule, ok, matched, effects, explanations, revision, event)
-		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 		if revision.MatchMode == domain.MatchModeFirstMatch && ok {
 			break
 		}
 	}
-	return matched, effects, explanations, nil
+	return acc, nil
 }
 
-// processRuleResult handles the result of a rule evaluation (matched or not).
-func (e *Evaluator) processRuleResult(rule domain.CompiledRule, ok bool, matched []string, effects []domain.Effect, explanations []domain.RuleExplanation, revision *domain.RuleRevision, event *domain.EventEnvelope) ([]string, []domain.Effect, []domain.RuleExplanation, error) {
-	explanation := domain.RuleExplanation{
-		RuleID:   rule.ID,
-		RuleName: rule.Name,
-		Matched:  ok,
-		Priority: rule.Priority,
+// evalRule evaluates one rule's predicate and records its result; predicate
+// errors are wrapped with the rule ID and classified as evaluation errors.
+func (e *Evaluator) evalRule(revision *domain.RuleRevision, event *domain.EventEnvelope, facts map[string]json.RawMessage, rule domain.CompiledRule, acc *decisionAccumulator) (bool, error) {
+	ok, err := e.evalPredicate(rule.When, event.Data, facts)
+	if err != nil {
+		return false, fmt.Errorf("rule %s: %w: %w", rule.ID, domain.ErrEvaluationError, err)
 	}
+	if err := e.processRuleResult(rule, ok, acc, revision, event); err != nil {
+		return false, err
+	}
+	return ok, nil
+}
 
-	if ok {
-		matched = append(matched, rule.ID)
-		actions := make([]string, 0, len(rule.Then))
-		for i, action := range rule.Then {
-			effect, err := e.buildEffect(revision, event, rule.ID, i, action)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("rule %s action %d: %w: %w", rule.ID, i, domain.ErrEvaluationError, err)
-			}
-			effects = append(effects, effect)
-			actions = append(actions, describeAction(action))
-		}
-		explanation.Reason = "predicate matched"
-		explanation.Actions = actions
-	} else {
-		actions := make([]string, 0, len(rule.Otherwise))
-		for i, action := range rule.Otherwise {
-			effect, err := e.buildEffect(revision, event, rule.ID, i, action)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("rule %s otherwise action %d: %w: %w", rule.ID, i, domain.ErrEvaluationError, err)
-			}
-			effects = append(effects, effect)
-			actions = append(actions, describeAction(action))
-		}
-		explanation.Reason = "predicate did not match"
-		explanation.Actions = actions
+// processRuleResult handles the result of a rule evaluation (matched or not):
+// it records the matched rule ID, builds the branch effects and appends the
+// rule explanation.
+func (e *Evaluator) processRuleResult(rule domain.CompiledRule, ok bool, acc *decisionAccumulator, revision *domain.RuleRevision, event *domain.EventEnvelope) error {
+	branch, reason, label := rule.Then, "predicate matched", "action"
+	if !ok {
+		branch, reason, label = rule.Otherwise, "predicate did not match", "otherwise action"
 	}
-	explanations = append(explanations, explanation)
-	return matched, effects, explanations, nil
+	if ok {
+		acc.matched = append(acc.matched, rule.ID)
+	}
+	actions, err := e.buildActionEffects(rule.ID, branch, label, revision, event, acc)
+	if err != nil {
+		return err
+	}
+	acc.explanations = append(acc.explanations, newRuleExplanation(rule, ok, reason, actions))
+	return nil
+}
+
+// buildActionEffects builds the effects for one action branch in order and
+// returns the human-readable action descriptions.
+func (e *Evaluator) buildActionEffects(ruleID string, branch []domain.Action, label string, revision *domain.RuleRevision, event *domain.EventEnvelope, acc *decisionAccumulator) ([]string, error) {
+	actions := make([]string, 0, len(branch))
+	for i, action := range branch {
+		effect, err := e.buildEffect(revision, event, ruleID, i, action)
+		if err != nil {
+			return nil, fmt.Errorf("rule %s %s %d: %w: %w", ruleID, label, i, domain.ErrEvaluationError, err)
+		}
+		acc.effects = append(acc.effects, effect)
+		actions = append(actions, describeAction(action))
+	}
+	return actions, nil
+}
+
+// newRuleExplanation builds the explanation entry for one evaluated rule.
+func newRuleExplanation(rule domain.CompiledRule, matched bool, reason string, actions []string) domain.RuleExplanation {
+	return domain.RuleExplanation{
+		RuleID: rule.ID, RuleName: rule.Name, Matched: matched,
+		Priority: rule.Priority, Reason: reason, Actions: actions,
+	}
 }
 
 func (e *Evaluator) evalPredicate(p domain.Predicate, data json.RawMessage, facts map[string]json.RawMessage) (bool, error) {
@@ -179,14 +202,20 @@ func (e *Evaluator) evalLeaf(p domain.Predicate, data json.RawMessage, facts map
 	// - not_in: true (missing not in list)
 	// - gt/gte/lt/lte: false (cannot compare missing)
 	if value == nil {
-		switch p.Op {
-		case domain.OpNeq, domain.OpNotIn:
-			return true, nil
-		default:
-			return false, nil
-		}
+		return missingFieldResult(p.Op), nil
 	}
 	return evaluateLeafValue(p.Op, value, p.Value)
+}
+
+// missingFieldResult applies the missing-field semantics documented in evalLeaf:
+// only neq and not_in are true when the resolved value is absent.
+func missingFieldResult(op domain.Operator) bool {
+	switch op {
+	case domain.OpNeq, domain.OpNotIn:
+		return true
+	default:
+		return false
+	}
 }
 
 func evaluateLeafValue(op domain.Operator, actual, expected interface{}) (bool, error) {
@@ -211,6 +240,11 @@ func compareNumericLeaf(op domain.Operator, actual, expected interface{}) (bool,
 	if comparison == 2 {
 		return false, fmt.Errorf("cannot compare non-numeric values for %s: %v vs %v", op, actual, expected)
 	}
+	return applyOrdering(op, comparison)
+}
+
+// applyOrdering maps a three-way comparison result onto the relational operator.
+func applyOrdering(op domain.Operator, comparison int) (bool, error) {
 	switch op {
 	case domain.OpGt:
 		return comparison > 0, nil
@@ -267,15 +301,8 @@ func resolveEventDataPath(data json.RawMessage, parts []string) (interface{}, er
 func walkObjectPath(value interface{}, parts []string) interface{} {
 	current := value
 	for _, part := range parts {
-		if part == "" {
-			continue
-		}
-		object, ok := current.(map[string]interface{})
+		next, ok := stepObjectPath(current, part)
 		if !ok {
-			return nil
-		}
-		next, exists := object[part]
-		if !exists {
 			return nil
 		}
 		current = next
@@ -283,54 +310,58 @@ func walkObjectPath(value interface{}, parts []string) interface{} {
 	return current
 }
 
+// stepObjectPath advances one path segment, reporting false when the segment
+// cannot be resolved (empty segments keep the current value).
+func stepObjectPath(current interface{}, part string) (interface{}, bool) {
+	if part == "" {
+		return current, true
+	}
+	object, ok := current.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	next, exists := object[part]
+	if !exists {
+		return nil, false
+	}
+	return next, true
+}
+
+// compareEq enforces strict type equality: types must match exactly, numbers
+// compare numerically only when both sides are numeric, and there is no
+// string<->number or bool<->string coercion.
 func compareEq(actual interface{}, expected interface{}) bool {
-	// Strict type equality: types must match exactly
-	// For numbers, compare numerically but only if both are numeric types
-	// Reject string<->number, bool<->string coercion
-
-	// JSON numbers compare by numeric value rather than textual representation.
-	if a, aok := actual.(json.Number); aok {
-		if b, bok := expected.(json.Number); bok {
-			return compareNumericEqual(a, b)
-		}
-		// json.Number vs other numeric type
-		if isNumeric(expected) {
-			return compareNumericEqual(actual, expected)
-		}
-		return false
+	if same, ok := sameTypeNumericEqual(actual, expected); ok {
+		return same
 	}
-
-	// int64 vs int64
-	if a, aok := actual.(int64); aok {
-		if b, bok := expected.(int64); bok {
-			return a == b
-		}
-		// int64 vs other numeric type
-		if isNumeric(expected) {
-			return compareNumericEqual(actual, expected)
-		}
-		return false
-	}
-
-	// float64 vs float64 (should not happen with UseNumber, but handle)
-	if a, aok := actual.(float64); aok {
-		if b, bok := expected.(float64); bok {
-			return a == b
-		}
-		// float64 vs other numeric type
-		if isNumeric(expected) {
-			return compareNumericEqual(actual, expected)
-		}
-		return false
-	}
-
-	// Cross-type numeric comparison: both numeric but different types
+	// Cross-type numeric comparison: both numeric but different types.
 	if isNumeric(actual) && isNumeric(expected) {
 		return compareNumericEqual(actual, expected)
 	}
-
-	// For all other types, use standard equality (no coercion)
+	// For all other types, use standard equality (no coercion).
 	return actual == expected
+}
+
+// sameTypeNumericEqual applies the fast paths for json.Number, int64 and
+// float64 values compared against the same concrete type. handled=false means
+// the fast path does not apply and the caller must decide.
+func sameTypeNumericEqual(actual interface{}, expected interface{}) (same bool, handled bool) {
+	switch a := actual.(type) {
+	case json.Number:
+		if b, ok := expected.(json.Number); ok {
+			// JSON numbers compare by numeric value rather than textual representation.
+			return compareNumericEqual(a, b), true
+		}
+	case int64:
+		if b, ok := expected.(int64); ok {
+			return a == b, true
+		}
+	case float64:
+		if b, ok := expected.(float64); ok {
+			return a == b, true
+		}
+	}
+	return false, false
 }
 
 func isNumeric(v interface{}) bool {
@@ -354,42 +385,32 @@ func compareNumericEqual(a, b interface{}) bool {
 // possible. This avoids overflow when comparing uint64 values and avoids
 // silently equating distinct integers after conversion to float64.
 func numericRat(value interface{}) (*big.Rat, bool) {
-	var raw string
-	switch n := value.(type) {
-	case int:
-		raw = strconv.FormatInt(int64(n), 10)
-	case int8:
-		raw = strconv.FormatInt(int64(n), 10)
-	case int16:
-		raw = strconv.FormatInt(int64(n), 10)
-	case int32:
-		raw = strconv.FormatInt(int64(n), 10)
-	case int64:
-		raw = strconv.FormatInt(n, 10)
-	case uint:
-		raw = strconv.FormatUint(uint64(n), 10)
-	case uint8:
-		raw = strconv.FormatUint(uint64(n), 10)
-	case uint16:
-		raw = strconv.FormatUint(uint64(n), 10)
-	case uint32:
-		raw = strconv.FormatUint(uint64(n), 10)
-	case uint64:
-		raw = strconv.FormatUint(n, 10)
-	case float32:
-		raw = strconv.FormatFloat(float64(n), 'g', -1, 32)
-	case float64:
-		raw = strconv.FormatFloat(n, 'g', -1, 64)
-	case json.Number:
-		raw = n.String()
-	case string:
-		// Preserve existing support for numeric strings in ordered comparisons.
-		raw = n
-	default:
+	raw, ok := numericString(value)
+	if !ok {
 		return nil, false
 	}
-	rat, ok := new(big.Rat).SetString(raw)
-	return rat, ok
+	return new(big.Rat).SetString(raw)
+}
+
+// numericString formats a supported numeric value as an exact decimal string;
+// json.Number keeps its original representation and strings pass through
+// unchanged to preserve numeric-string support in ordered comparisons.
+func numericString(value interface{}) (string, bool) {
+	switch n := value.(type) {
+	case int, int8, int16, int32, int64:
+		return fmt.Sprintf("%d", n), true
+	case uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", n), true
+	case float32:
+		return strconv.FormatFloat(float64(n), 'g', -1, 32), true
+	case float64:
+		return strconv.FormatFloat(n, 'g', -1, 64), true
+	case json.Number:
+		return n.String(), true
+	case string:
+		return n, true
+	}
+	return "", false
 }
 
 func compareCmp(actual interface{}, expected interface{}) int {
@@ -445,36 +466,43 @@ func (c templateContext) walk(v interface{}) (interface{}, error) {
 	case string:
 		return c.expand(val)
 	case map[string]interface{}:
-		out := make(map[string]interface{}, len(val))
-		for k, item := range val {
-			w, err := c.walk(item)
-			if err != nil {
-				return nil, err
-			}
-			out[k] = w
-		}
-		return out, nil
+		return c.walkMap(val)
 	case []interface{}:
-		out := make([]interface{}, len(val))
-		for i, item := range val {
-			w, err := c.walk(item)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = w
-		}
-		return out, nil
+		return c.walkSlice(val)
 	default:
 		return val, nil
 	}
 }
 
+// walkMap interpolates every value of an object, preserving unknown keys.
+func (c templateContext) walkMap(val map[string]interface{}) (interface{}, error) {
+	out := make(map[string]interface{}, len(val))
+	for k, item := range val {
+		w, err := c.walk(item)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = w
+	}
+	return out, nil
+}
+
+// walkSlice interpolates every element of an array, preserving its order.
+func (c templateContext) walkSlice(val []interface{}) (interface{}, error) {
+	out := make([]interface{}, len(val))
+	for i, item := range val {
+		w, err := c.walk(item)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = w
+	}
+	return out, nil
+}
+
 func (c templateContext) lookup(expr string) (interface{}, bool) {
-	switch expr {
-	case "new_id":
-		return c.childID, true
-	case "now":
-		return c.now, true
+	if val, ok := c.lookupBuiltin(expr); ok {
+		return val, true
 	}
 	path := expr
 	if !strings.HasPrefix(path, "$.") {
@@ -490,35 +518,48 @@ func (c templateContext) lookup(expr string) (interface{}, bool) {
 	return val, true
 }
 
+// lookupBuiltin resolves the template variables that do not come from event data.
+func (c templateContext) lookupBuiltin(expr string) (interface{}, bool) {
+	switch expr {
+	case "new_id":
+		return c.childID, true
+	case "now":
+		return c.now, true
+	}
+	return nil, false
+}
+
 func (c templateContext) expand(s string) (interface{}, error) {
 	if !strings.Contains(s, "{{") {
 		return s, nil
 	}
 	if m := templatePlaceholder.FindStringSubmatch(s); m != nil && m[0] == s {
-		// Exact single placeholder - preserve type
-		val, ok := c.lookup(m[1])
-		if !ok {
-			return nil, fmt.Errorf("unresolved template variable: %s", m[1])
-		}
-		return val, nil
+		return c.expandExact(m[1])
 	}
-	// Embedded placeholders - must all resolve to strings
+	return c.expandEmbedded(s)
+}
+
+// expandExact resolves a placeholder that makes up the entire string,
+// preserving the JSON type of the resolved value.
+func (c templateContext) expandExact(expr string) (interface{}, error) {
+	val, ok := c.lookup(expr)
+	if !ok {
+		return nil, fmt.Errorf("unresolved template variable: %s", expr)
+	}
+	return val, nil
+}
+
+// expandEmbedded renders placeholders embedded in a longer string: every
+// placeholder must resolve and non-string values are JSON-encoded.
+func (c templateContext) expandEmbedded(s string) (interface{}, error) {
 	var unresolved bool
 	result := templatePlaceholder.ReplaceAllStringFunc(s, func(match string) string {
-		val, ok := c.lookup(templatePlaceholder.FindStringSubmatch(match)[1])
+		rendered, ok := c.renderPlaceholder(match)
 		if !ok {
 			unresolved = true
 			return ""
 		}
-		if str, isStr := val.(string); isStr {
-			return str
-		}
-		encoded, err := json.Marshal(val)
-		if err != nil {
-			unresolved = true
-			return ""
-		}
-		return string(encoded)
+		return rendered
 	})
 	if unresolved {
 		return nil, fmt.Errorf("unresolved template variable in: %s", s)
@@ -526,30 +567,52 @@ func (c templateContext) expand(s string) (interface{}, error) {
 	return result, nil
 }
 
+// renderPlaceholder resolves one embedded placeholder; ok=false reports an
+// unresolved variable or a value that cannot be JSON-encoded.
+func (c templateContext) renderPlaceholder(match string) (string, bool) {
+	val, ok := c.lookup(templatePlaceholder.FindStringSubmatch(match)[1])
+	if !ok {
+		return "", false
+	}
+	if str, isStr := val.(string); isStr {
+		return str, true
+	}
+	encoded, err := json.Marshal(val)
+	if err != nil {
+		return "", false
+	}
+	return string(encoded), true
+}
+
 func (e *Evaluator) buildEffect(revision *domain.RuleRevision, event *domain.EventEnvelope, ruleID string, actionIndex int, action domain.Action) (domain.Effect, error) {
-	effect := domain.Effect{
+	effect, err := e.applyActionEffect(baseEffect(revision, event, ruleID, actionIndex), event, ruleID, actionIndex, action)
+	if err != nil {
+		return domain.Effect{}, err
+	}
+	effect.CreatedAt = e.clock.Now()
+	return effect, nil
+}
+
+// baseEffect creates the effect shell with its deterministic effect ID.
+func baseEffect(revision *domain.RuleRevision, event *domain.EventEnvelope, ruleID string, actionIndex int) domain.Effect {
+	return domain.Effect{
 		ID:          domain.ComputeEffectID(event.TenantID, event.ID, revision.RuleID, revision.Revision, ruleID, actionIndex),
 		ExecutionID: "",
 	}
+}
+
+// applyActionEffect dispatches on the action payload to build the effect body.
+func (e *Evaluator) applyActionEffect(effect domain.Effect, event *domain.EventEnvelope, ruleID string, actionIndex int, action domain.Action) (domain.Effect, error) {
 	switch {
 	case action.Emit != nil:
-		effect = e.buildEmitEffect(effect, action.Emit)
+		return e.buildEmitEffect(effect, action.Emit), nil
 	case action.EmitEvent != nil:
-		var err error
-		effect, err = e.buildEmitEventEffect(effect, event, ruleID, actionIndex, action.EmitEvent)
-		if err != nil {
-			return domain.Effect{}, err
-		}
+		return e.buildEmitEventEffect(effect, event, ruleID, actionIndex, action.EmitEvent)
 	case action.ScheduleEvent != nil:
-		var err error
-		effect, err = e.buildScheduleEventEffect(effect, event, ruleID, actionIndex, action.ScheduleEvent)
-		if err != nil {
-			return domain.Effect{}, err
-		}
+		return e.buildScheduleEventEffect(effect, event, ruleID, actionIndex, action.ScheduleEvent)
 	case action.Command != nil:
-		effect = buildCommandEffect(effect, action.Command)
+		return buildCommandEffect(effect, action.Command), nil
 	}
-	effect.CreatedAt = e.clock.Now()
 	return effect, nil
 }
 
@@ -569,110 +632,154 @@ func buildCommandEffect(effect domain.Effect, action *domain.CommandAction) doma
 	return effect
 }
 
-func (e *Evaluator) buildEmitEventEffect(
-	effect domain.Effect,
-	event *domain.EventEnvelope,
-	ruleID string,
-	actionIndex int,
-	action *domain.EmitEventAction,
-) (domain.Effect, error) {
+// childEventInputs carries the resolved identity, routing and payload shared
+// by emit_event and schedule_event child-event actions.
+type childEventInputs struct {
+	childID      string
+	partitionKey string
+	data         json.RawMessage
+}
+
+// resolveChildEventInputs computes the deterministic child event ID, resolves
+// the partition key and interpolates the child payload templates. The
+// interpolation error is wrapped with interpLabel to preserve each action's
+// error wording.
+func (e *Evaluator) resolveChildEventInputs(event *domain.EventEnvelope, ruleID string, actionIndex int, keyAction *domain.EmitEventAction, data json.RawMessage, interpLabel string) (childEventInputs, error) {
 	childID := domain.ComputeChildEventID(event.TenantID, event.ID, ruleID, actionIndex)
-	partitionKey, err := resolveEmitEventPartitionKey(action, event)
+	partitionKey, err := resolveEmitEventPartitionKey(keyAction, event)
+	if err != nil {
+		return childEventInputs{}, err
+	}
+	childData, err := interpolateTemplates(data, event, childID, e.clock)
+	if err != nil {
+		return childEventInputs{}, fmt.Errorf("%s: %w", interpLabel, err)
+	}
+	return childEventInputs{childID: childID, partitionKey: partitionKey, data: childData}, nil
+}
+
+func (e *Evaluator) buildEmitEventEffect(effect domain.Effect, event *domain.EventEnvelope, ruleID string, actionIndex int, action *domain.EmitEventAction) (domain.Effect, error) {
+	inputs, err := e.resolveChildEventInputs(event, ruleID, actionIndex, action, action.Data, "interpolate templates")
 	if err != nil {
 		return domain.Effect{}, err
 	}
-
-	childData, err := interpolateTemplates(action.Data, event, childID, e.clock)
-	if err != nil {
-		return domain.Effect{}, fmt.Errorf("interpolate templates: %w", err)
-	}
-	child := buildChildEventEnvelope(event, action, childID, partitionKey, childData, e.clock.Now())
+	child := buildChildEventEnvelope(event, action, inputs.childID, inputs.partitionKey, inputs.data, e.clock.Now())
 	encoded, err := json.Marshal(child)
 	if err != nil {
 		return domain.Effect{}, fmt.Errorf("marshal child event: %w", err)
 	}
+	return applyChildEventEffect(effect, child, encoded), nil
+}
 
+// applyChildEventEffect sets the emit_event effect fields from the encoded child envelope.
+func applyChildEventEffect(effect domain.Effect, child domain.EventEnvelope, encoded json.RawMessage) domain.Effect {
 	effect.EffectType = domain.EffectTypeEmitEvent
 	effect.Destination = "events." + child.Type
 	effect.Name = child.Type
 	effect.Payload = encoded
-	return effect, nil
+	return effect
 }
 
-func (e *Evaluator) buildScheduleEventEffect(
-	effect domain.Effect,
-	event *domain.EventEnvelope,
-	ruleID string,
-	actionIndex int,
-	action *domain.ScheduleEventAction,
-) (domain.Effect, error) {
-	if action.DelaySeconds < 1 || action.DelaySeconds > domain.MaxScheduledDelaySeconds {
-		return domain.Effect{}, fmt.Errorf("scheduled event delay must be between 1 and %d seconds", domain.MaxScheduledDelaySeconds)
+// buildScheduleEventEffect validates the delay, resolves the child inputs and
+// encodes the durable scheduled-event intent.
+func (e *Evaluator) buildScheduleEventEffect(effect domain.Effect, event *domain.EventEnvelope, ruleID string, actionIndex int, action *domain.ScheduleEventAction) (domain.Effect, error) {
+	if err := validateScheduleDelay(action.DelaySeconds); err != nil {
+		return domain.Effect{}, err
 	}
-	childID := domain.ComputeChildEventID(event.TenantID, event.ID, ruleID, actionIndex)
-	partitionKey, err := resolveEmitEventPartitionKey(&domain.EmitEventAction{
-		PartitionKey: action.PartitionKey, PartitionKeyPolicy: action.PartitionKeyPolicy,
-		PartitionKeyPath: action.PartitionKeyPath,
-	}, event)
+	keyAction := schedulePartitionKeyAction(action)
+	inputs, err := e.resolveChildEventInputs(event, ruleID, actionIndex, keyAction, action.Data, "interpolate scheduled event templates")
 	if err != nil {
 		return domain.Effect{}, err
 	}
-	childData, err := interpolateTemplates(action.Data, event, childID, e.clock)
+	payload, err := json.Marshal(buildScheduledEvent(event, action, inputs, e.clock.Now().UTC()))
 	if err != nil {
-		return domain.Effect{}, fmt.Errorf("interpolate scheduled event templates: %w", err)
+		return domain.Effect{}, fmt.Errorf("marshal scheduled event intent: %w", err)
 	}
-	now := e.clock.Now().UTC()
-	scheduled := domain.ScheduledEvent{
-		EventID: childID, TenantID: event.TenantID, EventType: action.Type,
-		PartitionKey: partitionKey, WorkflowID: event.WorkflowID, Payload: childData,
+	return applyScheduledEventEffect(effect, action.Type, payload), nil
+}
+
+// validateScheduleDelay rejects delays outside the supported window.
+func validateScheduleDelay(delaySeconds int64) error {
+	if delaySeconds < 1 || delaySeconds > domain.MaxScheduledDelaySeconds {
+		return fmt.Errorf("scheduled event delay must be between 1 and %d seconds", domain.MaxScheduledDelaySeconds)
+	}
+	return nil
+}
+
+// schedulePartitionKeyAction adapts a schedule_event action's routing fields to
+// the shared partition-key policy validation.
+func schedulePartitionKeyAction(action *domain.ScheduleEventAction) *domain.EmitEventAction {
+	return &domain.EmitEventAction{
+		PartitionKey: action.PartitionKey, PartitionKeyPolicy: action.PartitionKeyPolicy, PartitionKeyPath: action.PartitionKeyPath,
+	}
+}
+
+// buildScheduledEvent assembles the pending scheduled-event intent with its
+// deterministic child identity and parent/scheduling headers.
+func buildScheduledEvent(event *domain.EventEnvelope, action *domain.ScheduleEventAction, inputs childEventInputs, now time.Time) domain.ScheduledEvent {
+	return domain.ScheduledEvent{
+		EventID: inputs.childID, TenantID: event.TenantID, EventType: action.Type,
+		PartitionKey: inputs.partitionKey, WorkflowID: event.WorkflowID, Payload: inputs.data,
 		Headers: map[string]string{
 			"flowrulz_parent_event_id":    event.ID,
-			"flowrulz_scheduled_event_id": childID,
+			"flowrulz_scheduled_event_id": inputs.childID,
 			"flowrulz_correlation_id":     event.CorrelationID,
 		},
 		ScheduledAt: now.Add(time.Duration(action.DelaySeconds) * time.Second),
 		Status:      domain.ScheduledEventStatusPending, CreatedAt: now,
 	}
-	payload, err := json.Marshal(scheduled)
-	if err != nil {
-		return domain.Effect{}, fmt.Errorf("marshal scheduled event intent: %w", err)
-	}
+}
+
+// applyScheduledEventEffect sets the schedule_event effect fields.
+func applyScheduledEventEffect(effect domain.Effect, actionType string, payload json.RawMessage) domain.Effect {
 	effect.EffectType = domain.EffectTypeScheduleEvent
 	effect.Destination = "scheduled_events"
-	effect.Name = action.Type
+	effect.Name = actionType
 	effect.Payload = payload
-	return effect, nil
+	return effect
 }
 
 func resolveEmitEventPartitionKey(action *domain.EmitEventAction, event *domain.EventEnvelope) (string, error) {
-	partitionKey := action.PartitionKey
-	policy := action.PartitionKeyPolicy
-	if policy == "" {
-		policy = domain.PartitionKeyPolicyExplicit
-	}
-	switch policy {
-	case domain.PartitionKeyPolicyInherit:
-		partitionKey = event.PartitionKey
-	case domain.PartitionKeyPolicyFromData:
-		if action.PartitionKeyPath != "" {
-			value, err := resolvePath(action.PartitionKeyPath, event.Data, nil)
-			if err != nil {
-				return "", fmt.Errorf("resolve partition key from path %s: %w", action.PartitionKeyPath, err)
-			}
-			if value == nil {
-				return "", fmt.Errorf("resolve partition key from path %s: value is missing", action.PartitionKeyPath)
-			}
-			pk, err := formatPartitionKeyValue(value)
-			if err != nil {
-				return "", err
-			}
-			partitionKey = pk
-		}
+	partitionKey, policy, err := resolvePartitionKeyRouting(action, event)
+	if err != nil {
+		return "", err
 	}
 	if partitionKey == "" {
 		return "", fmt.Errorf("partition key resolution resulted in empty value for policy %s", policy)
 	}
 	return partitionKey, nil
+}
+
+// resolvePartitionKeyRouting applies the partition-key policy (defaulting an
+// empty policy to explicit) and returns the effective key with its policy.
+func resolvePartitionKeyRouting(action *domain.EmitEventAction, event *domain.EventEnvelope) (string, domain.PartitionKeyPolicy, error) {
+	policy := effectivePartitionKeyPolicy(action.PartitionKeyPolicy)
+	key := action.PartitionKey
+	switch policy {
+	case domain.PartitionKeyPolicyInherit:
+		key = event.PartitionKey
+	case domain.PartitionKeyPolicyFromData:
+		if action.PartitionKeyPath != "" {
+			fromData, err := partitionKeyFromDataPath(action.PartitionKeyPath, event)
+			if err != nil {
+				return "", policy, err
+			}
+			key = fromData
+		}
+	}
+	return key, policy, nil
+}
+
+// partitionKeyFromDataPath resolves a partition key from event data and
+// formats it as a plain decimal/string key.
+func partitionKeyFromDataPath(path string, event *domain.EventEnvelope) (string, error) {
+	value, err := resolvePath(path, event.Data, nil)
+	if err != nil {
+		return "", fmt.Errorf("resolve partition key from path %s: %w", path, err)
+	}
+	if value == nil {
+		return "", fmt.Errorf("resolve partition key from path %s: value is missing", path)
+	}
+	return formatPartitionKeyValue(value)
 }
 
 // formatPartitionKeyValue formats a value as a partition key string.
@@ -683,33 +790,35 @@ func formatPartitionKeyValue(v interface{}) (string, error) {
 	case string:
 		return t, nil
 	case json.Number:
-		// json.Number preserves the original decimal representation
-		// Reject floats (numbers with decimal point or exponent)
-		if strings.ContainsAny(t.String(), ".eE") {
-			return "", fmt.Errorf("partition key must be an integer, got float %s", t.String())
-		}
-		return t.String(), nil
+		return formatJSONNumberPartitionKey(t)
 	case int64:
 		return strconv.FormatInt(t, 10), nil
 	case float64:
-		// Should not happen with UseNumber, but handle defensively
-		if t == float64(int64(t)) {
-			return strconv.FormatInt(int64(t), 10), nil
-		}
-		return "", fmt.Errorf("partition key must be an integer, got float %v", t)
+		return formatFloatPartitionKey(t)
 	default:
 		return "", fmt.Errorf("partition key must be string or integer, got %T", v)
 	}
 }
 
-func buildChildEventEnvelope(
-	parent *domain.EventEnvelope,
-	action *domain.EmitEventAction,
-	childID string,
-	partitionKey string,
-	data json.RawMessage,
-	occurredAt time.Time,
-) domain.EventEnvelope {
+// formatJSONNumberPartitionKey keeps json.Number's original decimal
+// representation and rejects floats (numbers with a decimal point or exponent).
+func formatJSONNumberPartitionKey(t json.Number) (string, error) {
+	if strings.ContainsAny(t.String(), ".eE") {
+		return "", fmt.Errorf("partition key must be an integer, got float %s", t.String())
+	}
+	return t.String(), nil
+}
+
+// formatFloatPartitionKey accepts only float64 values that are exact integers;
+// it exists defensively because event data normally decodes to json.Number.
+func formatFloatPartitionKey(t float64) (string, error) {
+	if t == float64(int64(t)) {
+		return strconv.FormatInt(int64(t), 10), nil
+	}
+	return "", fmt.Errorf("partition key must be an integer, got float %v", t)
+}
+
+func buildChildEventEnvelope(parent *domain.EventEnvelope, action *domain.EmitEventAction, childID string, partitionKey string, data json.RawMessage, occurredAt time.Time) domain.EventEnvelope {
 	return domain.EventEnvelope{
 		ID: childID, Type: action.Type, TenantID: parent.TenantID,
 		PartitionKey: partitionKey, WorkflowID: parent.WorkflowID,

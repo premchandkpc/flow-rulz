@@ -544,7 +544,9 @@ func (c *Consumer) ConsumeOrderCreate(ctx context.Context, maxMessages int, shar
 // Compile-time assertions keep the adapter aligned with consumer-owned contracts.
 var _ ports.EventConsumer = (*Consumer)(nil)
 var _ ports.ShardedConsumer = (*Consumer)(nil)
+var _ ports.EventPublisher = (*Consumer)(nil)
 var _ ports.OrderEventBroker = (*Consumer)(nil)
+var _ ports.EventPublisher = (*Publisher)(nil)
 var _ ports.SubjectPublisher = (*Publisher)(nil)
 
 // Publish is the generic adapter-level primitive that implements ports.BrokerPublisher.

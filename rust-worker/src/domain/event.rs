@@ -51,7 +51,8 @@ impl EventEnvelope {
         if self.payload.len() > max_payload_bytes {
             return Err("event payload exceeds configured limit".into());
         }
-        serde_json::from_slice::<serde_json::Value>(&self.payload).map_err(|_| "event payload must be valid JSON".to_string())?;
+        serde_json::from_slice::<serde_json::Value>(&self.payload)
+            .map_err(|_| "event payload must be valid JSON".to_string())?;
         Ok(())
     }
 }

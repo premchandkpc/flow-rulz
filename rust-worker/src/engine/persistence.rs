@@ -1,46 +1,82 @@
 //! Transactional persistence for event processing.
 use super::EventEnvelope;
 use super::rules::{Effect, RuleRevision};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value;
-use sqlx::{Postgres, Transaction, Row};
+use sqlx::{Postgres, Row, Transaction};
 
-pub(super) async fn assert_lease(tx: &mut Transaction<'_, Postgres>, shard: u32, owner: &str, token: i64) -> Result<()> {
+pub(super) async fn assert_lease(
+    tx: &mut Transaction<'_, Postgres>,
+    shard: u32,
+    owner: &str,
+    token: i64,
+) -> Result<()> {
     let row = sqlx::query(
         "SELECT fencing_token, expires_at > NOW() AS active FROM shard_leases \
-         WHERE virtual_shard=$1 AND owner=$2 FOR SHARE"
-    ).bind(i32::try_from(shard)?).bind(owner).fetch_optional(&mut **tx).await?
-     .ok_or_else(|| anyhow!("shard lease is not held by this worker"))?;
+         WHERE virtual_shard=$1 AND owner=$2 FOR SHARE",
+    )
+    .bind(i32::try_from(shard)?)
+    .bind(owner)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| anyhow!("shard lease is not held by this worker"))?;
     let current: i64 = row.try_get("fencing_token")?;
     let active: bool = row.try_get("active")?;
-    if !active || token <= 0 || current != token { bail!("shard lease expired or fencing token mismatch"); }
+    if !active || token <= 0 || current != token {
+        bail!("shard lease expired or fencing token mismatch");
+    }
     Ok(())
 }
 
-pub(super) async fn insert_inbox(tx: &mut Transaction<'_, Postgres>, event: &EventEnvelope) -> Result<bool> {
+pub(super) async fn insert_inbox(
+    tx: &mut Transaction<'_, Postgres>,
+    event: &EventEnvelope,
+) -> Result<bool> {
     let affected = sqlx::query(
         "INSERT INTO inbox (tenant_id,event_id,status,first_seen_at,partition_key,rule_set,payload) \
-         VALUES ($1,$2,'processing',NOW(),$3,$4,$5) ON CONFLICT (tenant_id,event_id) DO NOTHING"
+         SELECT $1,$2,'processing',NOW(),$3,$4,$5 \
+         WHERE NOT EXISTS (SELECT 1 FROM inbox WHERE tenant_id=$1 AND event_id=$2 AND rule_set='') \
+         ON CONFLICT (tenant_id,event_id,rule_set) DO NOTHING"
     ).bind(&event.tenant_id).bind(&event.id).bind(&event.partition_key)
      .bind(&event.event_type).bind(&event.data).execute(&mut **tx).await
      .context("insert inbox row")?.rows_affected();
     Ok(affected == 1)
 }
 
-pub(super) async fn load_duplicate_execution(tx: &mut Transaction<'_, Postgres>, event: &EventEnvelope) -> Result<String> {
-    let execution_id: Option<String> = sqlx::query_scalar(
-        "SELECT execution_id FROM inbox WHERE tenant_id=$1 AND event_id=$2"
-    ).bind(&event.tenant_id).bind(&event.id).fetch_optional(&mut **tx).await?.flatten();
+pub(super) async fn load_duplicate_execution(
+    tx: &mut Transaction<'_, Postgres>,
+    event: &EventEnvelope,
+) -> Result<String> {
+    let execution_id: Option<String> =
+        sqlx::query_scalar("SELECT execution_id FROM inbox WHERE tenant_id=$1 AND event_id=$2 AND rule_set=$3 AND status='committed'")
+            .bind(&event.tenant_id)
+            .bind(&event.id)
+            .bind(&event.event_type)
+            .fetch_optional(&mut **tx)
+            .await?
+            .flatten();
     let Some(execution_id) = execution_id else {
         bail!("inbox duplicate has no committed execution; refusing unsafe acknowledgement");
     };
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM executions WHERE execution_id=$1)")
-        .bind(&execution_id).fetch_one(&mut **tx).await?;
-    if !exists { bail!("inbox points to missing execution; refusing unsafe acknowledgement"); }
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM executions WHERE execution_id=$1 AND tenant_id=$2 AND event_id=$3 AND rule_set=$4)",
+    )
+    .bind(&execution_id)
+    .bind(&event.tenant_id)
+    .bind(&event.id)
+    .bind(&event.event_type)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !exists {
+        bail!("inbox points to missing execution; refusing unsafe acknowledgement");
+    }
     Ok(execution_id)
 }
 
-pub(super) async fn load_active_revision(tx: &mut Transaction<'_, Postgres>, event: &EventEnvelope) -> Result<RuleRevision> {
+pub(super) async fn load_active_revision(
+    tx: &mut Transaction<'_, Postgres>,
+    event: &EventEnvelope,
+) -> Result<RuleRevision> {
     let row = sqlx::query(
         "SELECT r.tenant_scope,r.rule_id,r.revision,r.content_hash,r.match_mode,r.input_contract,r.compiled \
          FROM rule_revisions r JOIN rule_activations a \
@@ -56,17 +92,22 @@ pub(super) async fn load_active_revision(tx: &mut Transaction<'_, Postgres>, eve
         revision: row.try_get("revision")?,
         content_hash: row.try_get("content_hash")?,
         match_mode: row.try_get("match_mode")?,
-        input_contract: row.try_get::<Option<Value>, _>("input_contract")?
+        input_contract: row
+            .try_get::<Option<Value>, _>("input_contract")?
             .map(serde_json::from_value)
             .transpose()
             .context("decode rule input contract")?,
-        compiled: serde_json::from_value(row.try_get::<Value, _>("compiled")?).context("decode compiled rule set")?,
+        compiled: serde_json::from_value(row.try_get::<Value, _>("compiled")?)
+            .context("decode compiled rule set")?,
     })
 }
 
 pub(super) async fn persist_execution(
-    tx: &mut Transaction<'_, Postgres>, execution_id: &str, event: &EventEnvelope,
-    revision: &RuleRevision, decision_hash: &str,
+    tx: &mut Transaction<'_, Postgres>,
+    execution_id: &str,
+    event: &EventEnvelope,
+    revision: &RuleRevision,
+    decision_hash: &str,
 ) -> Result<()> {
     sqlx::query(
         "INSERT INTO executions (execution_id,event_id,tenant_id,rule_set,revision,decision_hash,status,created_at,completed_at) \
@@ -76,7 +117,11 @@ pub(super) async fn persist_execution(
     Ok(())
 }
 
-pub(super) async fn persist_outbox_effects(tx: &mut Transaction<'_, Postgres>, execution_id: &str, effects: &[Effect]) -> Result<()> {
+pub(super) async fn persist_outbox_effects(
+    tx: &mut Transaction<'_, Postgres>,
+    execution_id: &str,
+    effects: &[Effect],
+) -> Result<()> {
     for effect in effects {
         sqlx::query(
             "INSERT INTO outbox_effects (effect_id,execution_id,tenant_id,destination,name,payload,effect_type,status,attempts,max_attempts,available_at,created_at,updated_at) \
@@ -88,11 +133,17 @@ pub(super) async fn persist_outbox_effects(tx: &mut Transaction<'_, Postgres>, e
     Ok(())
 }
 
-pub(super) async fn mark_inbox_committed(tx: &mut Transaction<'_, Postgres>, event: &EventEnvelope, execution_id: &str) -> Result<()> {
+pub(super) async fn mark_inbox_committed(
+    tx: &mut Transaction<'_, Postgres>,
+    event: &EventEnvelope,
+    execution_id: &str,
+) -> Result<()> {
     let affected = sqlx::query(
-        "UPDATE inbox SET status='committed',execution_id=$3,committed_at=NOW() WHERE tenant_id=$1 AND event_id=$2 AND status='processing'"
-    ).bind(&event.tenant_id).bind(&event.id).bind(execution_id).execute(&mut **tx).await
+        "UPDATE inbox SET status='committed',execution_id=$4,committed_at=NOW() WHERE tenant_id=$1 AND event_id=$2 AND rule_set=$3 AND status='processing'"
+    ).bind(&event.tenant_id).bind(&event.id).bind(&event.event_type).bind(execution_id).execute(&mut **tx).await
      .context("mark inbox committed")?.rows_affected();
-    if affected != 1 { bail!("inbox commit transition affected {affected} rows"); }
+    if affected != 1 {
+        bail!("inbox commit transition affected {affected} rows");
+    }
     Ok(())
 }

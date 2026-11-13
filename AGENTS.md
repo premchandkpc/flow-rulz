@@ -47,6 +47,38 @@ FlowRulz is a Go event-driven rules runtime. The root Go module contains the API
 
 ### Event lifecycle
 
+The Rust broker path selects `WORKER_MODE=broker` in `rust-worker/src/main.rs`.
+Its `broker_config.rs` validates optional transports, `broker_runtime.rs` composes
+them, `runtime/broker.rs` owns retained state, and `application/broker.rs` owns
+operation and rule-processing policy. Adapters implement the shared protocol v1
+from `ports/broker.rs`. Local rules reuse `engine/rules.rs` via `engine/local.rs`.
+`rust-worker/tests/broker_protocol.py` tests real-process transport combinations,
+Go/Rust interoperability and forced-kill snapshot recovery. Keep these broker
+checks distinct from unverified PostgreSQL-runtime parity and cluster failover.
+
+Opt-in `WORKER_MODE=broker` hosts the broker and local-rule worker inside one
+process. `internal/runtime/broker` owns retained topic partitions, group offsets,
+capacity and receipt fencing. `internal/adapters/brokerstore` owns optional local
+snapshots, `internal/adapters/http/broker` owns external publish/consume/settlement,
+and `internal/adapters/embedded` implements the existing worker transport ports.
+`internal/ports/broker_protocol.go` defines the versioned request/response contract,
+and `internal/services/broker` owns shared operation/authentication policy.
+HTTP, `internal/adapters/tcp` and `internal/adapters/nats/broker.go` adapt that same
+contract. `cmd/worker/broker_transports.go` selects enabled ingress and a local or
+remote output publisher. `internal/adapters/remote` shares peer publication policy
+through `ports.BrokerCaller`; core services must not import transport clients.
+`cmd/worker/broker.go` composes this path. See `docs/embedded-broker.md` for its
+single-instance, at-least-once and memory/file persistence limits. Do not apply
+database transactional-outbox or cluster-failover guarantees to this mode.
+
+This lifecycle describes the default `WORKER_MODE=durable`. Opt-in `direct` mode
+uses local JSON rules and a shared NATS consumer without database, inbox/outbox,
+leases, scheduler or per-key queue. It publishes before ACK and can repeat outputs.
+See `docs/direct-worker.md`; do not apply durable-mode guarantees to direct mode.
+`cmd/worker/direct.go` owns direct composition/file loading,
+`internal/application/direct.go` owns evaluation and settlement, and
+`internal/adapters/nats/direct.go` owns shared broker consumption.
+
 1. A producer creates the shared `internal/domain.EventEnvelope` and publishes to the NATS JetStream subject family `events.shard.N`.
 2. Shard selection uses the shared tenant/partition-key algorithm and configured shard count. Never implement a competing hash or routing scheme.
 3. Workers acquire shard leases and fencing tokens, then consume only the shards they own.
@@ -119,14 +151,14 @@ This map explains responsibility; it is not a requirement to make the directory 
 | Path | Responsibility |
 |---|---|
 | `internal/adapters/http/` | HTTP routing, handlers, middleware and request/response translation |
-| `internal/adapters/nats/` | NATS/JetStream connection, subject mapping, message conversion and ACK/NAK; `event_publisher.go` maps `ports.EventPublisher` envelopes to configured shards |
+| `internal/adapters/nats/` | NATS/JetStream connection, subject mapping, message conversion and ACK/NAK |
 | `internal/adapters/postgres/` | SQL repositories, transactions and driver-specific behavior |
 | `internal/adapters/mongo/` | Mongo repositories, BSON conversion, indexes and driver-specific behavior |
 | `internal/adapters/cache/` | Cache implementation |
 | `internal/adapters/effects/` | External effect delivery and development/test destinations |
-| `sdk/go/`, `sdk/go/flowrulz/` | Separate Go SDK modules |
+| `sdk/go/`, `sdk/go/flowrule/` | Separate Go SDK modules |
 | `domains/<domain>/` (`banking`, `ecommerce`, `food-delivery`) | Domain specification: `contracts/`, `rules/`, `workflows/` YAML, `deploy.sh`, and generated per-language code in `builds/<lang>/` (currently `builds/go`, a separate Go module) |
-| `examples/ecommerce/`, `examples/banking/`, `examples/food-delivery/` | Sample producer/consumer services that import `domains/<domain>/builds/go` and `sdk/go/flowrulz` |
+| `examples/ecommerce/`, `examples/banking/`, `examples/food-delivery/` | Sample producer/consumer services that import `domains/<domain>/builds/go` and `sdk/go/flowrule` |
 | `examples/random-producer/` | Opt-in producer using existing domain contracts |
 | `tests/` | Root test suites; inspect whether each uses mocks, in-memory storage or live services |
 
@@ -258,7 +290,7 @@ When their code or shared contracts are affected:
 
 ```sh
 (cd sdk/go && go test -race -count=1 ./...)
-(cd sdk/go/flowrulz && go test -race -count=1 ./...)
+(cd sdk/go/flowrule && go test -race -count=1 ./...)
 (cd examples/banking && go test -race -count=1 ./...)
 (cd examples/ecommerce && go test -race -count=1 ./...)
 (cd examples/food-delivery && go test -race -count=1 ./...)
@@ -424,7 +456,7 @@ Whenever a contract, configuration option, service or runtime behavior changes, 
 
 ### 12.2 Function decomposition, logical chunks and file structure
 
-Functions should read like a short, understandable explanation of one operation. Split by **responsibility and control-flow meaning**, not by an arbitrary line count.
+Functions should read like a short, understandable explanation of one operation. Split by **responsibility and control-flow meaning**, rather than creating trivial wrappers to meet an arbitrary line count. Go lint flags production functions over 100 lines or 80 statements as a coarse review guard; tests may keep their setup and assertions together. Update generators and verify their output when changing generated functions.
 
 #### How to decompose a function
 
@@ -447,7 +479,7 @@ Functions should read like a short, understandable explanation of one operation.
 
 #### Function size and abstraction quality
 
-- Large functions are a **review signal**, not an automatic mandate to split. Assess cognitive load, number of responsibilities, nested branching, repeated logic, side effects and difficulty testing before deciding.
+- Treat function size as a review signal. Use cohesive validation, transformation, I/O and orchestration boundaries, and consider cognitive load, nesting, side effects and testability.
 - Do not split every few lines into a one-line wrapper, create a chain of trivial functions, or extract a helper whose name merely restates the next statement. That increases navigation cost without improving cohesion.
 - Do not keep a long function intact merely to avoid adding a helper. If a reviewer must hold validation, domain policy, I/O, retries and response mapping in working memory at once, separate the meaningful phases.
 - Avoid boolean mode flags and many optional parameters when they make a helper's behavior ambiguous. Prefer separate cohesive operations or a small typed input when that clarifies a real multi-field contract.

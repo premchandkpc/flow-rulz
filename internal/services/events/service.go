@@ -4,7 +4,6 @@ package events
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/flowrulz/flow-rulz/internal/domain"
 	"github.com/flowrulz/flow-rulz/internal/ports"
@@ -33,13 +32,9 @@ func NewService(
 	newRepos ports.EventTxRepositoryFactory,
 ) *Service {
 	return &Service{
-		compiler:   compiler,
-		evaluator:  evaluator,
-		quarantine: quarantine,
-		clock:      clock,
-		beginTx:    beginTx,
-		newRepos:   newRepos,
-		revisions:  newImmutableRevisionCache(4096),
+		compiler: compiler, evaluator: evaluator, quarantine: quarantine,
+		clock: clock, beginTx: beginTx, newRepos: newRepos,
+		revisions: newImmutableRevisionCache(4096),
 	}
 }
 
@@ -54,335 +49,64 @@ func (s *Service) Process(ctx context.Context, envelope *domain.EventEnvelope, f
 	if err := envelope.Validate(); err != nil {
 		return nil, err
 	}
-	if envelope.Contract != nil {
-		if s.contracts == nil {
-			return nil, fmt.Errorf("event declares contract %s@%s but contract registry is not configured", envelope.Contract.Name, envelope.Contract.Version)
-		}
-		schema, err := s.contracts.Get(ctx, envelope.Contract.Name, envelope.Contract.Version)
-		if err != nil {
-			return nil, fmt.Errorf("resolve event contract: %w", err)
-		}
-		if schema == nil {
-			return nil, fmt.Errorf("event contract %s@%s not found", envelope.Contract.Name, envelope.Contract.Version)
-		}
-		if schema.Deprecated {
-			return nil, fmt.Errorf("event contract %s@%s is deprecated", schema.Name, schema.Version)
-		}
-		if err := schema.NormalizeAndValidate(); err != nil {
-			return nil, fmt.Errorf("invalid event contract: %w", err)
-		}
-		if envelope.Contract.SchemaHash == "" || envelope.Contract.SchemaHash != schema.SchemaHash {
-			return nil, fmt.Errorf("event contract schema hash mismatch for %s@%s", schema.Name, schema.Version)
-		}
-		if schema.Kind != domain.ContractKindEvent {
-			return nil, fmt.Errorf("contract %s@%s is not an event contract", schema.Name, schema.Version)
-		}
-		if err := schema.ValidatePayload(envelope.Data); err != nil {
-			return nil, fmt.Errorf("event payload violates contract %s@%s: %w", schema.Name, schema.Version, err)
-		}
+	if err := s.validateEventContract(ctx, envelope); err != nil {
+		return nil, err
 	}
-
 	// F1: Reject invalid fencing token (<= 0) for all shards including 0
 	if fencingToken <= 0 {
 		return nil, domain.ErrFencingTokenMismatch
 	}
-
 	return s.processInTransaction(ctx, envelope, fencingToken, shard, workerID)
 }
 
-// resolveRulesets determines which rulesets should process this event.
-// Returns a list of (ruleset, revision) pairs to process.
-func (s *Service) resolveRulesets(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope) ([]rulesetRevision, error) {
-	// If event has a contract, use bindings-based routing
-	if envelope.Contract != nil {
-		bindings, err := repos.Bindings.ListByContract(ctx, domain.DomainConfigurationScope, envelope.Contract.Name, envelope.Contract.Version)
-		if err != nil {
-			return nil, fmt.Errorf("list bindings: %w", err)
-		}
-
-		var result []rulesetRevision
-		for _, binding := range bindings {
-			// Verify contract hash matches
-			if binding.ContractHash != envelope.Contract.SchemaHash {
-				continue // Hash mismatch, skip this binding
-			}
-
-			// Check if ruleset has an active revision
-			activation, err := repos.Activations.Get(ctx, domain.DomainConfigurationScope, binding.RuleSet)
-			if err != nil {
-				return nil, fmt.Errorf("get activation for ruleset %s: %w", binding.RuleSet, err)
-			}
-			if activation == nil {
-				continue // No activation for this ruleset yet
-			}
-
-			revision, err := s.getRevision(ctx, repos.RuleRepo, domain.DomainConfigurationScope, binding.RuleSet, activation.Revision)
-			if err != nil {
-				return nil, fmt.Errorf("get active revision for ruleset %s: %w", binding.RuleSet, err)
-			}
-			if revision == nil {
-				continue // No active revision
-			}
-
-			// Enforce contract binding for this revision
-			if revision.InputContract != nil {
-				if envelope.Contract.Name != revision.InputContract.Name ||
-					envelope.Contract.Version != revision.InputContract.Version ||
-					envelope.Contract.SchemaHash != revision.InputContract.SchemaHash {
-					continue // Contract mismatch, skip
-				}
-			}
-
-			result = append(result, rulesetRevision{
-				RuleSet:  binding.RuleSet,
-				Revision: revision,
-				Priority: binding.Priority,
-			})
-		}
-
-		if len(result) > 0 {
-			// Sort by priority (highest first)
-			sort.Slice(result, func(i, j int) bool {
-				return result[i].Priority > result[j].Priority
-			})
-			return result, nil
-		}
-		// No bindings matched - fall through to legacy routing
+// validateEventContract enforces the declared event contract when the envelope
+// carries one; envelopes without a contract pass unchanged.
+func (s *Service) validateEventContract(ctx context.Context, envelope *domain.EventEnvelope) error {
+	if envelope.Contract == nil {
+		return nil
 	}
-
-	// Legacy routing: event type directly maps to ruleset
-	ruleSet := envelope.Type
-	activation, err := repos.Activations.Get(ctx, domain.DomainConfigurationScope, ruleSet)
+	schema, err := s.resolveEventContractSchema(ctx, envelope)
 	if err != nil {
-		return nil, fmt.Errorf("get activation: %w", err)
+		return err
 	}
-	if activation == nil {
-		return nil, domain.ErrRuleNotReady
+	if schema.Deprecated {
+		return fmt.Errorf("event contract %s@%s is deprecated", schema.Name, schema.Version)
 	}
-
-	revision, err := s.getRevision(ctx, repos.RuleRepo, domain.DomainConfigurationScope, ruleSet, activation.Revision)
-	if err != nil {
-		return nil, fmt.Errorf("get active revision: %w", err)
+	if err := schema.NormalizeAndValidate(); err != nil {
+		return fmt.Errorf("invalid event contract: %w", err)
 	}
-	if revision == nil {
-		return nil, domain.ErrRuleNotFound
-	}
-
-	// Enforce contract binding
-	if revision.InputContract != nil {
-		if envelope.Contract == nil {
-			return nil, fmt.Errorf("%w: rule revision %s requires contract %s@%s (hash: %s)",
-				domain.ErrContractRequired, revision.RuleID, revision.InputContract.Name, revision.InputContract.Version, revision.InputContract.SchemaHash)
-		}
-		if envelope.Contract.Name != revision.InputContract.Name ||
-			envelope.Contract.Version != revision.InputContract.Version ||
-			envelope.Contract.SchemaHash != revision.InputContract.SchemaHash {
-			return nil, fmt.Errorf("%w: event contract %s@%s (hash: %s) does not match rule revision %s required contract %s@%s (hash: %s)",
-				domain.ErrContractMismatch,
-				envelope.Contract.Name, envelope.Contract.Version, envelope.Contract.SchemaHash,
-				revision.RuleID,
-				revision.InputContract.Name, revision.InputContract.Version, revision.InputContract.SchemaHash)
-		}
-	}
-
-	return []rulesetRevision{{RuleSet: ruleSet, Revision: revision, Priority: 0}}, nil
+	return validateEventPayload(schema, envelope)
 }
 
-type rulesetRevision struct {
-	RuleSet  string
-	Revision *domain.RuleRevision
-	Priority int
+// resolveEventContractSchema resolves the declared contract from the registry
+// and rejects a missing registry, a failed lookup or an absent schema.
+func (s *Service) resolveEventContractSchema(ctx context.Context, envelope *domain.EventEnvelope) (*domain.ContractSchema, error) {
+	if s.contracts == nil {
+		return nil, fmt.Errorf("event declares contract %s@%s but contract registry is not configured", envelope.Contract.Name, envelope.Contract.Version)
+	}
+	schema, err := s.contracts.Get(ctx, envelope.Contract.Name, envelope.Contract.Version)
+	if err != nil {
+		return nil, fmt.Errorf("resolve event contract: %w", err)
+	}
+	if schema == nil {
+		return nil, fmt.Errorf("event contract %s@%s not found", envelope.Contract.Name, envelope.Contract.Version)
+	}
+	return schema, nil
 }
 
-// processInTransaction executes the event processing within a transaction.
-// Supports fan-out to multiple rulesets via contract bindings.
-func (s *Service) processInTransaction(ctx context.Context, envelope *domain.EventEnvelope, fencingToken int64, shard uint32, workerID string) (*domain.Execution, error) {
-	tx, err := s.beginTx.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin tx: %w", err)
+// validateEventPayload enforces the schema hash, event-kind and payload
+// conformance of the envelope against the resolved contract schema.
+func validateEventPayload(schema *domain.ContractSchema, envelope *domain.EventEnvelope) error {
+	if envelope.Contract.SchemaHash == "" || envelope.Contract.SchemaHash != schema.SchemaHash {
+		return fmt.Errorf("event contract schema hash mismatch for %s@%s", schema.Name, schema.Version)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	// F1: Set fencing token for validation
-	tx.SetFencingToken(fencingToken)
-
-	repos, err := s.newRepos(tx)
-	if err != nil {
-		return nil, fmt.Errorf("create transaction repositories: %w", err)
+	if schema.Kind != domain.ContractKindEvent {
+		return fmt.Errorf("contract %s@%s is not an event contract", schema.Name, schema.Version)
 	}
-	if txCtx := tx.Context(); txCtx != nil {
-		ctx = txCtx //nolint:contextcheck // tx context is intentionally used for transaction-scoped operations
+	if err := schema.ValidatePayload(envelope.Data); err != nil {
+		return fmt.Errorf("event payload violates contract %s@%s: %w", schema.Name, schema.Version, err)
 	}
-
-	// F3: Validate fencing token FIRST with row lock (AssertHeld)
-	if err := repos.ShardLeases.AssertHeld(ctx, shard, workerID, fencingToken); err != nil {
-		return nil, fmt.Errorf("fencing token validation failed: %w", err)
-	}
-
-	// Resolve all rulesets that should process this event
-	rulesets, err := s.resolveRulesets(ctx, repos, envelope)
-	if err != nil {
-		return nil, err
-	}
-	if len(rulesets) == 0 {
-		return nil, domain.ErrRuleNotReady
-	}
-
-	var firstExecution *domain.Execution
-	processedAny := false
-
-	// Process each ruleset
-	for _, rr := range rulesets {
-		// Deduplicate per ruleset (inbox is keyed by tenantID, eventID, RuleSet)
-		existingExec, err := s.deduplicateEventForRuleset(ctx, repos, envelope, rr.RuleSet)
-		if err != nil {
-			return nil, err
-		}
-		if existingExec != nil {
-			if firstExecution == nil {
-				firstExecution = existingExec
-			}
-			continue // Already processed for this ruleset
-		}
-
-		// Evaluate rules
-		decision, err := s.evaluator.Evaluate(rr.Revision, envelope, nil)
-		if err != nil {
-			return nil, fmt.Errorf("evaluate ruleset %s: %w", rr.RuleSet, err)
-		}
-
-		// Persist execution and outbox effects
-		execution, err := s.persistExecutionAndOutboxForRuleset(ctx, repos, envelope, rr.Revision, rr.RuleSet, decision, !processedAny)
-		if err != nil {
-			return nil, err
-		}
-
-		if firstExecution == nil {
-			firstExecution = execution
-		}
-		processedAny = true
-	}
-
-	// If all rulesets were duplicates, rollback (don't commit empty transaction)
-	if !processedAny {
-		return firstExecution, nil
-	}
-
-	// Commit transaction
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit tx: %w", err)
-	}
-
-	return firstExecution, nil
-}
-
-// deduplicateEventForRuleset checks inbox for duplicate for a specific ruleset.
-// Returns existing execution if duplicate, nil if new event for this ruleset.
-func (s *Service) deduplicateEventForRuleset(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, ruleSet string) (*domain.Execution, error) {
-	entry, err := repos.Inbox.Get(ctx, envelope.TenantID, envelope.ID)
-	if err != nil {
-		return nil, fmt.Errorf("check inbox: %w", err)
-	}
-	if entry != nil && entry.RuleSet == ruleSet {
-		exec, err := repos.Executions.Get(ctx, entry.ExecutionID)
-		if err != nil {
-			return nil, fmt.Errorf("get existing execution: %w", err)
-		}
-		if exec != nil {
-			return exec, nil
-		}
-	}
-
-	inboxEntry := &domain.InboxEntry{
-		TenantID:     envelope.TenantID,
-		EventID:      envelope.ID,
-		Status:       domain.InboxStatusProcessing,
-		PartitionKey: envelope.PartitionKey,
-		RuleSet:      ruleSet,
-		Payload:      envelope.Data,
-		FirstSeenAt:  s.clock.Now(),
-	}
-	inserted, err := repos.Inbox.Insert(ctx, inboxEntry)
-	if err != nil {
-		return nil, fmt.Errorf("insert inbox: %w", err)
-	}
-	// F2: Dedup fall-through - if not inserted and no execution found, it's a conflict
-	if !inserted {
-		entry, err = repos.Inbox.Get(ctx, envelope.TenantID, envelope.ID)
-		if err != nil {
-			return nil, fmt.Errorf("get inbox after conflict: %w", err)
-		}
-		if entry != nil && entry.RuleSet == ruleSet {
-			exec, err := repos.Executions.Get(ctx, entry.ExecutionID)
-			if err != nil {
-				return nil, fmt.Errorf("get execution after conflict: %w", err)
-			}
-			if exec != nil {
-				return exec, nil
-			}
-		}
-		// F2: Fall-through with nil execution = conflict
-		return nil, domain.ErrInboxDuplicate
-	}
-	return nil, nil
-}
-
-// persistExecutionAndOutboxForRuleset creates execution record and outbox effects for a specific ruleset.
-func (s *Service) persistExecutionAndOutboxForRuleset(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, revision *domain.RuleRevision, ruleSet string, decision *domain.Decision, routeSubscribers bool) (*domain.Execution, error) {
-	executionID := domain.ComputeExecutionID(envelope.TenantID, envelope.ID, ruleSet, revision.Revision)
-	now := s.clock.Now()
-
-	execution := &domain.Execution{
-		ID:           executionID,
-		EventID:      envelope.ID,
-		TenantID:     envelope.TenantID,
-		RuleSet:      ruleSet,
-		Revision:     revision.Revision,
-		DecisionHash: decision.Hash,
-		Status:       domain.ExecutionStatusCompleted,
-		CreatedAt:    now,
-	}
-
-	if err := repos.Executions.Save(ctx, execution); err != nil {
-		return nil, fmt.Errorf("save execution: %w", err)
-	}
-
-	outboxEffects := make([]domain.OutboxEffect, 0, len(decision.Effects))
-	for _, ef := range decision.Effects {
-		outboxEffects = append(outboxEffects, domain.OutboxEffect{
-			ID:          ef.ID,
-			ExecutionID: executionID,
-			TenantID:    envelope.TenantID,
-			Destination: ef.Destination,
-			Name:        ef.Name,
-			Payload:     ef.Payload,
-			EffectType:  ef.EffectType,
-			Status:      domain.OutboxStatusPending,
-			Attempts:    0,
-			MaxAttempts: 5,
-			AvailableAt: now,
-			CreatedAt:   now,
-			UpdatedAt:   now,
-		})
-	}
-
-	if routeSubscribers {
-		subscriptionEffects, err := s.subscriberRouter.Route(ctx, repos.Subscribers, envelope, executionID, now)
-		if err != nil {
-			return nil, err
-		}
-		outboxEffects = append(outboxEffects, subscriptionEffects...)
-	}
-
-	if err := repos.Outbox.Insert(ctx, outboxEffects); err != nil {
-		return nil, fmt.Errorf("insert outbox: %w", err)
-	}
-
-	if err := repos.Inbox.MarkCommitted(ctx, envelope.TenantID, envelope.ID, executionID); err != nil {
-		return nil, fmt.Errorf("mark inbox committed: %w", err)
-	}
-
-	return execution, nil
+	return nil
 }
 
 // QuarantineEvent records a failed event for later inspection.

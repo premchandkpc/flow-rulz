@@ -164,6 +164,7 @@ func TestGlobalConfigurationRoutesRequireTrustedAuthButNotTenantHeader(t *testin
 	t.Setenv(trustedProxyTokenEnv, "proxy-secret")
 	req := httptest.NewRequest(http.MethodPost, "/v1/domains", nil)
 	req.Header.Set(trustedProxyTokenHeader, "proxy-secret")
+	req.Header.Set(trustedScopesHeader, "domains:admin")
 	rec := httptest.NewRecorder()
 	TenantExtractor(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := GetTenantID(r.Context()); got != "" {

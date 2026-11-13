@@ -23,7 +23,7 @@ type InboxRepository interface {
 	Insert(ctx context.Context, entry *domain.InboxEntry) (bool, error)
 	Get(ctx context.Context, tenantID, eventID string) (*domain.InboxEntry, error)
 	GetByRuleSet(ctx context.Context, tenantID, eventID, ruleSet string) (*domain.InboxEntry, error)
-	MarkCommitted(ctx context.Context, tenantID, eventID, executionID string) error
+	MarkCommitted(ctx context.Context, tenantID, eventID, ruleSet, executionID string) error
 }
 
 // ExecutionRepository handles execution records

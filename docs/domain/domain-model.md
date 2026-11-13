@@ -22,13 +22,13 @@ This is the conceptual model. Exact fields and constraints are defined by source
 2. A Service pins ruleset ID plus immutable revision.
 3. An event carries stable ID, type, timestamp, data, contract, headers and metadata.
 4. Routing uses tenant plus partition key; tenant value is not authentication.
-5. The worker validates event/contract and resolves applicable pinned rulesets.
+5. The durable worker validates event/contract and resolves active rulesets from contract bindings or event type. Stored Service assignments and their pinned revisions are not yet enforced by this path.
 6. Processing persists duplicate-detection and execution state plus outbox intent under the durable protocol.
 7. Input settlement follows durable processing or durable quarantine.
 8. Outbox effects and subscriber deliveries are separate paths and may fail independently.
 
 ## Important distinctions
-- Persisting a Domain assignment does not prove all worker deployments have reconciled; automatic reconciliation is currently documented as incomplete.
+- Persisting a Domain assignment does not prove workers execute only its pinned rulesets. Deployment reconciliation and isolated service routing remain incomplete.
 - A committed execution is not proof an external API or subscriber succeeded.
 - Hashes, subjects and target-service values route work but do not authorize callers.
 - At-least-once delivery requires dedupe and idempotent effects; do not claim exactly-once side effects.

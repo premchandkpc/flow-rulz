@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,10 +56,21 @@ func (d *DB) Pool() *pgxpool.Pool {
 	return d.pool
 }
 
-// RunMigrations performs the run migrations operation with version tracking and coordination.
-func (d *DB) RunMigrations(ctx context.Context) error {
+const migrationLockID = 0x464C525A // "FLRZ"
+
+// RunMigrations serializes startup migrations on a dedicated database session.
+func (d *DB) RunMigrations(ctx context.Context) (resultErr error) {
+	conn, err := d.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration connection: %w", err)
+	}
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationLockID); err != nil {
+		conn.Release()
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer func() { resultErr = errors.Join(resultErr, releaseMigrationLock(ctx, conn)) }()
 	// Ensure schema_migrations table exists (for first run before any migrations)
-	if _, err := d.pool.Exec(ctx, `
+	if _, err := conn.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version     TEXT NOT NULL PRIMARY KEY,
 			name        TEXT NOT NULL,
@@ -69,22 +81,9 @@ func (d *DB) RunMigrations(ctx context.Context) error {
 		return fmt.Errorf("ensure schema_migrations table: %w", err)
 	}
 
-	// Acquire advisory lock to prevent concurrent migration execution
-	// Lock ID derived from "FLRZ" (FlowRulZ) = 0x464C525A
-	const migrationLockID = 0x464C525A
-	_, err := d.pool.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, migrationLockID)
-	if err != nil {
-		return fmt.Errorf("acquire migration lock: %w", err)
-	}
-	// Lock is released automatically at transaction end, but we run each migration in its own tx
-	// So we hold the lock for the entire function by keeping the connection
-	defer func() {
-		_, _ = d.pool.Exec(ctx, `SELECT pg_advisory_xact_unlock($1)`, migrationLockID)
-	}()
-
 	// Get already applied migrations
 	applied := make(map[string]string) // version -> checksum
-	rows, err := d.pool.Query(ctx, `SELECT version, checksum FROM schema_migrations`)
+	rows, err := conn.Query(ctx, `SELECT version, checksum FROM schema_migrations`)
 	if err != nil {
 		return fmt.Errorf("query applied migrations: %w", err)
 	}
@@ -95,6 +94,10 @@ func (d *DB) RunMigrations(ctx context.Context) error {
 			return fmt.Errorf("scan applied migration: %w", err)
 		}
 		applied[version] = checksum
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate applied migrations: %w", err)
 	}
 	rows.Close()
 
@@ -136,7 +139,7 @@ func (d *DB) RunMigrations(ctx context.Context) error {
 		}
 
 		// Apply migration in its own transaction
-		tx, err := d.pool.Begin(ctx)
+		tx, err := conn.Begin(ctx)
 		if err != nil {
 			return fmt.Errorf("begin migration transaction %s: %w", f, err)
 		}
@@ -158,5 +161,22 @@ func (d *DB) RunMigrations(ctx context.Context) error {
 			return fmt.Errorf("commit migration %s: %w", f, err)
 		}
 	}
+	return nil
+}
+
+// If unlock fails, close the session instead of returning a held lock to the pool.
+func releaseMigrationLock(parent context.Context, conn *pgxpool.Conn) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
+	defer cancel()
+	var unlocked bool
+	err := conn.QueryRow(ctx, `SELECT pg_advisory_unlock($1)`, migrationLockID).Scan(&unlocked)
+	if err != nil || !unlocked {
+		closeErr := conn.Hijack().Close(ctx)
+		if err != nil {
+			return errors.Join(fmt.Errorf("release migration lock: %w", err), closeErr)
+		}
+		return errors.Join(errors.New("migration lock was not held"), closeErr)
+	}
+	conn.Release()
 	return nil
 }

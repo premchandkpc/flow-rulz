@@ -1,5 +1,5 @@
-use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EventIdentity {
@@ -10,9 +10,12 @@ pub struct EventIdentity {
     pub meta: Option<BTreeMap<String, serde_json::Value>>,
 }
 pub fn deterministic_id(namespace: &str, parts: &[&str]) -> String {
- let mut h = Sha256::new(); field(&mut h, namespace.as_bytes());
- for part in parts { field(&mut h, part.as_bytes()); }
- encode_hex(&h.finalize())
+    let mut h = Sha256::new();
+    field(&mut h, namespace.as_bytes());
+    for part in parts {
+        field(&mut h, part.as_bytes());
+    }
+    encode_hex(&h.finalize())
 }
 pub fn encode_hex(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -23,8 +26,29 @@ pub fn encode_hex(bytes: &[u8]) -> String {
     }
     output
 }
-fn field(h: &mut Sha256, value: &[u8]) { h.update((value.len() as u64).to_be_bytes()); h.update(value); }
-#[cfg(test)] mod tests { use super::*;
- #[test] fn stable_and_namespaced() { assert_eq!(deterministic_id("event", &["t","e"]), deterministic_id("event", &["t","e"])); assert_ne!(deterministic_id("event", &["t","e"]), deterministic_id("effect", &["t","e"])); }
- #[test] fn boundaries_are_unambiguous() { assert_ne!(deterministic_id("x", &["ab","c"]), deterministic_id("x", &["a","bc"])); }
+fn field(h: &mut Sha256, value: &[u8]) {
+    h.update((value.len() as u64).to_be_bytes());
+    h.update(value);
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn stable_and_namespaced() {
+        assert_eq!(
+            deterministic_id("event", &["t", "e"]),
+            deterministic_id("event", &["t", "e"])
+        );
+        assert_ne!(
+            deterministic_id("event", &["t", "e"]),
+            deterministic_id("effect", &["t", "e"])
+        );
+    }
+    #[test]
+    fn boundaries_are_unambiguous() {
+        assert_ne!(
+            deterministic_id("x", &["ab", "c"]),
+            deterministic_id("x", &["a", "bc"])
+        );
+    }
 }

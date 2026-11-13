@@ -1,5 +1,56 @@
 # Rust worker service (experimental)
 
+## Broker mode with optional transports
+
+Set `WORKER_MODE=broker` to run the broker and local rule evaluator in the Rust
+process. It uses the same protocol v1, environment names, canonical EventEnvelope,
+topic names, tenant scoping and consumer receipts as the Go broker.
+
+```sh
+cd rust-worker
+WORKER_MODE=broker WORKER_RULES_DIR=../examples/direct-worker/rules \
+  BROKER_TRANSPORTS=tcp NUM_SHARDS=16 cargo run --locked
+```
+
+`BROKER_TRANSPORTS` accepts any subset of `http,tcp,nats`, or `none` for in-process
+use. `BROKER_OUTPUT_TRANSPORT` independently selects local topics or one HTTP,
+TCP or NATS peer. Disabled adapters do not require their connection settings.
+Memory storage is the default; `BROKER_STORAGE=file` enables atomic, synced local
+snapshots. Rust's default data directory is `data/rust-broker`. Set
+`BROKER_DATA_DIR` explicitly for deployments and give each running instance its
+own directory. Local snapshots retain messages and consumer offsets, with receipts
+reissued after restart. Snapshot writes are synchronous within the broker
+mutation so request cancellation cannot reorder durable snapshots.
+
+See [the broker protocol and configuration](embedded-broker.md) for endpoints,
+frame limits, tokens, publication acknowledgements, consumer groups and retries.
+The Go `examples/broker-client` can communicate with Rust over every supported
+transport. NATS ingress uses request/reply on a broker-specific RPC subject.
+
+Broker mode supports local JSON rules with `emit`, `command`, and `emit_event`.
+Rule IDs and child events retain tenant identity. Canonical child events put
+runtime identity under `meta`, and child IDs use the tenant-scoped Go formula.
+Registry-bound contracts and scheduled rules fail closed. The local Rust rule
+validator accepts object-path predicates and the existing Rust evaluator's
+operators; full rule-language equivalence remains unverified. This broker is
+single-instance and at-least-once, with receiver deduplication required for
+repeated outputs. Replication and automatic failover are not implemented.
+
+Native process checks include HTTP/TCP, SIGKILL recovery and disabled-network
+startup. Add a NATS address for all nine transport pairs and a Go executable for
+both cross-runtime directions:
+
+```sh
+cargo build --locked
+python3 tests/broker_protocol.py
+# With a local NATS server and a separately built Go worker:
+python3 tests/broker_protocol.py --nats-address 127.0.0.1:4222 --go-worker /path/to/go-worker
+```
+
+The sections below describe the default `WORKER_MODE=durable` runtime, which uses
+PostgreSQL and NATS JetStream. The Go-only `direct` mode is rejected explicitly by
+Rust; local-rule processing with optional NATS is available through broker mode.
+
 ## Experimental status
 
 The Rust worker publishes generic effects, commands, child events, explicit `service_event` effects, and subscription-router deliveries through NATS JetStream. It waits for JetStream publish acknowledgements before settling outbox/scheduler state. Subscription matching is isolated in `src/engine/subscriber_router.rs`; it creates durable delivery intents in the same transaction but does not evaluate rules.
@@ -28,6 +79,15 @@ docker compose up -d worker
 
 - `src/main.rs`: process entrypoint and top-level error reporting.
 - `src/config.rs`: environment parsing and validation.
+- `src/broker_config.rs`: validation of selected broker dependencies and limits.
+- `src/broker_runtime.rs`: broker/rule/adapter composition and bounded shutdown.
+- `src/runtime/broker.rs`: retained partitions, consumer groups, receipts and capacity.
+- `src/application/broker.rs`: shared broker operations, authentication and rule processing.
+- `src/ports/broker.rs`: protocol v1, optional snapshot storage and output contracts.
+- `src/adapters/broker_{http,tcp,nats}.rs`: optional network adapters.
+- `src/adapters/broker_output.rs`: local or remote output publication.
+- `src/adapters/broker_store.rs`: optional atomic local snapshots, reusing WAL directory-lock mechanics.
+- `src/engine/local.rs`: bounded local rule loading through the existing evaluator.
 - `src/runtime.rs`: lifecycle orchestration, migration bootstrap, initial lease acquisition, task supervision.
 - `src/runtime/consumer.rs`: JetStream consumers, event validation, ACK/NAK decisions.
 - `src/runtime/quarantine.rs`: durable quarantine writes.

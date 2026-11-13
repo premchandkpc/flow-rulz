@@ -56,26 +56,42 @@ func (c *Compiler) Compile(source json.RawMessage) (*domain.RuleRevision, error)
 	if err != nil {
 		return nil, err
 	}
+	compiled, err := c.compileRuleSet(rawSet)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateFirstMatchOtherwise(rawSet.Mode, compiled); err != nil {
+		return nil, err
+	}
+	return newRuleRevision(rawSet, source, compiled), nil
+}
 
+// compileRuleSet validates and compiles the rules of an already-parsed rule set.
+func (c *Compiler) compileRuleSet(rawSet *rawRuleSet) ([]domain.CompiledRule, error) {
 	rawRules, err := c.validateRuleSet(rawSet)
 	if err != nil {
 		return nil, err
 	}
+	return c.compileRules(rawRules)
+}
 
-	compiled, err := c.compileRules(rawRules)
-	if err != nil {
-		return nil, err
+// validateFirstMatchOtherwise rejects otherwise actions on any but the
+// lowest-priority rule when the rule set uses first_match mode.
+func validateFirstMatchOtherwise(mode string, compiled []domain.CompiledRule) error {
+	if mode != string(domain.MatchModeFirstMatch) {
+		return nil
 	}
-
-	if rawSet.Mode == string(domain.MatchModeFirstMatch) {
-		for i := 0; i < len(compiled)-1; i++ {
-			if len(compiled[i].Otherwise) > 0 {
-				return nil, fmt.Errorf("first_match permits otherwise only on the lowest-priority rule: %w", domain.ErrInvalidAction)
-			}
+	for i := 0; i < len(compiled)-1; i++ {
+		if len(compiled[i].Otherwise) > 0 {
+			return fmt.Errorf("first_match permits otherwise only on the lowest-priority rule: %w", domain.ErrInvalidAction)
 		}
 	}
+	return nil
+}
 
-	revision := &domain.RuleRevision{
+// newRuleRevision assembles the durable rule revision from its compiled rules.
+func newRuleRevision(rawSet *rawRuleSet, source json.RawMessage, compiled []domain.CompiledRule) *domain.RuleRevision {
+	return &domain.RuleRevision{
 		RuleID:          rawSet.RuleSet,
 		Revision:        rawSet.Revision,
 		ContentHash:     domain.ComputeSourceHash(source),
@@ -86,7 +102,6 @@ func (c *Compiler) Compile(source json.RawMessage) (*domain.RuleRevision, error)
 		InputContract:   rawSet.InputContract,
 		CreatedAt:       domain.SystemClock{}.Now(),
 	}
-	return revision, nil
 }
 
 // rawRuleSet represents the raw JSON structure of a rule set.
@@ -190,14 +205,19 @@ func (c *Compiler) compileRules(rawRules []rawRule) ([]domain.CompiledRule, erro
 		}
 		compiled = append(compiled, compiledRule)
 	}
-	// Use stable sort with rule ID as tie-break for deterministic ordering.
+	sortCompiledRules(compiled)
+	return compiled, nil
+}
+
+// sortCompiledRules orders rules by descending priority, using the rule ID as
+// the stable tie-break so evaluation order is deterministic.
+func sortCompiledRules(compiled []domain.CompiledRule) {
 	sort.SliceStable(compiled, func(i, j int) bool {
 		if compiled[i].Priority != compiled[j].Priority {
 			return compiled[i].Priority > compiled[j].Priority
 		}
 		return compiled[i].ID < compiled[j].ID
 	})
-	return compiled, nil
 }
 
 func (c *Compiler) compileRule(
@@ -223,6 +243,14 @@ func validateRuleIdentity(
 	seenIDs map[string]bool,
 	seenPriorities map[int]bool,
 ) error {
+	if err := validateRuleID(rule, limits, seenIDs); err != nil {
+		return err
+	}
+	return validateRulePriority(rule, seenPriorities)
+}
+
+// validateRuleID enforces rule ID presence, length and uniqueness across the set.
+func validateRuleID(rule rawRule, limits Limits, seenIDs map[string]bool) error {
 	if rule.ID == "" {
 		return domain.ErrRuleIDRequired
 	}
@@ -233,6 +261,11 @@ func validateRuleIdentity(
 		return domain.ErrDuplicateRuleID
 	}
 	seenIDs[rule.ID] = true
+	return nil
+}
+
+// validateRulePriority rejects duplicate priorities so ordering stays unambiguous.
+func validateRulePriority(rule rawRule, seenPriorities map[int]bool) error {
 	if seenPriorities[rule.Priority] {
 		return domain.ErrAmbiguousPriority
 	}
@@ -247,18 +280,21 @@ func (c *Compiler) validateRuleActions(rule rawRule) error {
 	if countPredicates(rule.When) > c.limits.MaxPredicates {
 		return domain.ErrRuleExceedsLimits
 	}
-	if len(rule.Then) == 0 || len(rule.Then) > c.limits.MaxActionsPerSet {
+	if len(rule.Then) == 0 {
 		return domain.ErrRuleExceedsLimits
 	}
-	for _, action := range rule.Then {
-		if err := c.validateAction(action); err != nil {
-			return err
-		}
+	if err := c.validateActionGroup(rule.Then); err != nil {
+		return err
 	}
-	if len(rule.Otherwise) > c.limits.MaxActionsPerSet {
+	return c.validateActionGroup(rule.Otherwise)
+}
+
+// validateActionGroup enforces the per-rule action budget and validates each action.
+func (c *Compiler) validateActionGroup(actions []domain.Action) error {
+	if len(actions) > c.limits.MaxActionsPerSet {
 		return domain.ErrRuleExceedsLimits
 	}
-	for _, action := range rule.Otherwise {
+	for _, action := range actions {
 		if err := c.validateAction(action); err != nil {
 			return err
 		}
@@ -276,15 +312,7 @@ func (c *Compiler) validatePredicate(p domain.Predicate, depth int) error {
 		return domain.ErrInvalidPredicate
 	}
 	if hasLeaf {
-		if !domain.ValidOp(p.Op) {
-			return domain.ErrInvalidOperator
-		}
-		// Reject $.facts.* paths at compile time since no facts provider is wired.
-		// If a facts provider is added in the future, this check can be relaxed.
-		if strings.HasPrefix(p.Path, "$.facts.") {
-			return fmt.Errorf("path %q references $.facts.* which is not supported: no facts provider is configured", p.Path)
-		}
-		return nil
+		return c.validateLeafPredicate(p)
 	}
 	if err := validateCompositePredicateShape(p); err != nil {
 		return err
@@ -292,24 +320,49 @@ func (c *Compiler) validatePredicate(p domain.Predicate, depth int) error {
 	return c.validateCompositeChildren(p, depth)
 }
 
+// validateLeafPredicate validates a leaf predicate's operator and path.
+func (c *Compiler) validateLeafPredicate(p domain.Predicate) error {
+	if !domain.ValidOp(p.Op) {
+		return domain.ErrInvalidOperator
+	}
+	// Reject $.facts.* paths at compile time since no facts provider is wired.
+	// If a facts provider is added in the future, this check can be relaxed.
+	if strings.HasPrefix(p.Path, "$.facts.") {
+		return fmt.Errorf("path %q references $.facts.* which is not supported: no facts provider is configured", p.Path)
+	}
+	return nil
+}
+
+// validateCompositePredicateShape requires exactly one composite branch and
+// rejects empty all/any child lists.
 func validateCompositePredicateShape(p domain.Predicate) error {
-	compositeCount := 0
+	if compositeBranchCount(p) != 1 {
+		return domain.ErrInvalidPredicate
+	}
+	return validateCompositeBranchesNonEmpty(p)
+}
+
+// compositeBranchCount counts how many composite branches (all/any/not) are set.
+func compositeBranchCount(p domain.Predicate) int {
+	count := 0
 	if p.All != nil {
-		compositeCount++
-		if len(p.All) == 0 {
-			return domain.ErrInvalidPredicate
-		}
+		count++
 	}
 	if p.Any != nil {
-		compositeCount++
-		if len(p.Any) == 0 {
-			return domain.ErrInvalidPredicate
-		}
+		count++
 	}
 	if p.Not != nil {
-		compositeCount++
+		count++
 	}
-	if compositeCount != 1 {
+	return count
+}
+
+// validateCompositeBranchesNonEmpty rejects all/any branches without children.
+func validateCompositeBranchesNonEmpty(p domain.Predicate) error {
+	if p.All != nil && len(p.All) == 0 {
+		return domain.ErrInvalidPredicate
+	}
+	if p.Any != nil && len(p.Any) == 0 {
 		return domain.ErrInvalidPredicate
 	}
 	return nil
@@ -350,7 +403,16 @@ func (c *Compiler) validateAction(action domain.Action) error {
 	}
 }
 
+// validateActionShape requires exactly one action payload branch to be set.
 func validateActionShape(action domain.Action) error {
+	if countActionBranches(action) != 1 {
+		return domain.ErrInvalidAction
+	}
+	return nil
+}
+
+// countActionBranches counts how many action payload branches are populated.
+func countActionBranches(action domain.Action) int {
 	count := 0
 	if action.Emit != nil {
 		count++
@@ -364,10 +426,7 @@ func validateActionShape(action domain.Action) error {
 	if action.Command != nil {
 		count++
 	}
-	if count != 1 {
-		return domain.ErrInvalidAction
-	}
-	return nil
+	return count
 }
 
 func (c *Compiler) validateEmitAction(action *domain.EmitAction) error {
@@ -381,23 +440,22 @@ func (c *Compiler) validateEmitAction(action *domain.EmitAction) error {
 }
 
 func (c *Compiler) validateEmitEventAction(action *domain.EmitEventAction) error {
-	policy := action.PartitionKeyPolicy
-	if policy == "" {
-		policy = domain.PartitionKeyPolicyExplicit
-	}
+	policy := effectivePartitionKeyPolicy(action.PartitionKeyPolicy)
 	if !validPartitionKeyPolicy(policy) {
 		return domain.ErrInvalidAction
 	}
 	if err := validatePartitionKeyPolicy(action, policy); err != nil {
 		return err
 	}
-	if action.Type == "" || strings.ContainsAny(action.Type, "*>") || !json.Valid(action.Data) {
-		return domain.ErrInvalidAction
+	return c.validateChildEventPayload(action.Type, action.Data)
+}
+
+// effectivePartitionKeyPolicy defaults an empty policy to the explicit policy.
+func effectivePartitionKeyPolicy(policy domain.PartitionKeyPolicy) domain.PartitionKeyPolicy {
+	if policy == "" {
+		return domain.PartitionKeyPolicyExplicit
 	}
-	if len(action.Data) > c.limits.MaxPayloadBytes {
-		return domain.ErrRuleExceedsLimits
-	}
-	return nil
+	return policy
 }
 
 func validPartitionKeyPolicy(policy domain.PartitionKeyPolicy) bool {
@@ -423,10 +481,7 @@ func validatePartitionKeyPolicy(action *domain.EmitEventAction, policy domain.Pa
 }
 
 func (c *Compiler) validateScheduleEventAction(action *domain.ScheduleEventAction) error {
-	policy := action.PartitionKeyPolicy
-	if policy == "" {
-		policy = domain.PartitionKeyPolicyExplicit
-	}
+	policy := effectivePartitionKeyPolicy(action.PartitionKeyPolicy)
 	if !validPartitionKeyPolicy(policy) || action.DelaySeconds < 1 || action.DelaySeconds > domain.MaxScheduledDelaySeconds {
 		return domain.ErrInvalidAction
 	}
@@ -436,13 +491,7 @@ func (c *Compiler) validateScheduleEventAction(action *domain.ScheduleEventActio
 	if err := validatePartitionKeyPolicy(partitionKeyAction, policy); err != nil {
 		return err
 	}
-	if action.Type == "" || strings.ContainsAny(action.Type, "*>") || !json.Valid(action.Data) {
-		return domain.ErrInvalidAction
-	}
-	if len(action.Data) > c.limits.MaxPayloadBytes {
-		return domain.ErrRuleExceedsLimits
-	}
-	return nil
+	return c.validateChildEventPayload(action.Type, action.Data)
 }
 
 func (c *Compiler) validateCommandAction(action *domain.CommandAction) error {
@@ -455,32 +504,41 @@ func (c *Compiler) validateCommandAction(action *domain.CommandAction) error {
 	return nil
 }
 
+// validateChildEventPayload validates the event type and JSON payload of an
+// emit_event or schedule_event action against the configured size budget.
+func (c *Compiler) validateChildEventPayload(eventType string, data json.RawMessage) error {
+	if eventType == "" || strings.ContainsAny(eventType, "*>") || !json.Valid(data) {
+		return domain.ErrInvalidAction
+	}
+	if len(data) > c.limits.MaxPayloadBytes {
+		return domain.ErrRuleExceedsLimits
+	}
+	return nil
+}
+
 func payloadSize(value interface{}) int {
 	encoded, _ := json.Marshal(value)
 	return len(encoded)
 }
 
 func countPredicates(p domain.Predicate) int {
-	count := 0
-	if p.All != nil {
-		for _, sub := range p.All {
-			if sub != nil {
-				count += countPredicates(*sub)
-			}
-		}
-	}
-	if p.Any != nil {
-		for _, sub := range p.Any {
-			if sub != nil {
-				count += countPredicates(*sub)
-			}
-		}
-	}
+	count := countPredicatesIn(p.All) + countPredicatesIn(p.Any)
 	if p.Not != nil {
 		count += countPredicates(*p.Not)
 	}
 	if p.Path != "" {
 		count++
+	}
+	return count
+}
+
+// countPredicatesIn counts predicates across a composite child list, skipping nil entries.
+func countPredicatesIn(children []*domain.Predicate) int {
+	count := 0
+	for _, sub := range children {
+		if sub != nil {
+			count += countPredicates(*sub)
+		}
 	}
 	return count
 }
@@ -498,34 +556,41 @@ func ValidatePathsAgainstContract(compiled []domain.CompiledRule, schema *domain
 }
 
 func validatePredicatePaths(p domain.Predicate, schema *domain.ContractSchema) error {
-	if p.All != nil {
-		for _, sub := range p.All {
-			if sub != nil {
-				if err := validatePredicatePaths(*sub, schema); err != nil {
-					return err
-				}
-			}
-		}
+	if err := validateChildPredicatePaths(p.All, schema); err != nil {
+		return err
 	}
-	if p.Any != nil {
-		for _, sub := range p.Any {
-			if sub != nil {
-				if err := validatePredicatePaths(*sub, schema); err != nil {
-					return err
-				}
-			}
-		}
+	if err := validateChildPredicatePaths(p.Any, schema); err != nil {
+		return err
 	}
 	if p.Not != nil {
 		if err := validatePredicatePaths(*p.Not, schema); err != nil {
 			return err
 		}
 	}
-	if p.Path != "" {
-		field := strings.TrimPrefix(p.Path, "$.")
-		if _, ok := schema.Fields[field]; !ok {
-			return fmt.Errorf("path %q not found in contract %s@%s", p.Path, schema.Name, schema.Version)
+	return validateLeafPredicatePath(p, schema)
+}
+
+// validateChildPredicatePaths validates every non-nil child of a composite branch.
+func validateChildPredicatePaths(children []*domain.Predicate, schema *domain.ContractSchema) error {
+	for _, sub := range children {
+		if sub == nil {
+			continue
 		}
+		if err := validatePredicatePaths(*sub, schema); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateLeafPredicatePath checks a leaf path against the contract schema fields.
+func validateLeafPredicatePath(p domain.Predicate, schema *domain.ContractSchema) error {
+	if p.Path == "" {
+		return nil
+	}
+	field := strings.TrimPrefix(p.Path, "$.")
+	if _, ok := schema.Fields[field]; !ok {
+		return fmt.Errorf("path %q not found in contract %s@%s", p.Path, schema.Name, schema.Version)
 	}
 	return nil
 }

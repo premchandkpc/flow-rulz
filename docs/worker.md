@@ -4,23 +4,17 @@ Workers are generic execution runtimes. They understand event envelopes, contrac
 
 ## Deployment identity
 
-Each worker pool belongs to one configured Domain/Service deployment:
+The control plane can describe Domain/Service deployments and pinned ruleset revisions, but the current durable worker does not enforce those assignments or isolate service pools. `FLOW_SERVICE_ID` and a nonzero `FLOW_DEPLOYMENT_REVISION` therefore cause worker startup to fail until service-specific routing and ownership are implemented.
 
-- `FLOW_SERVICE_ID`: service identity, currently expected as `<domain-id>/<service-id>`.
-- `FLOW_DEPLOYMENT_REVISION`: positive deployment revision.
-- Ruleset assignments come from the Domain's Service configuration; a worker should execute only those pinned revisions.
-
-The deployment identity is configuration. `meta.tenant_id` and `meta.partition_key` are read from each event and are never worker environment settings. Routed deployments also receive `meta.target_service_id` and `meta.deployment_revision`; the router, not the producer, must set those values.
-
-**Current implementation note:** the Domain API stores Service assignments, but a complete deployment controller that continuously projects those assignments into both Go and Rust worker pools is not yet present. The current Rust runtime still reads its `RULESETS` list from environment configuration. Until that controller is implemented, deployment automation must keep worker settings aligned with the Domain revision; do not claim that workers dynamically reload the Domain API.
+Events carrying `flow.service_id` or `flow.deployment_revision` headers, or `target_service_id` or `deployment_revision` metadata, are not processed by the current workers. Durable and direct workers retry those deliveries instead of acknowledging them. Worker-hosted broker publish endpoints reject them; previously retained targeted events remain retryable. Monitor pending deliveries and do not publish service-targeted events until the feature is implemented.
 
 ## Processing guarantees
 
 1. Validate event envelope and immutable contract reference.
-2. Verify the event is routed to the configured Service and deployment revision.
+2. Reject unsupported service-targeted events without acknowledging them.
 3. Derive the shard from the event's tenant/partition pair.
 4. Deduplicate by stable event identity and ruleset identity.
-5. Evaluate assigned rulesets without subscriber-specific behavior.
+5. Evaluate active rulesets resolved from contract bindings or the event type, without subscriber-specific behavior.
 6. Persist execution state and effects transactionally.
 7. Acknowledge only after the durable transaction succeeds.
 8. Retry transient failures; quarantine permanent or exhausted failures according to the runtime policy.
