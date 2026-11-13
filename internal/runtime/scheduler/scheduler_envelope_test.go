@@ -11,7 +11,7 @@ import (
 
 type recordingEnvelopePublisher struct {
 	event *domain.EventEnvelope
-	err error
+	err   error
 }
 
 func (p *recordingEnvelopePublisher) PublishEvent(_ context.Context, event *domain.EventEnvelope) error {
