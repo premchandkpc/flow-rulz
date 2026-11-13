@@ -256,38 +256,8 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 	if len(batch.Offsets) == 0 {
 		return errors.New("input offsets are required for transactional processing")
 	}
-	offsetsByPartition := make(map[string]int64, len(batch.Offsets))
-	for _, offset := range batch.Offsets {
-		if offset.Topic == "" || offset.Partition < 0 || offset.Next < 0 {
-			return errors.New("input offset contains an invalid topic, partition, or sequence")
-		}
-		key := offset.Topic + "\x00" + fmt.Sprint(offset.Partition)
-		if _, exists := offsetsByPartition[key]; exists {
-			return errors.New("duplicate input checkpoint for topic and partition")
-		}
-		offsetsByPartition[key] = offset.Next
-	}
-	maxOffsetByPartition := make(map[string]int64, len(batch.Offsets))
-	for _, record := range batch.Records {
-		if record.Topic == "" || record.Partition < 0 || record.Offset < 0 {
-			return errors.New("input record contains an invalid topic, partition, or offset")
-		}
-		key := record.Topic + "\x00" + fmt.Sprint(record.Partition)
-		next, exists := offsetsByPartition[key]
-		if !exists || next <= record.Offset {
-			return fmt.Errorf("input checkpoint does not cover %s[%d]@%d", record.Topic, record.Partition, record.Offset)
-		}
-		if previous, found := maxOffsetByPartition[key]; !found || record.Offset > previous {
-			maxOffsetByPartition[key] = record.Offset
-		}
-	}
-	if len(maxOffsetByPartition) != len(offsetsByPartition) {
-		return errors.New("input checkpoints must correspond exactly to partitions present in the batch")
-	}
-	for key, maxOffset := range maxOffsetByPartition {
-		if offsetsByPartition[key] != maxOffset+1 {
-			return fmt.Errorf("input checkpoint for %q must be exactly one past the highest processed offset", key)
-		}
+	if err := validateBatchCheckpoints(batch); err != nil {
+		return err
 	}
 
 	tx, err := w.Store.Begin(ctx)
@@ -356,5 +326,44 @@ func (w *Worker) ProcessBatch(ctx context.Context, batch Batch) error {
 		return err
 	}
 	committed = true
+	return nil
+}
+
+// validateBatchCheckpoints ensures every checkpoint covers exactly its processed partition.
+func validateBatchCheckpoints(batch Batch) error {
+	offsetsByPartition := make(map[string]int64, len(batch.Offsets))
+	for _, offset := range batch.Offsets {
+		if offset.Topic == "" || offset.Partition < 0 || offset.Next < 0 {
+			return errors.New("input offset contains an invalid topic, partition, or sequence")
+		}
+		key := offset.Topic + "\x00" + fmt.Sprint(offset.Partition)
+		if _, exists := offsetsByPartition[key]; exists {
+			return errors.New("duplicate input checkpoint for topic and partition")
+		}
+		offsetsByPartition[key] = offset.Next
+	}
+	maxOffsetByPartition := make(map[string]int64, len(batch.Offsets))
+	for _, record := range batch.Records {
+		if record.Topic == "" || record.Partition < 0 || record.Offset < 0 {
+			return errors.New("input record contains an invalid topic, partition, or offset")
+		}
+		key := record.Topic + "\x00" + fmt.Sprint(record.Partition)
+		next, exists := offsetsByPartition[key]
+		if !exists || next <= record.Offset {
+			return fmt.Errorf("input checkpoint does not cover %s[%d]@%d", record.Topic, record.Partition, record.Offset)
+		}
+		if previous, found := maxOffsetByPartition[key]; !found || record.Offset > previous {
+			maxOffsetByPartition[key] = record.Offset
+		}
+	}
+	if len(maxOffsetByPartition) != len(offsetsByPartition) {
+		return errors.New("input checkpoints must correspond exactly to partitions present in the batch")
+	}
+	for key, maxOffset := range maxOffsetByPartition {
+		if offsetsByPartition[key] != maxOffset+1 {
+			return fmt.Errorf("input checkpoint for %q must be exactly one past the highest processed offset", key)
+		}
+	}
+
 	return nil
 }

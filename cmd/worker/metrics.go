@@ -14,7 +14,7 @@ import (
 
 // startMetricsServer opts a worker into a private process-local Prometheus
 // endpoint. Binding is synchronous so address conflicts fail worker startup.
-func startMetricsServer(addr, allowedOrigin string) (func() error, error) {
+func startMetricsServer(ctx context.Context, addr, allowedOrigin string) (func() error, error) {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen for worker metrics on %q: %w", addr, err)
@@ -28,9 +28,9 @@ func startMetricsServer(addr, allowedOrigin string) (func() error, error) {
 	}()
 
 	return func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
-		if err := server.Shutdown(ctx); err != nil {
+		if err := server.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutdown worker metrics server: %w", err)
 		}
 		return nil

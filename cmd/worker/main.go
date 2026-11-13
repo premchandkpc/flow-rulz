@@ -38,7 +38,7 @@ func main() {
 	}
 }
 
-func run() (runErr error) {
+func run() error {
 	cfg, err := config.LoadWorker()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -53,6 +53,10 @@ func run() (runErr error) {
 		return runDirect(ctx, cfg)
 	}
 
+	return runDurable(ctx, cfg)
+}
+
+func runDurable(ctx context.Context, cfg *config.Config) (runErr error) {
 	obsConfig := observability.DefaultConfig()
 	obsConfig.ServiceName = serviceName
 	metricsAddr := strings.TrimSpace(os.Getenv("FLOWRULZ_METRICS_ADDR"))
@@ -61,12 +65,12 @@ func run() (runErr error) {
 		// the generic observability listener to avoid binding the same port twice.
 		obsConfig.MetricsPort = 0
 	}
-	obs, err := observability.New(obsConfig)
+	obs, err := observability.New(ctx, obsConfig)
 	if err != nil {
 		return fmt.Errorf("initialize observability: %w", err)
 	}
 	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeoutDuration())
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeoutDuration())
 		defer cancel()
 		if err := obs.Shutdown(shutdownCtx); err != nil {
 			runErr = errors.Join(runErr, fmt.Errorf("shutdown observability: %w", err))
@@ -76,7 +80,7 @@ func run() (runErr error) {
 	obs.Logger.Info("worker starting", "environment", cfg.App.Env)
 
 	if metricsAddr != "" {
-		shutdownMetrics, err := startMetricsServer(metricsAddr, os.Getenv("FLOWRULZ_CONSOLE_ORIGIN"))
+		shutdownMetrics, err := startMetricsServer(ctx, metricsAddr, os.Getenv("FLOWRULZ_CONSOLE_ORIGIN"))
 		if err != nil {
 			return err
 		}
@@ -121,13 +125,32 @@ func run() (runErr error) {
 		}
 	}()
 
+	workerID := cfg.WorkerID()
+	worker, sched, err := newDurableRuntime(cfg, repositories, consumer, publisher, workerID)
+	if err != nil {
+		return err
+	}
+
+	obs.Logger.Info("worker initialized", "worker_id", workerID, "shards", cfg.Worker.NumShards)
+	sched.Start(ctx)
+	defer sched.Stop()
+
+	if err := worker.Run(ctx); err != nil {
+		return fmt.Errorf("run worker: %w", err)
+	}
+	obs.Logger.Info("worker stopped", "worker_id", workerID)
+	return nil
+}
+
+// newDurableRuntime composes the transactional event processor and scheduler.
+func newDurableRuntime(cfg *config.Config, repositories storage.Repositories, consumer *nats.Consumer, publisher *nats.Publisher, workerID string) (*application.Worker, *scheduler.Scheduler, error) {
 	compiler := rules.NewCompiler(rules.DefaultLimits())
 	clock := domain.SystemClock{}
 	evaluator := rules.NewEvaluator(clock)
 
 	commandSender, err := newCommandSender(publisher)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	// Route child events, commands, and tenant-service deliveries through NATS JetStream.
@@ -137,7 +160,6 @@ func run() (runErr error) {
 	effectSender := svceffects.NewRouterWithConfig(
 		publisher, commandSender, eventSubject, cfg.Worker.NumShards, serviceSender, scheduledEventSender,
 	)
-	workerID := cfg.WorkerID()
 	eventsSvc := svcevents.NewService(
 		compiler,
 		evaluator,
@@ -192,7 +214,7 @@ func run() (runErr error) {
 		workerConfig,
 	)
 	if err != nil {
-		return fmt.Errorf("construct worker: %w", err)
+		return nil, nil, fmt.Errorf("construct worker: %w", err)
 	}
 	sched := scheduler.NewScheduler(
 		repositories.ScheduledEvents,
@@ -203,13 +225,5 @@ func run() (runErr error) {
 		cfg.Worker.NumShards,
 	)
 
-	obs.Logger.Info("worker initialized", "worker_id", workerID, "shards", cfg.Worker.NumShards)
-	sched.Start(ctx)
-	defer sched.Stop()
-
-	if err := worker.Run(ctx); err != nil {
-		return fmt.Errorf("run worker: %w", err)
-	}
-	obs.Logger.Info("worker stopped", "worker_id", workerID)
-	return nil
+	return worker, sched, nil
 }

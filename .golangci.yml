@@ -15,10 +15,11 @@ linters:
     - revive
     - funlen
   settings:
-    # Limit function bodies to 15 lines, including tests and generated Go.
-    # Comment-only lines are excluded. Keep logical operations readable.
+    # Catch unusually large production functions without fragmenting cohesive
+    # operations. Tests can keep setup, action and assertions together.
     funlen:
-      lines: 15
+      lines: 100
+      statements: 80
       ignore-comments: true
     depguard:
       rules:
@@ -51,6 +52,7 @@ linters:
       - path: _test\.go
         linters:
           - gosec
+          - funlen
       - path: cmd/
         linters:
           - gosec

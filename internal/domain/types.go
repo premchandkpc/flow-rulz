@@ -34,6 +34,24 @@ type EventEnvelope struct {
 	Meta          map[string]any    `json:"meta,omitempty"`
 }
 
+// HasDeploymentTarget reports reserved routing metadata that current workers cannot honor.
+func (e *EventEnvelope) HasDeploymentTarget() bool {
+	if e == nil {
+		return false
+	}
+	for _, key := range []string{"flow.service_id", "flow.deployment_revision"} {
+		if _, exists := e.Headers[key]; exists {
+			return true
+		}
+	}
+	for _, key := range []string{"target_service_id", "deployment_revision"} {
+		if _, exists := e.Meta[key]; exists {
+			return true
+		}
+	}
+	return false
+}
+
 // VirtualShard provides the virtual shard.
 func (e *EventEnvelope) VirtualShard(modulus uint32) uint32 {
 	key := e.TenantID + ":" + e.PartitionKey

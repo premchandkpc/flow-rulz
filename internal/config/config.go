@@ -436,14 +436,11 @@ func validateNATSRulesetEntry(ruleSet string, seen map[string]struct{}) error {
 }
 
 func (c *Config) validateAuth() error {
-	if !c.Auth.RequireAuth {
-		return nil
-	}
-	if c.Auth.JWTSecret == "" {
+	if c.Auth.RequireAuth && c.Auth.JWTSecret == "" {
 		return fmt.Errorf("JWT_SECRET is required when REQUIRE_AUTH=true")
 	}
-	if len(c.Auth.JWTSecret) < 32 {
-		return fmt.Errorf("JWT_SECRET must be at least 32 characters")
+	if c.Auth.JWTSecret != "" && (len(c.Auth.JWTSecret) < 32 || strings.TrimSpace(c.Auth.JWTSecret) != c.Auth.JWTSecret) {
+		return fmt.Errorf("JWT_SECRET must be at least 32 characters without surrounding whitespace")
 	}
 	return nil
 }
@@ -454,7 +451,11 @@ func (c *Config) validateEnvironmentAuth() error {
 	// TenantExtractor independently validates the proxy token on every request.
 	env := strings.ToLower(strings.TrimSpace(c.App.Env))
 	localEnv := env == "development" || env == "dev" || env == "test"
-	if !localEnv && !c.Auth.RequireAuth && strings.TrimSpace(os.Getenv("FLOWRULZ_TRUSTED_PROXY_TOKEN")) == "" {
+	proxyToken := os.Getenv("FLOWRULZ_TRUSTED_PROXY_TOKEN")
+	if !localEnv && proxyToken != "" && (len(proxyToken) < 32 || strings.TrimSpace(proxyToken) != proxyToken) {
+		return fmt.Errorf("FLOWRULZ_TRUSTED_PROXY_TOKEN must be at least 32 characters without surrounding whitespace")
+	}
+	if !localEnv && !c.Auth.RequireAuth && proxyToken == "" {
 		return fmt.Errorf("production authentication is not configured: set REQUIRE_AUTH=true with JWT_SECRET or configure FLOWRULZ_TRUSTED_PROXY_TOKEN for a trusted proxy")
 	}
 	return nil
@@ -499,14 +500,10 @@ func (c *Config) validateDirectWorker() error {
 	return nil
 }
 
-// validateDeploymentIdentity enforces the paired service and revision identity
-// required by durable and broker modes.
+// validateDeploymentIdentity prevents startup with unsupported service isolation.
 func (c *Config) validateDeploymentIdentity() error {
-	if c.Worker.ServiceID == "" && c.Worker.DeploymentRevision != 0 {
-		return fmt.Errorf("FLOW_SERVICE_ID is required when FLOW_DEPLOYMENT_REVISION is set")
-	}
-	if c.Worker.ServiceID != "" && c.Worker.DeploymentRevision <= 0 {
-		return fmt.Errorf("FLOW_DEPLOYMENT_REVISION must be > 0 when FLOW_SERVICE_ID is set")
+	if c.Worker.ServiceID != "" || c.Worker.DeploymentRevision != 0 {
+		return fmt.Errorf("FLOW_SERVICE_ID and FLOW_DEPLOYMENT_REVISION are unsupported until service-specific routing and ruleset isolation are implemented")
 	}
 	return nil
 }

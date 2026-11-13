@@ -115,7 +115,7 @@ func (s *Service) publish(tenant string, event *domain.EventEnvelope) (any, erro
 	if event.TenantID != tenant {
 		return nil, errTenant
 	}
-	if event.Contract != nil {
+	if event.Contract != nil || event.HasDeploymentTarget() {
 		return nil, runtimebroker.ErrInvalid
 	}
 	if err := event.Validate(); err != nil {

@@ -186,6 +186,13 @@ pub struct ContractRef {
 }
 
 impl EventEnvelope {
+    pub fn has_deployment_target(&self) -> bool {
+        self.headers.contains_key("flow.service_id")
+            || self.headers.contains_key("flow.deployment_revision")
+            || self.meta.contains_key("target_service_id")
+            || self.meta.contains_key("deployment_revision")
+    }
+
     pub fn validate(&self) -> Result<()> {
         if self.id.trim().is_empty() {
             bail!("event id is required");

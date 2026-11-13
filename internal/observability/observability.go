@@ -47,7 +47,7 @@ type Observability struct {
 }
 
 // New creates a new Observability instance.
-func New(config Config) (*Observability, error) {
+func New(ctx context.Context, config Config) (*Observability, error) {
 	if config.ServiceName == "" {
 		config.ServiceName = "flowrulz"
 	}
@@ -64,7 +64,6 @@ func New(config Config) (*Observability, error) {
 	o.MetricsMux.Handle("/metrics", promhttp.Handler())
 
 	if config.EnableTracing && config.OTLPEndpoint != "" {
-		ctx := context.Background()
 		tp, err := InitTracer(ctx, config.ServiceName, config.OTLPEndpoint)
 		if err != nil {
 			o.Logger.Warn("failed to init tracer", "error", err)

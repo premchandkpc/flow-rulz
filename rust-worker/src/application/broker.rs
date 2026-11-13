@@ -140,7 +140,7 @@ impl Service {
         if event.tenant_id != tenant {
             return Response::new(id, "forbidden", None);
         }
-        if event.validate().is_err() || event.contract.is_some() {
+        if event.validate().is_err() || event.contract.is_some() || event.has_deployment_target() {
             return Response::new(id, "invalid", None);
         }
         let Ok(payload) = serde_json::to_value(event) else {
@@ -248,6 +248,9 @@ impl RuleWorker {
         output: &dyn crate::ports::broker::Publisher,
     ) -> Result<()> {
         let event: EventEnvelope = serde_json::from_value(claim.record.payload.clone())?;
+        if event.has_deployment_target() {
+            bail!("service-targeted events require service-specific routing");
+        }
         let rule = self
             .rules
             .get(&event.event_type)

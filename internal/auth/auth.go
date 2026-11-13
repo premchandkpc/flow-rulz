@@ -68,7 +68,7 @@ func (v *Validator) Validate(_ context.Context, tokenString string) (*Claims, er
 // parseClaims parses the signed token and classifies parse failures as either an
 // expired token or an invalid token.
 func (v *Validator) parseClaims(tokenString string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, v.signingKeyFunc, jwt.WithTimeFunc(v.Clock))
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, v.signingKeyFunc, jwt.WithTimeFunc(v.Clock), jwt.WithExpirationRequired())
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrTokenExpired
@@ -148,14 +148,25 @@ func ContextWithClaims(ctx context.Context, claims *Claims) context.Context {
 	return context.WithValue(ctx, claimsKey{}, claims)
 }
 
-// HasScope reports whether validated claims in ctx contain the requested scope.
+// ContextWithTrustedScopes records scopes asserted by an authenticated proxy.
+// The caller must first validate the proxy credential and its header-stripping boundary.
+func ContextWithTrustedScopes(ctx context.Context, scopes []string) context.Context {
+	return context.WithValue(ctx, trustedScopesKey{}, append([]string(nil), scopes...))
+}
+
+// HasScope reports whether validated JWT claims or trusted proxy scopes grant scope.
 func HasScope(ctx context.Context, scope string) bool {
 	claims, ok := ctx.Value(claimsKey{}).(*Claims)
-	return ok && claims != nil && claims.HasScope(scope)
+	if ok && claims != nil {
+		return claims.HasScope(scope)
+	}
+	scopes, _ := ctx.Value(trustedScopesKey{}).([]string)
+	return (&Claims{Scopes: scopes}).HasScope(scope)
 }
 
 type tenantKey struct{}
 type claimsKey struct{}
+type trustedScopesKey struct{}
 
 // HasScope checks if claims have a specific scope
 func (c *Claims) HasScope(scope string) bool {

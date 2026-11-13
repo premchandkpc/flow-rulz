@@ -4,20 +4,14 @@ Workers are generic execution runtimes. They understand event envelopes, contrac
 
 ## Deployment identity
 
-The control plane can describe Domain/Service deployments:
+The control plane can describe Domain/Service deployments and pinned ruleset revisions, but the current durable worker does not enforce those assignments or isolate service pools. `FLOW_SERVICE_ID` and a nonzero `FLOW_DEPLOYMENT_REVISION` therefore cause worker startup to fail until service-specific routing and ownership are implemented.
 
-- `FLOW_SERVICE_ID`: service identity, currently expected as `<domain-id>/<service-id>`.
-- `FLOW_DEPLOYMENT_REVISION`: positive deployment revision.
-- Ruleset assignments are stored in the Domain's Service configuration. Enforcing those pinned revisions in the durable worker remains future work.
-
-The deployment identity is configuration. `meta.tenant_id` and `meta.partition_key` are read from each event. The current worker checks `headers["flow.service_id"]` and `headers["flow.deployment_revision"]` when configured with a deployment identity; it does not create those headers or route events to an isolated service stream.
-
-**Current implementation note:** the Domain API stores Service assignments, but the worker does not intersect those assignments with matching rulesets or isolate service pools. Shards are leased globally; a worker can quarantine and acknowledge an event targeted at a different deployment. Do not use deployment headers for multi-service routing until routing and ownership are redesigned and tested. The experimental Rust runtime still reads its `RULESETS` list from environment configuration.
+Events carrying `flow.service_id` or `flow.deployment_revision` headers, or `target_service_id` or `deployment_revision` metadata, are not processed by the current workers. Durable and direct workers retry those deliveries instead of acknowledging them. Worker-hosted broker publish endpoints reject them; previously retained targeted events remain retryable. Monitor pending deliveries and do not publish service-targeted events until the feature is implemented.
 
 ## Processing guarantees
 
 1. Validate event envelope and immutable contract reference.
-2. When configured, compare the event's deployment headers with the worker's configured identity. This check is not a routing mechanism.
+2. Reject unsupported service-targeted events without acknowledging them.
 3. Derive the shard from the event's tenant/partition pair.
 4. Deduplicate by stable event identity and ruleset identity.
 5. Evaluate active rulesets resolved from contract bindings or the event type, without subscriber-specific behavior.

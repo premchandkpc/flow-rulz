@@ -141,6 +141,9 @@ func validateWorkerDependencies(
 }
 
 func normalizeWorkerConfig(config WorkerConfig) (WorkerConfig, error) {
+	if config.ServiceID != "" || config.DeploymentRevision != 0 {
+		return WorkerConfig{}, errors.New("service-specific worker routing and ruleset isolation are not supported")
+	}
 	defaults := DefaultWorkerConfig()
 	if config.MaxGlobalInFlight == 0 {
 		config.MaxGlobalInFlight = defaults.MaxGlobalInFlight

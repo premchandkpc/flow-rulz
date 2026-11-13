@@ -32,6 +32,11 @@ impl Config {
     }
 
     fn from_lookup(get: impl Fn(&str, &str) -> String) -> Result<Self> {
+        if !get("FLOW_SERVICE_ID", "").trim().is_empty()
+            || !matches!(get("FLOW_DEPLOYMENT_REVISION", "0").trim(), "" | "0")
+        {
+            bail!("broker mode does not support service deployment identities");
+        }
         let number = |name, default| -> Result<u64> {
             get(name, default)
                 .parse()

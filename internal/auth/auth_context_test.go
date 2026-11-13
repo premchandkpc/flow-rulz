@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -42,6 +43,19 @@ func TestContextWithNilClaimsDoesNotInventIdentity(t *testing.T) {
 	}
 }
 
+func TestTrustedScopesCannotAmplifyJWTClaims(t *testing.T) {
+	scopes := []string{"admin"}
+	ctx := ContextWithTrustedScopes(context.Background(), scopes)
+	scopes[0] = "changed"
+	if !HasScope(ctx, "admin") {
+		t.Fatal("trusted scope should be copied into the context")
+	}
+	ctx = ContextWithClaims(ctx, &Claims{TenantID: "tenant-a", Scopes: []string{"rules:admin"}})
+	if HasScope(ctx, "admin") || !HasScope(ctx, "rules:admin") {
+		t.Fatal("JWT scopes must take precedence over proxy scopes")
+	}
+}
+
 func TestValidatorAcceptsSingleStringAudienceClaim(t *testing.T) {
 	v := NewValidator([]byte("secret"), "flowrulz", "flowrulz-api")
 	tokenString := signedAudienceToken(t, "secret")
@@ -61,8 +75,9 @@ func signedAudienceToken(t *testing.T, secret string) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{
 		TenantID: "tenant-a",
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:   "flowrulz",
-			Audience: jwt.ClaimStrings{"flowrulz-api"},
+			Issuer:    "flowrulz",
+			Audience:  jwt.ClaimStrings{"flowrulz-api"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 		},
 	})
 	tokenString, err := token.SignedString([]byte(secret))
@@ -70,6 +85,25 @@ func signedAudienceToken(t *testing.T, secret string) string {
 		t.Fatalf("SignedString() error = %v", err)
 	}
 	return tokenString
+}
+
+func TestValidatorRejectsMissingOrExpiredExpiration(t *testing.T) {
+	validator := NewValidator([]byte("secret"), "", "")
+	for name, expiry := range map[string]*jwt.NumericDate{
+		"missing": nil,
+		"expired": jwt.NewNumericDate(time.Now().Add(-time.Minute)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, &Claims{TenantID: "a", RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: expiry}})
+			signed, err := token.SignedString([]byte("secret"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if claims, err := validator.Validate(context.Background(), signed); err == nil || claims != nil {
+				t.Fatalf("accepted %s expiration: claims=%v err=%v", name, claims, err)
+			}
+		})
+	}
 }
 
 func TestValidatorReturnsNoClaimsWhenIssuerIsRejected(t *testing.T) {

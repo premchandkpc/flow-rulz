@@ -178,11 +178,24 @@ func TestValidateRejectsProductionWithoutAuthentication(t *testing.T) {
 }
 
 func TestValidateAllowsProductionTrustedProxyAuthentication(t *testing.T) {
-	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", "test-proxy-secret")
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", strings.Repeat("p", 32))
 	cfg := validConfigForTest()
 	cfg.App.Env = "production"
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want trusted-proxy configuration to be accepted", err)
+	}
+}
+
+func TestValidateRejectsWeakProductionProxyCredential(t *testing.T) {
+	for _, token := range []string{"short", " " + strings.Repeat("p", 32)} {
+		t.Run(token[:1], func(t *testing.T) {
+			t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", token)
+			cfg := validConfigForTest()
+			cfg.App.Env = "production"
+			if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "FLOWRULZ_TRUSTED_PROXY_TOKEN") {
+				t.Fatalf("invalid proxy credential must be rejected: %v", err)
+			}
+		})
 	}
 }
 
@@ -197,6 +210,16 @@ func TestValidateAllowsProductionJWTAuthentication(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsWeakOptionalJWTSecret(t *testing.T) {
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", strings.Repeat("p", 32))
+	cfg := validConfigForTest()
+	cfg.App.Env = "production"
+	cfg.Auth.JWTSecret = "weak-secret"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "JWT_SECRET") {
+		t.Fatalf("weak optional JWT secret must be rejected: %v", err)
+	}
+}
+
 func TestLoadRejectsMalformedRequireAuth(t *testing.T) {
 	t.Setenv("REQUIRE_AUTH", "definitely-not-a-boolean")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "REQUIRE_AUTH must be a boolean") {
@@ -206,7 +229,7 @@ func TestLoadRejectsMalformedRequireAuth(t *testing.T) {
 
 func TestLoadDefaultsEnvironmentToProduction(t *testing.T) {
 	t.Setenv("APP_ENV", "")
-	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", "test-proxy-secret")
+	t.Setenv("FLOWRULZ_TRUSTED_PROXY_TOKEN", strings.Repeat("p", 32))
 
 	cfg, err := Load()
 	if err != nil {
@@ -248,11 +271,11 @@ func deploymentIdentityCases() []deploymentIdentityCase {
 		{name: "legacy mode", wantError: false},
 		{name: "service without revision", serviceID: "orders-worker", wantError: true},
 		{name: "revision without service", revision: 2, wantError: true},
-		{name: "pinned deployment", serviceID: "orders-worker", revision: 2, wantError: false},
+		{name: "pinned deployment unsupported", serviceID: "orders-worker", revision: 2, wantError: true},
 	}
 }
 
-func TestValidateRequiresPairedServiceDeploymentIdentity(t *testing.T) {
+func TestValidateRejectsUnsupportedServiceDeploymentIdentity(t *testing.T) {
 	for _, tt := range deploymentIdentityCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfigForTest()
