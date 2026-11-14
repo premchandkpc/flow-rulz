@@ -270,11 +270,11 @@ func loadWorkerCapacityConfig() WorkerConfig {
 	cfg := loadWorkerScheduleConfig()
 	cfg.MaxGlobalInFlight = toInt(getIntEnv("MAX_GLOBAL_IN_FLIGHT", 100))
 	cfg.FetchBatchSize = toInt(getIntEnv("FETCH_BATCH_SIZE", 100))
-	cfg.EffectPublishIntervalMS = toInt(getIntEnv("EFFECT_PUBLISH_INTERVAL_MS", 5000))
-	cfg.EffectPublishBatchSize = toInt(getIntEnv("EFFECT_PUBLISH_BATCH_SIZE", 10))
+	cfg.EffectPublishIntervalMS = toInt(getIntEnv("EFFECT_PUBLISH_INTERVAL_MS", 250))
+	cfg.EffectPublishBatchSize = toInt(getIntEnv("EFFECT_PUBLISH_BATCH_SIZE", 64))
 	cfg.RetryDelayMS = toInt(getIntEnv("EVENT_RETRY_DELAY_MS", 5000))
 	cfg.MaxPerKeyQueue = toInt(getIntEnv("MAX_PER_KEY_QUEUE", 100))
-	cfg.KeyQueueWorkers = toInt(getIntEnv("KEY_QUEUE_WORKERS", 1))
+	cfg.KeyQueueWorkers = toInt(getIntEnv("KEY_QUEUE_WORKERS", 8))
 	return cfg
 }
 

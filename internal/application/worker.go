@@ -34,12 +34,12 @@ func DefaultWorkerConfig() WorkerConfig {
 	return WorkerConfig{
 		MaxGlobalInFlight:      100,
 		FetchBatchSize:         100,
-		EffectPublishInterval:  5 * time.Second,
-		EffectPublishBatchSize: 10,
+		EffectPublishInterval:  250 * time.Millisecond,
+		EffectPublishBatchSize: 64,
 		RetryDelay:             5 * time.Second,
 		MaxDeliveryAttempts:    24,
 		MaxPerKeyQueue:         100,
-		KeyQueueWorkers:        1,
+		KeyQueueWorkers:        8,
 		HotKeyThreshold:        50,
 		HotKeyCheckInterval:    10 * time.Second,
 	}
