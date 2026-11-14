@@ -5,6 +5,7 @@ package keyqueue
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -160,6 +161,12 @@ func (kq *KeyQueue) notifyHotKeys(notices []hotKeyNotice) {
 	}
 }
 
+// queueIdentity uses the tenant and partition key to avoid cross-tenant blocking.
+// Prefixing the tenant length makes concatenated identities unambiguous.
+func queueIdentity(env *domain.EventEnvelope) string {
+	return fmt.Sprintf("%d:%s%s", len(env.TenantID), env.TenantID, env.PartitionKey)
+}
+
 // Submit enqueues an item for processing, respecting per-key ordering and global concurrency limits.
 func (kq *KeyQueue) Submit(ctx context.Context, item ports.QueueItem) error {
 	if err := validateQueueSubmission(ctx, item); err != nil {
@@ -173,7 +180,7 @@ func (kq *KeyQueue) Submit(ctx context.Context, item ports.QueueItem) error {
 	if err := kq.acquireGlobalSlot(ctx); err != nil {
 		return err
 	}
-	queue := kq.registerQueueSubmitter(item.Event.PartitionKey)
+	queue := kq.registerQueueSubmitter(queueIdentity(item.Event))
 	return kq.enqueueItem(ctx, queue, item)
 }
 
@@ -304,7 +311,7 @@ func (kq *KeyQueue) processQueuedItem(ctx context.Context, workerID int, item *q
 	if err := kq.processor(ctx, item.env, item.delivery, item.fencingToken, item.vshard, item.workerID); err != nil {
 		log.Printf("keyqueue worker %d: process error for key %s: %v", workerID, item.env.PartitionKey, err)
 	}
-	kq.finishEvent(item.env.PartitionKey)
+	kq.finishEvent(queueIdentity(item.env))
 	<-kq.globalSem
 }
 
@@ -382,7 +389,10 @@ func (kq *KeyQueue) normalizeCapacity() {
 
 func (kq *KeyQueue) initializeHotKeys() {
 	if kq.hotKeyThreshold <= 0 {
-		kq.hotKeyThreshold = 1000
+		kq.hotKeyThreshold = 50
+	}
+	if kq.hotKeyThreshold > kq.maxPerKey {
+		kq.hotKeyThreshold = kq.maxPerKey
 	}
 	if kq.hotKeyCheckInterval <= 0 {
 		kq.hotKeyCheckInterval = 10 * time.Second

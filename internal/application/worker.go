@@ -38,7 +38,7 @@ func DefaultWorkerConfig() WorkerConfig {
 		RetryDelay:             5 * time.Second,
 		MaxPerKeyQueue:         100,
 		KeyQueueWorkers:        1,
-		HotKeyThreshold:        1000,
+		HotKeyThreshold:        50,
 		HotKeyCheckInterval:    10 * time.Second,
 	}
 }

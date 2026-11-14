@@ -289,7 +289,7 @@ func loadWorkerScheduleConfig() WorkerConfig {
 		LeaseRenewalIntervalMS: toInt(getIntEnv("LEASE_RENEWAL_INTERVAL_MS", 10000)),
 		NATSAckWaitMS:          toInt(getIntEnv("NATS_ACK_WAIT_MS", 30000)),
 		NATSMaxDeliver:         getIntEnv("NATS_MAX_DELIVER", -1),
-		HotKeyThreshold:        toInt(getIntEnv("HOT_KEY_THRESHOLD", 1000)),
+		HotKeyThreshold:        toInt(getIntEnv("HOT_KEY_THRESHOLD", 50)),
 		HotKeyCheckIntervalMS:  toInt(getIntEnv("HOT_KEY_CHECK_INTERVAL_MS", 10000)),
 	}
 }
