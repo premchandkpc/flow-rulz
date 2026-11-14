@@ -78,58 +78,6 @@ fn validate_subject(subject: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn event(tenant: &str) -> EventEnvelope {
-        serde_json::from_value(json!({"id":"event-1","type":"a.created","occurred_at":"2026-11-12T12:00:00Z","meta":{"tenant_id":tenant,"partition_key":"key-1"},"data":{"id":"123"}})).unwrap()
-    }
-    #[test]
-    fn canonical_sample_chain_and_tenant_scoped_child_ids() {
-        let first = sample_rules("first");
-        let output = first.evaluate(&event("tenant-a")).unwrap().remove(0);
-        assert_eq!(output.topic, "events");
-        assert!(output.payload.get("tenant_id").is_none());
-        let child: EventEnvelope = serde_json::from_value(output.payload).unwrap();
-        assert_sample_child(&child);
-        assert_sample_command(&child);
-        let other = first.evaluate(&event("tenant-b")).unwrap().remove(0);
-        assert_ne!(other.payload["id"], child.id);
-    }
-    #[test]
-    fn unsupported_scheduled_actions_and_contracts_fail_at_startup() {
-        let mut source: Value = serde_json::from_slice(include_bytes!(
-            "../../../examples/direct-worker/rules/a.json"
-        ))
-        .unwrap();
-        source["rules"][0]["then"] = json!([{"schedule_event":{"type":"later"}}]);
-        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
-        source["input_contract"] = json!({"name":"contract","version":"1"});
-        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
-    }
-    fn sample_rules(stage: &str) -> LocalRuleSet {
-        let source: &[u8] = match stage {
-            "first" => include_bytes!("../../../examples/direct-worker/rules/a.json"),
-            _ => include_bytes!("../../../examples/direct-worker/rules/processed.json"),
-        };
-        LocalRuleSet::compile(source).unwrap()
-    }
-    fn assert_sample_child(child: &EventEnvelope) {
-        // Byte lengths must match the Go child ID contract.
-        let name = "forward-to-next-worker";
-        let expected =
-            sha256_hex(format!("child|8:tenant-a|7:event-1|{}:{}|0", name.len(), name).as_bytes());
-        assert_eq!(child.id, expected);
-        assert_eq!(child.data["id"], "123");
-    }
-    fn assert_sample_command(child: &EventEnvelope) {
-        let command = sample_rules("last").evaluate(child).unwrap().remove(0);
-        assert_eq!(command.topic, "commands.b.handle");
-        assert_eq!(command.payload["idempotency_key"], command.payload["id"]);
-        assert_eq!(command.payload["tenant_id"], "tenant-a");
-    }
-}
-
 impl Source {
     fn validate(&self) -> Result<()> {
         if self.rule_set.is_empty()
@@ -325,4 +273,56 @@ fn validate_subject_token(token: &str) -> Result<()> {
         bail!("invalid output topic token");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn event(tenant: &str) -> EventEnvelope {
+        serde_json::from_value(json!({"id":"event-1","type":"a.created","occurred_at":"2026-11-12T12:00:00Z","meta":{"tenant_id":tenant,"partition_key":"key-1"},"data":{"id":"123"}})).unwrap()
+    }
+    #[test]
+    fn canonical_sample_chain_and_tenant_scoped_child_ids() {
+        let first = sample_rules("first");
+        let output = first.evaluate(&event("tenant-a")).unwrap().remove(0);
+        assert_eq!(output.topic, "events");
+        assert!(output.payload.get("tenant_id").is_none());
+        let child: EventEnvelope = serde_json::from_value(output.payload).unwrap();
+        assert_sample_child(&child);
+        assert_sample_command(&child);
+        let other = first.evaluate(&event("tenant-b")).unwrap().remove(0);
+        assert_ne!(other.payload["id"], child.id);
+    }
+    #[test]
+    fn unsupported_scheduled_actions_and_contracts_fail_at_startup() {
+        let mut source: Value = serde_json::from_slice(include_bytes!(
+            "../../../examples/direct-worker/rules/a.json"
+        ))
+        .unwrap();
+        source["rules"][0]["then"] = json!([{"schedule_event":{"type":"later"}}]);
+        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
+        source["input_contract"] = json!({"name":"contract","version":"1"});
+        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
+    }
+    fn sample_rules(stage: &str) -> LocalRuleSet {
+        let source: &[u8] = match stage {
+            "first" => include_bytes!("../../../examples/direct-worker/rules/a.json"),
+            _ => include_bytes!("../../../examples/direct-worker/rules/processed.json"),
+        };
+        LocalRuleSet::compile(source).unwrap()
+    }
+    fn assert_sample_child(child: &EventEnvelope) {
+        // Byte lengths must match the Go child ID contract.
+        let name = "forward-to-next-worker";
+        let expected =
+            sha256_hex(format!("child|8:tenant-a|7:event-1|{}:{}|0", name.len(), name).as_bytes());
+        assert_eq!(child.id, expected);
+        assert_eq!(child.data["id"], "123");
+    }
+    fn assert_sample_command(child: &EventEnvelope) {
+        let command = sample_rules("last").evaluate(child).unwrap().remove(0);
+        assert_eq!(command.topic, "commands.b.handle");
+        assert_eq!(command.payload["idempotency_key"], command.payload["id"]);
+        assert_eq!(command.payload["tenant_id"], "tenant-a");
+    }
 }

@@ -24,17 +24,41 @@ func NewOutboxRepository(db Querier) *OutboxRepository {
 
 // Insert performs its documented repository operation.
 func (r *OutboxRepository) Insert(ctx context.Context, effects []domain.OutboxEffect) error {
-	for _, ef := range effects {
-		if ef.TenantID == "" {
-			return fmt.Errorf("insert outbox: tenant_id is required")
-		}
-		_, err := r.db.Exec(ctx, outboxRepositoryInsertSQL, ef.ID, ef.ExecutionID, ef.TenantID, ef.Destination, ef.Name, ef.Payload, ef.EffectType,
-			ef.Status, ef.Attempts, ef.MaxAttempts, ef.AvailableAt, ef.LastError, ef.CreatedAt, ef.UpdatedAt)
+	const batchSize = 100
+	for start := 0; start < len(effects); start += batchSize {
+		end := min(start+batchSize, len(effects))
+		query, args, err := buildOutboxInsert(effects[start:end])
 		if err != nil {
+			return err
+		}
+		if _, err := r.db.Exec(ctx, query, args...); err != nil {
 			return fmt.Errorf("insert outbox: %w", err)
 		}
 	}
 	return nil
+}
+
+func buildOutboxInsert(effects []domain.OutboxEffect) (string, []any, error) {
+	rows := make([]string, 0, len(effects))
+	args := make([]any, 0, 14*len(effects))
+	for _, ef := range effects {
+		if ef.TenantID == "" {
+			return "", nil, fmt.Errorf("insert outbox: tenant_id is required")
+		}
+		rows = append(rows, outboxInsertPlaceholders(len(args)+1))
+		args = append(args, ef.ID, ef.ExecutionID, ef.TenantID, ef.Destination, ef.Name,
+			ef.Payload, ef.EffectType, ef.Status, ef.Attempts, ef.MaxAttempts,
+			ef.AvailableAt, ef.LastError, ef.CreatedAt, ef.UpdatedAt)
+	}
+	return fmt.Sprintf(outboxRepositoryBulkInsertSQL, strings.Join(rows, ",")), args, nil
+}
+
+func outboxInsertPlaceholders(start int) string {
+	parts := make([]string, 14)
+	for i := range parts {
+		parts[i] = fmt.Sprintf("$%d", start+i)
+	}
+	return "(" + strings.Join(parts, ",") + ")"
 }
 
 // ClaimPending performs its documented repository operation.
@@ -184,9 +208,9 @@ func normalizeOutboxLimit(limit int) int {
 	return limit
 }
 
-const outboxRepositoryInsertSQL = `
+const outboxRepositoryBulkInsertSQL = `
 			INSERT INTO outbox_effects (effect_id, execution_id, tenant_id, destination, name, payload, effect_type, status, attempts, max_attempts, available_at, last_error, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			VALUES %s
 			ON CONFLICT (effect_id) DO NOTHING
 		`
 

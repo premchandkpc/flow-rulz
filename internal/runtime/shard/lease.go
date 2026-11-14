@@ -29,6 +29,7 @@ type LeaseManager struct {
 
 	mu          sync.RWMutex
 	ownedShards map[uint32]*domain.ShardLease
+	recovered   map[uint32]struct{}
 	stopRenew   chan struct{}
 	wg          sync.WaitGroup
 
@@ -54,7 +55,7 @@ func NewLeaseManagerWithRenewInterval(repo ports.ShardLeaseRepository, clock por
 func NewLeaseManagerWithReplicaCountAndRenewInterval(repo ports.ShardLeaseRepository, clock ports.Clock, owner string, numShards uint32, replicaCount uint32, ttl time.Duration, renewInterval time.Duration) *LeaseManager {
 	m := &LeaseManager{repo: repo, clock: clock, owner: owner, numShards: numShards,
 		replicaCount: replicaCount, ttl: ttl, renewInterval: renewInterval,
-		ownedShards: make(map[uint32]*domain.ShardLease), stopRenew: make(chan struct{})}
+		ownedShards: make(map[uint32]*domain.ShardLease), recovered: make(map[uint32]struct{}), stopRenew: make(chan struct{})}
 	m.normalizeAllocation()
 	m.normalizeTiming()
 	return m
@@ -135,6 +136,7 @@ func (m *LeaseManager) renewOwned(ctx context.Context) {
 		m.renewOwnedIndividually(ctx, leases)
 	}
 	m.rebalanceIfNeeded(ctx)
+	m.recoverExpiredShards(ctx)
 }
 
 func (m *LeaseManager) ownedLeaseTokens() map[uint32]int64 {
@@ -191,6 +193,7 @@ func (m *LeaseManager) handleIndividualRenewalError(shardID uint32, err error) {
 		log.Printf("shard %d: lease lost (%v), removing from owned shards", shardID, err)
 		m.mu.Lock()
 		delete(m.ownedShards, shardID)
+		delete(m.recovered, shardID)
 		m.mu.Unlock()
 		return
 	}
@@ -215,7 +218,7 @@ func (m *LeaseManager) targetOwnedShards() uint32 {
 // rebalance; every worker must use the same WORKER_REPLICAS value.
 func (m *LeaseManager) rebalanceIfNeeded(ctx context.Context) {
 	target := int(m.targetOwnedShards())
-	owned := m.OwnedShards()
+	owned := m.baseOwnedShards()
 	if len(owned) > target {
 		m.releaseExcessLeases(ctx, owned, target)
 	}
@@ -223,6 +226,49 @@ func (m *LeaseManager) rebalanceIfNeeded(ctx context.Context) {
 	needed := target - len(m.ownedShards)
 	m.mu.RUnlock()
 	m.acquireMissingLeases(ctx, needed)
+}
+
+// expiredLeaseAcquirer is an optional database capability for reclaiming
+// expired shards even when this live worker is already at its nominal target.
+type expiredLeaseAcquirer interface {
+	AcquireExpired(context.Context, string, time.Duration, int) ([]*domain.ShardLease, error)
+}
+
+func (m *LeaseManager) recoverExpiredShards(ctx context.Context) {
+	acquirer, ok := m.repo.(expiredLeaseAcquirer)
+	if !ok {
+		return
+	}
+	leases, err := acquirer.AcquireExpired(ctx, m.owner, m.ttl, 256)
+	if err != nil {
+		log.Printf("recover expired shard leases: %v", err)
+		return
+	}
+	m.rememberRecoveredShards(leases)
+}
+
+func (m *LeaseManager) rememberRecoveredShards(leases []*domain.ShardLease) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, lease := range leases {
+		if lease == nil || lease.Owner != m.owner {
+			continue
+		}
+		m.ownedShards[lease.VirtualShard] = lease
+		m.recovered[lease.VirtualShard] = struct{}{}
+	}
+}
+
+func (m *LeaseManager) baseOwnedShards() []uint32 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []uint32
+	for shard := range m.ownedShards {
+		if _, recovered := m.recovered[shard]; !recovered {
+			result = append(result, shard)
+		}
+	}
+	return result
 }
 
 // OwnedShards returns the list of shard IDs currently owned by this lease manager.
@@ -362,6 +408,7 @@ func (m *LeaseManager) applyRenewalLocked(shardID uint32, expectedToken int64, r
 	if !found {
 		log.Printf("shard %d: lease lost during batch renewal, removing from owned shards", shardID)
 		delete(m.ownedShards, shardID)
+		delete(m.recovered, shardID)
 		return
 	}
 	m.ownedShards[shardID] = lease
@@ -390,6 +437,7 @@ func (m *LeaseManager) releaseExcessLease(ctx context.Context, shardID uint32) b
 	defer m.mu.Unlock()
 	_, stillOwned := m.ownedShards[shardID]
 	delete(m.ownedShards, shardID)
+	delete(m.recovered, shardID)
 	return stillOwned
 }
 

@@ -19,6 +19,7 @@ type WorkerConfig struct {
 	EffectPublishInterval  time.Duration
 	EffectPublishBatchSize int
 	RetryDelay             time.Duration
+	MaxDeliveryAttempts    uint64
 	MaxPerKeyQueue         int
 	KeyQueueWorkers        int
 	HotKeyThreshold        int
@@ -33,12 +34,13 @@ func DefaultWorkerConfig() WorkerConfig {
 	return WorkerConfig{
 		MaxGlobalInFlight:      100,
 		FetchBatchSize:         100,
-		EffectPublishInterval:  5 * time.Second,
-		EffectPublishBatchSize: 10,
+		EffectPublishInterval:  250 * time.Millisecond,
+		EffectPublishBatchSize: 64,
 		RetryDelay:             5 * time.Second,
+		MaxDeliveryAttempts:    24,
 		MaxPerKeyQueue:         100,
-		KeyQueueWorkers:        1,
-		HotKeyThreshold:        1000,
+		KeyQueueWorkers:        8,
+		HotKeyThreshold:        50,
 		HotKeyCheckInterval:    10 * time.Second,
 	}
 }
@@ -126,6 +128,9 @@ func applyWorkerConfigDefaults(config *WorkerConfig, defaults WorkerConfig) {
 	}
 	if config.RetryDelay <= 0 {
 		config.RetryDelay = defaults.RetryDelay
+	}
+	if config.MaxDeliveryAttempts == 0 {
+		config.MaxDeliveryAttempts = defaults.MaxDeliveryAttempts
 	}
 	applyWorkerQueueDefaults(config, defaults)
 }

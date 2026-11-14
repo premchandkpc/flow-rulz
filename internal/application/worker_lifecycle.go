@@ -74,17 +74,36 @@ func (w *Worker) startBackgroundLoops(ctx context.Context, background *sync.Wait
 func (w *Worker) publishLoop(ctx context.Context) {
 	ticker := time.NewTicker(w.config.EffectPublishInterval)
 	defer ticker.Stop()
-
+	// Drain available effects at startup, then poll only when idle.
 	for {
+		if err := w.publishAvailable(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("publish effects: %v", err)
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := w.effects.PublishBatch(ctx, w.config.EffectPublishBatchSize); err != nil {
-				log.Printf("publish effects: %v", err)
-			}
 		}
 	}
+}
+
+// publishAvailable drains bounded bursts while work is available. The cap keeps
+// retry and shutdown checks responsive even under a sustained backlog.
+func (w *Worker) publishAvailable(ctx context.Context) error {
+	const maxConsecutiveBatches = 16
+	counter, ok := w.effects.(interface {
+		PublishBatchCount(context.Context, int) (int, error)
+	})
+	if !ok {
+		return w.effects.PublishBatch(ctx, w.config.EffectPublishBatchSize)
+	}
+	for n := 0; n < maxConsecutiveBatches && ctx.Err() == nil; n++ {
+		count, err := counter.PublishBatchCount(ctx, w.config.EffectPublishBatchSize)
+		if err != nil || count < w.config.EffectPublishBatchSize {
+			return err
+		}
+	}
+	return ctx.Err()
 }
 
 func (w *Worker) batchLoop(ctx context.Context) {

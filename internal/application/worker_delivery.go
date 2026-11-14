@@ -63,7 +63,7 @@ func (w *Worker) settleEventResult(ctx context.Context, env *domain.EventEnvelop
 
 func (w *Worker) handleEventProcessingFailure(settleCtx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, processErr error) error {
 	log.Printf("process event %s: %v", env.ID, processErr)
-	if domain.IsPermanent(processErr) {
+	if domain.IsPermanent(processErr) || w.deliveryAttemptsExhausted(delivery) {
 		return w.quarantinePermanentEvent(settleCtx, env, delivery, processErr)
 	}
 	if retryErr := w.retryQueuedDelivery(settleCtx, delivery); retryErr != nil {
@@ -86,6 +86,13 @@ func (w *Worker) quarantinePermanentEvent(settleCtx context.Context, env *domain
 		return fmt.Errorf("ack quarantined event %s: %w", env.ID, err)
 	}
 	return nil
+}
+
+// deliveryAttemptsExhausted uses the broker's attempt counter. If metadata is
+// unavailable, do not guess and accidentally discard a recoverable delivery.
+func (w *Worker) deliveryAttemptsExhausted(delivery ports.Delivery) bool {
+	attempt, ok := delivery.(ports.DeliveryAttempt)
+	return ok && attempt.Attempt() > 0 && attempt.Attempt() >= w.config.MaxDeliveryAttempts && w.config.MaxDeliveryAttempts > 0
 }
 
 func (w *Worker) retryQueuedDelivery(ctx context.Context, delivery ports.Delivery) error {
@@ -121,11 +128,20 @@ func (w *Worker) submitOwnedDelivery(ctx context.Context, env *domain.EventEnvel
 		Event: env, Delivery: delivery, FencingToken: fencingToken,
 		Shard: vshard, WorkerID: w.workerID,
 	}
-	if err := w.keyQueue.Submit(ctx, item); err != nil {
+	if err := w.submitToKeyQueue(ctx, item); err != nil {
 		w.rejectQueueSubmission(ctx, delivery, err)
 		return err
 	}
 	return nil
+}
+
+func (w *Worker) submitToKeyQueue(ctx context.Context, item ports.QueueItem) error {
+	if queue, ok := w.keyQueue.(interface {
+		TrySubmit(context.Context, ports.QueueItem) error
+	}); ok {
+		return queue.TrySubmit(ctx, item)
+	}
+	return w.keyQueue.Submit(ctx, item)
 }
 
 // quarantineInvalidDelivery persists malformed broker messages before acknowledging
@@ -151,12 +167,6 @@ func settleRetry(ctx context.Context, delivery ports.Delivery, delay time.Durati
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	return delivery.Retry(settleCtx, delay)
-}
-
-func settleNak(ctx context.Context, delivery ports.Delivery) error {
-	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	return delivery.Nak(settleCtx)
 }
 
 func rejectDeploymentTarget(env *domain.EventEnvelope) error {
@@ -203,8 +213,8 @@ func (w *Worker) routeDeliveryToShard(ctx context.Context, env *domain.EventEnve
 
 func (w *Worker) rejectQueueSubmission(ctx context.Context, delivery ports.Delivery, err error) {
 	log.Printf("keyqueue submit failed: %v", err)
-	if nakErr := settleNak(ctx, delivery); nakErr != nil {
-		log.Printf("nak failed: %v", nakErr)
+	if retryErr := settleRetry(ctx, delivery, retryDelayForDelivery(w.config.RetryDelay, delivery)); retryErr != nil {
+		log.Printf("retry rejected keyqueue delivery: %v", retryErr)
 	}
 }
 

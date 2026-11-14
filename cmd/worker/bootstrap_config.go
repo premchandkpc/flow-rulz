@@ -44,6 +44,7 @@ func newWorkerConfig(cfg *config.Config) application.WorkerConfig {
 	workerConfig.EffectPublishInterval = cfg.EffectPublishInterval()
 	workerConfig.EffectPublishBatchSize = cfg.Worker.EffectPublishBatchSize
 	workerConfig.RetryDelay = cfg.EventRetryDelay()
+	workerConfig.MaxDeliveryAttempts = uint64(cfg.Worker.MaxDeliveryAttempts)
 	workerConfig.MaxPerKeyQueue = cfg.Worker.MaxPerKeyQueue
 	workerConfig.KeyQueueWorkers = cfg.Worker.KeyQueueWorkers
 	workerConfig.HotKeyThreshold = cfg.Worker.HotKeyThreshold

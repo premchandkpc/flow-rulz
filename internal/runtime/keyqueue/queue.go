@@ -5,6 +5,7 @@ package keyqueue
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ type KeyQueue struct {
 	started        bool
 	stopped        bool
 	stopOnce       sync.Once
+	drainOnce      sync.Once
 	submitWG       sync.WaitGroup
 	maxPerKey      int
 	globalSem      chan struct{}
@@ -99,7 +101,43 @@ func (kq *KeyQueue) Stop(ctx context.Context) error {
 	kq.stopOnce.Do(kq.stopSubmissionsAndWorkers)
 	kq.wg.Wait()
 	kq.wgHot.Wait()
+	kq.drainOnce.Do(func() { kq.drainPending(ctx) })
 	return nil
+}
+
+// drainPending hands queued, unprocessed deliveries back to the broker after
+// workers stop; otherwise they wait for AckWait while this pod releases leases.
+func (kq *KeyQueue) drainPending(ctx context.Context) {
+	kq.mu.Lock()
+	queues := make([]*keyQueue, 0, len(kq.queues))
+	for _, queue := range kq.queues {
+		queues = append(queues, queue)
+	}
+	kq.mu.Unlock()
+	for _, queue := range queues {
+		kq.drainQueue(ctx, queue)
+	}
+}
+
+func (kq *KeyQueue) drainQueue(ctx context.Context, queue *keyQueue) {
+	for {
+		select {
+		case item := <-queue.ch:
+			kq.retryUnprocessed(ctx, item)
+			<-kq.globalSem
+		default:
+			return
+		}
+	}
+}
+
+func (kq *KeyQueue) retryUnprocessed(ctx context.Context, item *queuedItem) {
+	if item == nil || item.delivery == nil {
+		return
+	}
+	if err := item.delivery.Retry(ctx, time.Second); err != nil {
+		log.Printf("retry queued delivery on shutdown: %v", err)
+	}
 }
 
 func (kq *KeyQueue) hotKeyCheckLoop(ctx context.Context) {
@@ -160,6 +198,74 @@ func (kq *KeyQueue) notifyHotKeys(notices []hotKeyNotice) {
 	}
 }
 
+// queueIdentity uses the tenant and partition key to avoid cross-tenant blocking.
+// Prefixing the tenant length makes concatenated identities unambiguous.
+func queueIdentity(env *domain.EventEnvelope) string {
+	return fmt.Sprintf("%d:%s%s", len(env.TenantID), env.TenantID, env.PartitionKey)
+}
+
+// ErrQueueFull signals bounded admission failure; callers should retry with delay.
+var ErrQueueFull = errors.New("key queue is at capacity")
+
+// TrySubmit never waits for a busy key or exhausted global capacity.
+// A hot key can occupy at most half the available global slots.
+func (kq *KeyQueue) TrySubmit(ctx context.Context, item ports.QueueItem) error {
+	if err := validateQueueSubmission(ctx, item); err != nil {
+		return err
+	}
+	if err := kq.beginSubmission(); err != nil {
+		return err
+	}
+	defer kq.submitWG.Done()
+	queue := kq.registerQueueSubmitter(queueIdentity(item.Event))
+	defer kq.finishSubmit(queue)
+	return kq.tryEnqueue(ctx, queue, item)
+}
+
+func (kq *KeyQueue) tryEnqueue(ctx context.Context, queue *keyQueue, item ports.QueueItem) error {
+	if err := kq.acquireSlotWithoutWaiting(ctx); err != nil {
+		return err
+	}
+	if err := kq.tryEnqueueWithSlot(queue, item); err != nil {
+		<-kq.globalSem
+		return err
+	}
+	return nil
+}
+
+func (kq *KeyQueue) acquireSlotWithoutWaiting(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-kq.stopSubmitting:
+		return errors.New("submit event: key queue is stopping")
+	case kq.globalSem <- struct{}{}:
+		return nil
+	default:
+		return ErrQueueFull
+	}
+}
+
+func (kq *KeyQueue) tryEnqueueWithSlot(q *keyQueue, item ports.QueueItem) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.ch) >= kq.fairKeyLimit() {
+		return ErrQueueFull
+	}
+	queued := &queuedItem{env: item.Event, delivery: item.Delivery, fencingToken: item.FencingToken, vshard: item.Shard, workerID: item.WorkerID}
+	select {
+	case q.ch <- queued:
+		return nil
+	default:
+		return ErrQueueFull
+	}
+}
+
+func (kq *KeyQueue) fairKeyLimit() int {
+	return min(kq.maxPerKey, max(1, kq.maxGlobalInFlight/2))
+}
+
 // Submit enqueues an item for processing, respecting per-key ordering and global concurrency limits.
 func (kq *KeyQueue) Submit(ctx context.Context, item ports.QueueItem) error {
 	if err := validateQueueSubmission(ctx, item); err != nil {
@@ -173,7 +279,7 @@ func (kq *KeyQueue) Submit(ctx context.Context, item ports.QueueItem) error {
 	if err := kq.acquireGlobalSlot(ctx); err != nil {
 		return err
 	}
-	queue := kq.registerQueueSubmitter(item.Event.PartitionKey)
+	queue := kq.registerQueueSubmitter(queueIdentity(item.Event))
 	return kq.enqueueItem(ctx, queue, item)
 }
 
@@ -304,7 +410,7 @@ func (kq *KeyQueue) processQueuedItem(ctx context.Context, workerID int, item *q
 	if err := kq.processor(ctx, item.env, item.delivery, item.fencingToken, item.vshard, item.workerID); err != nil {
 		log.Printf("keyqueue worker %d: process error for key %s: %v", workerID, item.env.PartitionKey, err)
 	}
-	kq.finishEvent(item.env.PartitionKey)
+	kq.finishEvent(queueIdentity(item.env))
 	<-kq.globalSem
 }
 
@@ -382,7 +488,10 @@ func (kq *KeyQueue) normalizeCapacity() {
 
 func (kq *KeyQueue) initializeHotKeys() {
 	if kq.hotKeyThreshold <= 0 {
-		kq.hotKeyThreshold = 1000
+		kq.hotKeyThreshold = 50
+	}
+	if kq.hotKeyThreshold > kq.maxPerKey {
+		kq.hotKeyThreshold = kq.maxPerKey
 	}
 	if kq.hotKeyCheckInterval <= 0 {
 		kq.hotKeyCheckInterval = 10 * time.Second
