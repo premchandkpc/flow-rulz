@@ -169,12 +169,6 @@ func settleRetry(ctx context.Context, delivery ports.Delivery, delay time.Durati
 	return delivery.Retry(settleCtx, delay)
 }
 
-func settleNak(ctx context.Context, delivery ports.Delivery) error {
-	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	return delivery.Nak(settleCtx)
-}
-
 func rejectDeploymentTarget(env *domain.EventEnvelope) error {
 	if env.HasDeploymentTarget() {
 		return errors.New("service-targeted events require service-specific routing, which is not implemented")
