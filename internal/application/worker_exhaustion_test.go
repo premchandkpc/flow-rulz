@@ -9,7 +9,7 @@ import (
 func TestDeliveryAttemptsExhausted(t *testing.T) {
 	worker := &Worker{config: WorkerConfig{MaxDeliveryAttempts: 3}}
 	for _, tc := range []struct {
-		attempt uint64
+		attempt   uint64
 		exhausted bool
 	} {
 		{attempt: 1, exhausted: false},
@@ -23,7 +23,7 @@ func TestDeliveryAttemptsExhausted(t *testing.T) {
 	}
 }
 
-type missingAttemptDelivery struct { ports.Delivery }
+type missingAttemptDelivery struct{ ports.Delivery }
 
 func TestMissingAttemptMetadataFailsOpenToRetry(t *testing.T) {
 	worker := &Worker{config: WorkerConfig{MaxDeliveryAttempts: 1}}

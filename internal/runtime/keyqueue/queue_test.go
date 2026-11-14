@@ -232,7 +232,7 @@ func TestKeyQueue_HotKeyDetection(t *testing.T) {
 	if len(detected) == 0 {
 		t.Errorf("expected hot-key detection, got none")
 	}
-	if len(detected) > 0 && detected[0] != "hot-key" {
+	if len(detected) > 0 && detected[0] != queueIdentity(&domain.EventEnvelope{PartitionKey: "hot-key"}) {
 		t.Errorf("expected hot-key, got %s", detected[0])
 	}
 }
