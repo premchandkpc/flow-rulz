@@ -150,7 +150,10 @@ fn validate_rule<'a>(
         bail!("invalid or duplicate local rule id");
     }
     validate_predicate(&rule["when"], 0)?;
-    if !rule["then"].as_array().is_some_and(|actions| !actions.is_empty()) {
+    if !rule["then"]
+        .as_array()
+        .is_some_and(|actions| !actions.is_empty())
+    {
         bail!("Go rule compiler requires at least one then action");
     }
     let mut count = 0;
