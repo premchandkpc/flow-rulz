@@ -123,12 +123,13 @@ func (r *sharedLeaseRepo) Acquire(_ context.Context, shard uint32, owner string,
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	lease, exists := r.leases[shard]
-	if !exists {
+	switch {
+	case !exists:
 		lease = &domain.ShardLease{VirtualShard: shard, Owner: owner, FencingToken: 1}
 		r.leases[shard] = lease
-	} else if lease.ExpiresAt.After(time.Now()) {
+	case lease.ExpiresAt.After(time.Now()):
 		return cloneLease(lease), nil // Unexpired: the current owner keeps the row.
-	} else {
+	default:
 		lease.Owner, lease.FencingToken = owner, lease.FencingToken+1
 	}
 	lease.ExpiresAt = time.Now().Add(ttl)
