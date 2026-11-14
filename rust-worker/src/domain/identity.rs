@@ -30,6 +30,14 @@ fn field(h: &mut Sha256, value: &[u8]) {
     h.update((value.len() as u64).to_be_bytes());
     h.update(value);
 }
+
+pub(super) fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -51,11 +59,4 @@ mod tests {
             deterministic_id("x", &["a", "bc"])
         );
     }
-}
-
-pub(super) fn is_sha256_hex(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }

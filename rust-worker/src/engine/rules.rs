@@ -376,96 +376,6 @@ fn build_command_effect(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn event(tenant_id: &str) -> EventEnvelope {
-        serde_json::from_value(json!({
-            "id": "event-1", "type": "orders.created", "occurred_at": Utc::now(),
-            "meta": {"tenant_id": tenant_id, "partition_key": "order-1"},
-            "data": {"approved": true}
-        }))
-        .unwrap()
-    }
-
-    fn matching_rule(id: &str, priority: i64) -> Rule {
-        Rule {
-            id: id.into(),
-            priority,
-            predicate: approved_predicate(),
-            then: Vec::new(),
-            otherwise: Vec::new(),
-        }
-    }
-
-    fn approved_predicate() -> Predicate {
-        serde_json::from_value(json!({"path": "$.approved", "op": "eq", "value": true})).unwrap()
-    }
-
-    fn revision(tenant_scope: &str, match_mode: &str, compiled: Vec<Rule>) -> RuleRevision {
-        RuleRevision {
-            tenant_scope: tenant_scope.into(),
-            rule_id: "orders.created".into(),
-            revision: 1,
-            content_hash: "contract-hash".into(),
-            match_mode: match_mode.into(),
-            input_contract: None,
-            compiled,
-        }
-    }
-
-    #[test]
-    fn first_match_uses_descending_priority_with_deterministic_ties() {
-        let revision = revision(
-            "__domain_configuration__",
-            "first_match",
-            vec![matching_rule("low", 1), matching_rule("high", 100)],
-        );
-        let (matched, effects) = evaluate(&revision, &event("tenant-a")).unwrap();
-        assert_eq!(matched, vec!["high"]);
-        assert!(effects.is_empty());
-    }
-
-    #[test]
-    fn global_rule_revision_can_process_events_from_different_tenants() {
-        let revision = revision(
-            "__domain_configuration__",
-            "all_matches",
-            vec![matching_rule("rule-1", 1)],
-        );
-        assert!(evaluate(&revision, &event("tenant-a")).is_ok());
-        assert!(evaluate(&revision, &event("tenant-b")).is_ok());
-    }
-
-    #[test]
-    fn evaluation_rejects_non_global_configuration_scope() {
-        let revision = revision("tenant-a", "all_matches", vec![matching_rule("rule-1", 1)]);
-        assert!(evaluate(&revision, &event("tenant-a")).is_err());
-    }
-    #[test]
-    fn child_event_preserves_workflow_correlation_and_causation() {
-        let mut parent = event("tenant-a");
-        parent.workflow_id = Some("workflow-1".into());
-        parent.correlation_id = Some("correlation-1".into());
-        let action = approved_child_action();
-        let payload = build_child_event_payload(&action, &parent, "child-1", "order-1");
-        assert_eq!(payload["workflow_id"], "workflow-1");
-        assert_eq!(payload["correlation_id"], "correlation-1");
-        assert_eq!(payload["causation_id"], "event-1");
-        assert_eq!(payload["headers"]["flowrulz_parent_event_id"], "event-1");
-    }
-
-    fn approved_child_action() -> EmitEventAction {
-        serde_json::from_value(json!({
-            "type": "orders.approved",
-            "partition_key_policy": "inherit",
-            "data": {"order_id": "{{$.order_id}}"}
-        }))
-        .unwrap()
-    }
-}
-
 struct Evaluation<'a> {
     revision: &'a RuleRevision,
     event: &'a EventEnvelope,
@@ -633,4 +543,94 @@ fn child_effect(
         action,
     }
     .effect(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event(tenant_id: &str) -> EventEnvelope {
+        serde_json::from_value(json!({
+            "id": "event-1", "type": "orders.created", "occurred_at": Utc::now(),
+            "meta": {"tenant_id": tenant_id, "partition_key": "order-1"},
+            "data": {"approved": true}
+        }))
+        .unwrap()
+    }
+
+    fn matching_rule(id: &str, priority: i64) -> Rule {
+        Rule {
+            id: id.into(),
+            priority,
+            predicate: approved_predicate(),
+            then: Vec::new(),
+            otherwise: Vec::new(),
+        }
+    }
+
+    fn approved_predicate() -> Predicate {
+        serde_json::from_value(json!({"path": "$.approved", "op": "eq", "value": true})).unwrap()
+    }
+
+    fn revision(tenant_scope: &str, match_mode: &str, compiled: Vec<Rule>) -> RuleRevision {
+        RuleRevision {
+            tenant_scope: tenant_scope.into(),
+            rule_id: "orders.created".into(),
+            revision: 1,
+            content_hash: "contract-hash".into(),
+            match_mode: match_mode.into(),
+            input_contract: None,
+            compiled,
+        }
+    }
+
+    #[test]
+    fn first_match_uses_descending_priority_with_deterministic_ties() {
+        let revision = revision(
+            "__domain_configuration__",
+            "first_match",
+            vec![matching_rule("low", 1), matching_rule("high", 100)],
+        );
+        let (matched, effects) = evaluate(&revision, &event("tenant-a")).unwrap();
+        assert_eq!(matched, vec!["high"]);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn global_rule_revision_can_process_events_from_different_tenants() {
+        let revision = revision(
+            "__domain_configuration__",
+            "all_matches",
+            vec![matching_rule("rule-1", 1)],
+        );
+        assert!(evaluate(&revision, &event("tenant-a")).is_ok());
+        assert!(evaluate(&revision, &event("tenant-b")).is_ok());
+    }
+
+    #[test]
+    fn evaluation_rejects_non_global_configuration_scope() {
+        let revision = revision("tenant-a", "all_matches", vec![matching_rule("rule-1", 1)]);
+        assert!(evaluate(&revision, &event("tenant-a")).is_err());
+    }
+    #[test]
+    fn child_event_preserves_workflow_correlation_and_causation() {
+        let mut parent = event("tenant-a");
+        parent.workflow_id = Some("workflow-1".into());
+        parent.correlation_id = Some("correlation-1".into());
+        let action = approved_child_action();
+        let payload = build_child_event_payload(&action, &parent, "child-1", "order-1");
+        assert_eq!(payload["workflow_id"], "workflow-1");
+        assert_eq!(payload["correlation_id"], "correlation-1");
+        assert_eq!(payload["causation_id"], "event-1");
+        assert_eq!(payload["headers"]["flowrulz_parent_event_id"], "event-1");
+    }
+
+    fn approved_child_action() -> EmitEventAction {
+        serde_json::from_value(json!({
+            "type": "orders.approved",
+            "partition_key_policy": "inherit",
+            "data": {"order_id": "{{$.order_id}}"}
+        }))
+        .unwrap()
+    }
 }
