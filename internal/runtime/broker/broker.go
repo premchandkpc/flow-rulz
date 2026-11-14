@@ -93,16 +93,8 @@ func New(cfg Config, store Store) (*Broker, error) {
 		return nil, ErrInvalid
 	}
 	b := &Broker{cfg: cfg, store: store, changed: make(chan struct{}), state: state{Version: 1, Partitions: cfg.Partitions, Topics: make(map[string]map[uint32]*partitionLog), Groups: make(map[string]*group)}}
-	if store != nil {
-		data, err := store.Load()
-		if err != nil {
-			return nil, fmt.Errorf("load broker state: %w", err)
-		}
-		if len(data) > 0 {
-			if err := json.Unmarshal(data, &b.state); err != nil {
-				return nil, fmt.Errorf("decode broker state: %w", err)
-			}
-		}
+	if err := b.restore(); err != nil {
+		return nil, err
 	}
 	if err := b.validateState(); err != nil {
 		return nil, err
@@ -116,34 +108,11 @@ func (b *Broker) validateState() error {
 	if b.state.Version != 1 || b.state.Partitions != b.cfg.Partitions || b.state.Topics == nil || b.state.Groups == nil || len(b.state.Topics) > 128 || len(b.state.Groups) > 1024 {
 		return fmt.Errorf("invalid or incompatible broker snapshot: %w", ErrInvalid)
 	}
-	for topic, partitions := range b.state.Topics {
-		if !validName(topic) || partitions == nil {
-			return ErrInvalid
-		}
-		for partition, log := range partitions {
-			if partition >= b.cfg.Partitions || log == nil {
-				return ErrInvalid
-			}
-			for i, r := range log.Records {
-				if r.Topic != topic || r.Partition != partition || r.Offset != log.Base+uint64(i) || !validName(r.TenantID) || len(r.Key) == 0 || len(r.Key) > 1024 || len(r.Payload) > 1<<20 || !json.Valid(r.Payload) {
-					return ErrInvalid
-				}
-				b.count++
-				b.bytes += int64(len(r.Payload))
-			}
-		}
+	if err := b.validateTopics(); err != nil {
+		return err
 	}
-	for key, g := range b.state.Groups {
-		if g == nil || g.Offsets == nil || !validName(g.Topic) || !validName(g.Name) || key != groupKey(g.TenantID, g.Topic, g.Name) {
-			return ErrInvalid
-		}
-		for partition, offset := range g.Offsets {
-			log := b.state.Topics[g.Topic][partition]
-			if partition >= b.cfg.Partitions || log == nil || offset > log.Base+uint64(len(log.Records)) {
-				return ErrInvalid
-			}
-		}
-		g.Leases = make(map[uint32]Claim)
+	if err := b.validateGroups(); err != nil {
+		return err
 	}
 	if b.count > b.cfg.MaxMessages || b.bytes > b.cfg.MaxBytes {
 		return ErrFull
@@ -187,43 +156,10 @@ func (b *Broker) publish(topic, tenant, key string, payload json.RawMessage, inp
 	partition := (&domain.EventEnvelope{TenantID: tenant, PartitionKey: key}).VirtualShard(b.cfg.Partitions)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.failure != nil {
-		return Record{}, b.failure
-	}
-	messageLimit, byteLimit := b.cfg.MaxMessages, b.cfg.MaxBytes
-	if input {
-		messageLimit -= max(1, messageLimit/4)
-		byteLimit -= byteLimit / 4
-	}
-	if b.count >= messageLimit || b.bytes+int64(len(payload)) > byteLimit {
-		b.compactLocked()
-	}
-	if b.count >= messageLimit || b.bytes+int64(len(payload)) > byteLimit {
-		return Record{}, ErrFull
-	}
-	partitions := b.state.Topics[topic]
-	if partitions == nil {
-		if len(b.state.Topics) >= 128 {
-			return Record{}, ErrFull
-		}
-		partitions = make(map[uint32]*partitionLog)
-		b.state.Topics[topic] = partitions
-	}
-	log := partitions[partition]
-	if log == nil {
-		log = &partitionLog{}
-		partitions[partition] = log
-	}
-	record := Record{Topic: topic, Partition: partition, Offset: log.Base + uint64(len(log.Records)), TenantID: tenant, Key: key, Payload: append(json.RawMessage{}, payload...)}
-	log.Records = append(log.Records, record)
-	b.count++
-	b.bytes += int64(len(payload))
-	if err := b.persistLocked(); err != nil {
+	if err := b.reserveCapacityLocked(len(payload), input); err != nil {
 		return Record{}, err
 	}
-	b.signalLocked()
-	record.Payload = append(json.RawMessage{}, record.Payload...)
-	return record, nil
+	return b.publishPartitionLocked(topic, tenant, key, payload, partition)
 }
 
 // compactLocked reclaims only prefixes consumed by every registered matching group.
@@ -231,19 +167,7 @@ func (b *Broker) publish(topic, tenant, key string, payload json.RawMessage, inp
 func (b *Broker) compactLocked() {
 	for _, partitions := range b.state.Topics {
 		for _, log := range partitions {
-			removed := 0
-			for _, record := range log.Records {
-				if !b.consumedLocked(record) {
-					break
-				}
-				removed++
-				b.count--
-				b.bytes -= int64(len(record.Payload))
-			}
-			if removed > 0 {
-				log.Base += uint64(removed)
-				log.Records = append([]Record{}, log.Records[removed:]...)
-			}
+			b.compactPartitionLocked(log)
 		}
 	}
 }
@@ -283,19 +207,10 @@ func (b *Broker) groupLocked(tenant, topic, name string) (*group, error) {
 		return nil, b.failure
 	}
 	key := groupKey(tenant, topic, name)
-	g := b.state.Groups[key]
-	if g != nil {
+	if g := b.state.Groups[key]; g != nil {
 		return g, nil
 	}
-	if len(b.state.Groups) >= 1024 {
-		return nil, ErrFull
-	}
-	g = &group{TenantID: tenant, Topic: topic, Name: name, Offsets: make(map[uint32]uint64), Leases: make(map[uint32]Claim)}
-	b.state.Groups[key] = g
-	if err := b.persistLocked(); err != nil {
-		return nil, err
-	}
-	return g, nil
+	return b.createGroupLocked(key, tenant, topic, name)
 }
 
 // Next claims the first unacknowledged matching record in an available partition.
@@ -304,30 +219,7 @@ func (b *Broker) Next(ctx context.Context, tenant, topic, name string, wait time
 	if !validName(topic) || !validName(name) || (tenant != "" && !validName(tenant)) || wait < 0 || wait > 20*time.Second {
 		return nil, ErrInvalid
 	}
-	deadline := time.Now().Add(wait)
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		b.mu.Lock()
-		claim, wake, changed, err := b.claimLocked(tenant, topic, name, deadline)
-		b.mu.Unlock()
-		if err != nil || claim != nil {
-			return claim, err
-		}
-		if wait == 0 || !time.Now().Before(deadline) {
-			return nil, nil
-		}
-		timer := time.NewTimer(time.Until(wake))
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-changed:
-			timer.Stop()
-		case <-timer.C:
-		}
-	}
+	return b.nextUntil(ctx, tenant, topic, name, wait)
 }
 
 func (b *Broker) claimLocked(tenant, topic, name string, deadline time.Time) (*Claim, time.Time, <-chan struct{}, error) {
@@ -335,35 +227,8 @@ func (b *Broker) claimLocked(tenant, topic, name string, deadline time.Time) (*C
 	if err != nil {
 		return nil, deadline, b.changed, err
 	}
-	wake := deadline
-	now := time.Now()
-	for i := uint32(0); i < b.cfg.Partitions; i++ {
-		p := (g.Cursor + i) % b.cfg.Partitions
-		if lease, ok := g.Leases[p]; ok && now.Before(lease.ExpiresAt) {
-			if lease.ExpiresAt.Before(wake) {
-				wake = lease.ExpiresAt
-			}
-			continue
-		}
-		log := b.state.Topics[topic][p]
-		if log == nil {
-			continue
-		}
-		for offset := max(g.Offsets[p], log.Base); offset < log.Base+uint64(len(log.Records)); offset++ {
-			record := log.Records[offset-log.Base]
-			if tenant != "" && record.TenantID != tenant {
-				continue
-			}
-			record.Payload = append(json.RawMessage{}, record.Payload...)
-			claim := Claim{Record: record, Group: name, Receipt: uuid.NewString(), ExpiresAt: now.Add(b.cfg.AckWait)}
-			lease := claim
-			lease.Record.Payload = nil
-			g.Leases[p] = lease
-			g.Cursor = (p + 1) % b.cfg.Partitions
-			return &claim, wake, b.changed, nil
-		}
-	}
-	return nil, wake, b.changed, nil
+	claim, wake := b.claimAvailableLocked(g, time.Now(), deadline)
+	return claim, wake, b.changed, nil
 }
 
 // Settle advances an offset on ACK or delays redelivery on retry. Stale tokens fail.
@@ -376,7 +241,225 @@ func (b *Broker) Settle(tenant, topic, name string, partition uint32, receipt st
 	if b.failure != nil {
 		return b.failure
 	}
-	g := b.state.Groups[groupKey(tenant, topic, name)]
+	return b.settleGroupLocked(b.state.Groups[groupKey(tenant, topic, name)], partition, receipt, retry, delay)
+}
+
+func (b *Broker) restore() error {
+	if b.store == nil {
+		return nil
+	}
+	data, err := b.store.Load()
+	if err != nil {
+		return fmt.Errorf("load broker state: %w", err)
+	}
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &b.state); err != nil {
+			return fmt.Errorf("decode broker state: %w", err)
+		}
+	}
+	return nil
+}
+
+func (b *Broker) validateTopics() error {
+	for topic, partitions := range b.state.Topics {
+		if !validName(topic) || partitions == nil {
+			return ErrInvalid
+		}
+		for partition, log := range partitions {
+			if err := b.validatePartition(topic, partition, log); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (b *Broker) validatePartition(topic string, partition uint32, log *partitionLog) error {
+	if partition >= b.cfg.Partitions || log == nil {
+		return ErrInvalid
+	}
+	for i, r := range log.Records {
+		if r.Topic != topic || r.Partition != partition || r.Offset != log.Base+uint64(i) || !validName(r.TenantID) || len(r.Key) == 0 || len(r.Key) > 1024 || len(r.Payload) > 1<<20 || !json.Valid(r.Payload) {
+			return ErrInvalid
+		}
+		b.count++
+		b.bytes += int64(len(r.Payload))
+	}
+	return nil
+}
+
+func (b *Broker) validateGroups() error {
+	for key, g := range b.state.Groups {
+		if err := b.validateGroup(key, g); err != nil {
+			return err
+		}
+		g.Leases = make(map[uint32]Claim)
+	}
+	return nil
+}
+
+func (b *Broker) validateGroup(key string, g *group) error {
+	if g == nil || g.Offsets == nil || !validName(g.Topic) || !validName(g.Name) || key != groupKey(g.TenantID, g.Topic, g.Name) {
+		return ErrInvalid
+	}
+	for partition, offset := range g.Offsets {
+		log := b.state.Topics[g.Topic][partition]
+		if partition >= b.cfg.Partitions || log == nil || offset > log.Base+uint64(len(log.Records)) {
+			return ErrInvalid
+		}
+	}
+	return nil
+}
+
+func (b *Broker) capacityLimits(input bool) (int, int64) {
+	messages, bytes := b.cfg.MaxMessages, b.cfg.MaxBytes
+	if input {
+		messages -= max(1, messages/4)
+		bytes -= bytes / 4
+	}
+	return messages, bytes
+}
+
+func (b *Broker) reserveCapacityLocked(size int, input bool) error {
+	if b.failure != nil {
+		return b.failure
+	}
+	messages, bytes := b.capacityLimits(input)
+	if b.count >= messages || b.bytes+int64(size) > bytes {
+		b.compactLocked()
+	}
+	if b.count >= messages || b.bytes+int64(size) > bytes {
+		return ErrFull
+	}
+	return nil
+}
+
+func (b *Broker) topicLocked(topic string) (map[uint32]*partitionLog, error) {
+	if partitions := b.state.Topics[topic]; partitions != nil {
+		return partitions, nil
+	}
+	if len(b.state.Topics) >= 128 {
+		return nil, ErrFull
+	}
+	partitions := make(map[uint32]*partitionLog)
+	b.state.Topics[topic] = partitions
+	return partitions, nil
+}
+
+func (b *Broker) partitionLocked(topic string, partition uint32) (*partitionLog, error) {
+	partitions, err := b.topicLocked(topic)
+	if err != nil {
+		return nil, err
+	}
+	if partitions[partition] == nil {
+		partitions[partition] = &partitionLog{}
+	}
+	return partitions[partition], nil
+}
+
+func (b *Broker) appendLocked(log *partitionLog, record Record) (Record, error) {
+	log.Records = append(log.Records, record)
+	b.count++
+	b.bytes += int64(len(record.Payload))
+	if err := b.persistLocked(); err != nil {
+		return Record{}, err
+	}
+	b.signalLocked()
+	record.Payload = append(json.RawMessage{}, record.Payload...)
+	return record, nil
+}
+
+func (b *Broker) compactPartitionLocked(log *partitionLog) {
+	removed := 0
+	for _, record := range log.Records {
+		if !b.consumedLocked(record) {
+			break
+		}
+		removed++
+		b.count--
+		b.bytes -= int64(len(record.Payload))
+	}
+	if removed > 0 {
+		log.Base += uint64(removed)
+		log.Records = append([]Record{}, log.Records[removed:]...)
+	}
+}
+
+func (b *Broker) createGroupLocked(key, tenant, topic, name string) (*group, error) {
+	if len(b.state.Groups) >= 1024 {
+		return nil, ErrFull
+	}
+	g := &group{TenantID: tenant, Topic: topic, Name: name, Offsets: make(map[uint32]uint64), Leases: make(map[uint32]Claim)}
+	b.state.Groups[key] = g
+	if err := b.persistLocked(); err != nil {
+		return nil, err
+	}
+	return g, nil
+}
+
+func (b *Broker) tryClaim(ctx context.Context, tenant, topic, name string, deadline time.Time) (*Claim, time.Time, <-chan struct{}, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, deadline, nil, err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.claimLocked(tenant, topic, name, deadline)
+}
+
+func waitForChange(ctx context.Context, wake time.Time, changed <-chan struct{}) error {
+	timer := time.NewTimer(time.Until(wake))
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-changed:
+	case <-timer.C:
+	}
+	return nil
+}
+
+func (b *Broker) claimAvailableLocked(g *group, now, wake time.Time) (*Claim, time.Time) {
+	for i := uint32(0); i < b.cfg.Partitions; i++ {
+		p := (g.Cursor + i) % b.cfg.Partitions
+		if lease, ok := g.Leases[p]; ok && now.Before(lease.ExpiresAt) {
+			if lease.ExpiresAt.Before(wake) {
+				wake = lease.ExpiresAt
+			}
+			continue
+		}
+		if claim := b.claimPartitionLocked(g, p, now); claim != nil {
+			return claim, wake
+		}
+	}
+	return nil, wake
+}
+
+func (b *Broker) claimPartitionLocked(g *group, partition uint32, now time.Time) *Claim {
+	log := b.state.Topics[g.Topic][partition]
+	if log == nil {
+		return nil
+	}
+	for offset := max(g.Offsets[partition], log.Base); offset < log.Base+uint64(len(log.Records)); offset++ {
+		record := log.Records[offset-log.Base]
+		if g.TenantID != "" && record.TenantID != g.TenantID {
+			continue
+		}
+		return b.leaseRecordLocked(g, record, now)
+	}
+	return nil
+}
+
+func (b *Broker) leaseRecordLocked(g *group, record Record, now time.Time) *Claim {
+	record.Payload = append(json.RawMessage{}, record.Payload...)
+	claim := Claim{Record: record, Group: g.Name, Receipt: uuid.NewString(), ExpiresAt: now.Add(b.cfg.AckWait)}
+	lease := claim
+	lease.Record.Payload = nil
+	g.Leases[record.Partition] = lease
+	g.Cursor = (record.Partition + 1) % b.cfg.Partitions
+	return &claim
+}
+
+func (b *Broker) settleGroupLocked(g *group, partition uint32, receipt string, retry bool, delay time.Duration) error {
 	if g == nil {
 		return ErrReceipt
 	}
@@ -384,17 +467,47 @@ func (b *Broker) Settle(tenant, topic, name string, partition uint32, receipt st
 	if !ok || claim.Receipt != receipt || !time.Now().Before(claim.ExpiresAt) {
 		return ErrReceipt
 	}
+	if err := b.settleClaimLocked(g, claim, retry, delay); err != nil {
+		return err
+	}
+	b.signalLocked()
+	return nil
+}
+
+func (b *Broker) settleClaimLocked(g *group, claim Claim, retry bool, delay time.Duration) error {
+	partition := claim.Record.Partition
 	if retry {
 		claim.Receipt = ""
 		claim.ExpiresAt = time.Now().Add(delay)
 		g.Leases[partition] = claim
-	} else {
-		g.Offsets[partition] = claim.Record.Offset + 1
-		delete(g.Leases, partition)
-		if err := b.persistLocked(); err != nil {
-			return err
+		return nil
+	}
+	g.Offsets[partition] = claim.Record.Offset + 1
+	delete(g.Leases, partition)
+	return b.persistLocked()
+}
+
+func (b *Broker) publishPartitionLocked(topic, tenant, key string, payload json.RawMessage, partition uint32) (Record, error) {
+	log, err := b.partitionLocked(topic, partition)
+	if err != nil {
+		return Record{}, err
+	}
+	record := Record{Topic: topic, Partition: partition, Offset: log.Base + uint64(len(log.Records)), TenantID: tenant, Key: key, Payload: append(json.RawMessage{}, payload...)}
+	return b.appendLocked(log, record)
+}
+
+func (b *Broker) nextUntil(ctx context.Context, tenant, topic, name string, wait time.Duration) (*Claim, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		claim, wake, changed, err := b.tryClaim(ctx, tenant, topic, name, deadline)
+		if err != nil || claim != nil {
+			return claim, err
+		}
+		if wait == 0 || !time.Now().Before(deadline) {
+			return nil, nil
+		}
+		if err := waitForChange(ctx, wake, changed); err != nil {
+			return nil, err
 		}
 	}
-	b.signalLocked()
-	return nil
 }

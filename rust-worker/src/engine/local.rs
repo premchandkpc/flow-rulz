@@ -27,62 +27,10 @@ impl LocalRuleSet {
         }
         let content_hash = sha256_hex(source);
         let source: Source = serde_json::from_slice(source).context("parse local rules")?;
-        if source.rule_set.is_empty()
-            || source.rule_set.len() > 128
-            || source.revision <= 0
-            || !matches!(source.mode.as_str(), "first_match" | "all_matches")
-            || source.input_contract.is_some()
-        {
-            bail!(
-                "local rule requires a name, positive revision, supported mode and no registry contract"
-            );
-        }
-        let items = source.rules.as_array().context("rules must be an array")?;
-        if items.is_empty() || items.len() > 100 {
-            bail!("local rules require 1..100 rules");
-        }
-        let mut actions = 0;
-        let mut ids = std::collections::HashSet::new();
-        for rule in items {
-            let id = rule["id"].as_str().context("rule id is required")?;
-            if id.is_empty() || id.len() > 128 || !ids.insert(id) {
-                bail!("invalid or duplicate local rule id");
-            }
-            validate_predicate(&rule["when"], 0)?;
-            for name in ["then", "otherwise"] {
-                if let Some(items) = rule.get(name) {
-                    let items = items.as_array().context("actions must be an array")?;
-                    actions += items.len();
-                    for action in items {
-                        let object = action.as_object().context("action must be an object")?;
-                        if object.len() != 1
-                            || !object.keys().all(|name| {
-                                matches!(name.as_str(), "emit" | "command" | "emit_event")
-                            })
-                        {
-                            bail!("exactly one supported action is required");
-                        }
-                        if action.get("schedule_event").is_some() {
-                            bail!("scheduled actions require the durable runtime");
-                        }
-                    }
-                }
-            }
-        }
-        if actions > 10 {
-            bail!("local rules exceed the ten-action limit");
-        }
-        let compiled = serde_json::from_value(source.rules)?;
+        source.validate()?;
+        validate_rules(&source.rules)?;
         Ok(Self {
-            revision: rules::RuleRevision {
-                tenant_scope: "__domain_configuration__".into(),
-                rule_id: source.rule_set,
-                revision: source.revision,
-                content_hash,
-                match_mode: source.mode,
-                input_contract: None,
-                compiled,
-            },
+            revision: source.into_revision(content_hash)?,
         })
     }
 
@@ -96,57 +44,10 @@ impl LocalRuleSet {
             bail!("local rules cannot validate registry contracts");
         }
         let (_, effects) = rules::evaluate(&self.revision, event)?;
-        let execution_id = sha256_hex(
-            format!(
-                "execution|{}:{}|{}:{}|{}:{}|{}",
-                event.tenant_id.len(),
-                event.tenant_id,
-                event.id.len(),
-                event.id,
-                self.revision.rule_id.len(),
-                self.revision.rule_id,
-                self.revision.revision
-            )
-            .as_bytes(),
-        );
+        let execution_id = local_execution_id(event, &self.revision);
         effects
             .into_iter()
-            .map(|effect| {
-                if effect.effect_type == "emit_event" {
-                    let child: EventEnvelope = serde_json::from_value(effect.payload.clone())?;
-                    return Ok(Output {
-                        topic: "events".into(),
-                        tenant: child.tenant_id,
-                        key: child.partition_key,
-                        payload: effect.payload,
-                    });
-                }
-                let topic = match effect.effect_type {
-                    "emit" => {
-                        validate_subject(&effect.destination)?;
-                        format!("effects.{}", effect.destination)
-                    }
-                    "command" => {
-                        validate_subject(&effect.destination)?;
-                        if effect.destination.contains('.') {
-                            bail!("command destination must be one token");
-                        }
-                        validate_subject(&effect.name)?;
-                        format!("commands.{}.{}", effect.destination, effect.name)
-                    }
-                    _ => bail!("unsupported local effect"),
-                };
-                let payload = json!({"id": effect.id, "execution_id": execution_id,
-                "tenant_id": effect.tenant_id, "destination": effect.destination,
-                "name": effect.name, "payload": effect.payload, "effect_type": effect.effect_type,
-                "idempotency_key": effect.id, "created_at": chrono::Utc::now()});
-                Ok(Output {
-                    topic,
-                    tenant: event.tenant_id.clone(),
-                    key: effect.id,
-                    payload,
-                })
-            })
+            .map(|effect| effect_output(effect, event, &execution_id))
             .collect()
     }
 }
@@ -161,18 +62,215 @@ fn validate_predicate(value: &Value, depth: usize) -> Result<()> {
     }
     for name in ["all", "any"] {
         if let Some(items) = object.get(name) {
-            let items = items
-                .as_array()
-                .context("predicate group must be an array")?;
-            if items.is_empty() || items.len() > 200 {
-                bail!("invalid predicate group size");
-            }
-            for child in items {
-                validate_predicate(child, depth + 1)?;
-            }
-            return Ok(());
+            return validate_predicate_group(items, depth);
         }
     }
+    validate_leaf_predicate(value)
+}
+
+fn validate_subject(subject: &str) -> Result<()> {
+    if subject.is_empty() || subject.len() > 128 {
+        bail!("invalid output topic");
+    }
+    for token in subject.split('.') {
+        validate_subject_token(token)?;
+    }
+    Ok(())
+}
+
+impl Source {
+    fn validate(&self) -> Result<()> {
+        if self.rule_set.is_empty()
+            || self.rule_set.len() > 128
+            || self.revision <= 0
+            || !matches!(self.mode.as_str(), "first_match" | "all_matches")
+            || self.input_contract.is_some()
+        {
+            bail!(
+                "local rule requires a name, positive revision, supported mode and no registry contract"
+            );
+        }
+        Ok(())
+    }
+    fn into_revision(self, content_hash: String) -> Result<rules::RuleRevision> {
+        let compiled: Vec<rules::Rule> = serde_json::from_value(self.rules)?;
+        validate_first_match_otherwise(&self.mode, &compiled)?;
+        Ok(rules::RuleRevision {
+            tenant_scope: "__domain_configuration__".into(),
+            rule_id: self.rule_set,
+            revision: self.revision,
+            content_hash,
+            match_mode: self.mode,
+            input_contract: None,
+            compiled,
+        })
+    }
+}
+
+fn validate_first_match_otherwise(mode: &str, rules: &[rules::Rule]) -> Result<()> {
+    if mode != "first_match" {
+        return Ok(());
+    }
+    let lowest = rules.iter().map(|rule| rule.priority).min();
+    for rule in rules {
+        if Some(rule.priority) != lowest && !rule.otherwise.is_empty() {
+            bail!("first_match permits otherwise only on the lowest-priority rule");
+        }
+    }
+    Ok(())
+}
+
+fn validate_rules(value: &Value) -> Result<()> {
+    let items = value.as_array().context("rules must be an array")?;
+    if items.is_empty() || items.len() > 100 {
+        bail!("local rules require 1..100 rules");
+    }
+    let mut actions = 0;
+    let mut ids = std::collections::HashSet::new();
+    let mut priorities = std::collections::HashSet::new();
+    for rule in items {
+        let priority = rule["priority"].as_i64().unwrap_or(0);
+        if !priorities.insert(priority) {
+            bail!("duplicate rule priority is ambiguous");
+        }
+        actions += validate_rule(rule, &mut ids)?;
+    }
+    if actions > 10 {
+        bail!("local rules exceed the ten-action limit");
+    }
+    Ok(())
+}
+
+fn validate_rule<'a>(
+    rule: &'a Value,
+    ids: &mut std::collections::HashSet<&'a str>,
+) -> Result<usize> {
+    let id = rule["id"].as_str().context("rule id is required")?;
+    if id.is_empty() || id.len() > 128 || !ids.insert(id) {
+        bail!("invalid or duplicate local rule id");
+    }
+    validate_predicate(&rule["when"], 0)?;
+    if rule["then"]
+        .as_array()
+        .is_none_or(|actions| actions.is_empty())
+    {
+        bail!("Go rule compiler requires at least one then action");
+    }
+    let mut count = 0;
+    for name in ["then", "otherwise"] {
+        if let Some(items) = rule.get(name) {
+            count += validate_actions(items)?;
+        }
+    }
+    Ok(count)
+}
+
+fn validate_actions(value: &Value) -> Result<usize> {
+    let items = value.as_array().context("actions must be an array")?;
+    for action in items {
+        let object = action.as_object().context("action must be an object")?;
+        if object.len() != 1
+            || !object
+                .keys()
+                .all(|name| matches!(name.as_str(), "emit" | "command" | "emit_event"))
+        {
+            bail!("exactly one supported action is required");
+        }
+        if action.get("schedule_event").is_some() {
+            bail!("scheduled actions require the durable runtime");
+        }
+    }
+    Ok(items.len())
+}
+
+fn local_execution_id(event: &EventEnvelope, revision: &rules::RuleRevision) -> String {
+    let tenant = &event.tenant_id;
+    let id = &event.id;
+    let rule = &revision.rule_id;
+    sha256_hex(
+        format!(
+            "execution|{}:{}|{}:{}|{}:{}|{}",
+            tenant.len(),
+            tenant,
+            id.len(),
+            id,
+            rule.len(),
+            rule,
+            revision.revision
+        )
+        .as_bytes(),
+    )
+}
+
+fn effect_output(
+    effect: rules::Effect,
+    event: &EventEnvelope,
+    execution_id: &str,
+) -> Result<Output> {
+    if effect.effect_type == "emit_event" {
+        return child_output(effect);
+    }
+    let topic = effect_topic(&effect)?;
+    let payload = effect_payload(&effect, execution_id);
+    Ok(Output {
+        topic,
+        tenant: event.tenant_id.clone(),
+        key: effect.id,
+        payload,
+    })
+}
+
+fn child_output(effect: rules::Effect) -> Result<Output> {
+    let child: EventEnvelope = serde_json::from_value(effect.payload.clone())?;
+    Ok(Output {
+        topic: "events".into(),
+        tenant: child.tenant_id,
+        key: child.partition_key,
+        payload: effect.payload,
+    })
+}
+
+fn effect_topic(effect: &rules::Effect) -> Result<String> {
+    match effect.effect_type {
+        "emit" => {
+            validate_subject(&effect.destination)?;
+            Ok(format!("effects.{}", effect.destination))
+        }
+        "command" => command_topic(&effect.destination, &effect.name),
+        _ => bail!("unsupported local effect"),
+    }
+}
+
+fn command_topic(destination: &str, name: &str) -> Result<String> {
+    validate_subject(destination)?;
+    if destination.contains('.') {
+        bail!("command destination must be one token");
+    }
+    validate_subject(name)?;
+    Ok(format!("commands.{destination}.{name}"))
+}
+
+fn effect_payload(effect: &rules::Effect, execution_id: &str) -> Value {
+    json!({"id": effect.id, "execution_id": execution_id,
+        "tenant_id": effect.tenant_id, "destination": effect.destination,
+        "name": effect.name, "payload": effect.payload, "effect_type": effect.effect_type,
+        "idempotency_key": effect.id, "created_at": chrono::Utc::now()})
+}
+
+fn validate_predicate_group(value: &Value, depth: usize) -> Result<()> {
+    let items = value
+        .as_array()
+        .context("predicate group must be an array")?;
+    if items.is_empty() || items.len() > 200 {
+        bail!("invalid predicate group size");
+    }
+    for child in items {
+        validate_predicate(child, depth + 1)?;
+    }
+    Ok(())
+}
+
+fn validate_leaf_predicate(value: &Value) -> Result<()> {
     let path = value["path"]
         .as_str()
         .context("predicate path is required")?;
@@ -190,20 +288,15 @@ fn validate_predicate(value: &Value, depth: usize) -> Result<()> {
     Ok(())
 }
 
-fn validate_subject(subject: &str) -> Result<()> {
-    if subject.is_empty() || subject.len() > 128 {
-        bail!("invalid output topic");
-    }
-    for token in subject.split('.') {
-        if token.is_empty()
-            || token.len() > 63
-            || !token.as_bytes()[0].is_ascii_lowercase()
-            || !token
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
-        {
-            bail!("invalid output topic token");
-        }
+fn validate_subject_token(token: &str) -> Result<()> {
+    if token.is_empty()
+        || token.len() > 63
+        || !token.as_bytes()[0].is_ascii_lowercase()
+        || !token
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    {
+        bail!("invalid output topic token");
     }
     Ok(())
 }
@@ -216,31 +309,54 @@ mod tests {
     }
     #[test]
     fn canonical_sample_chain_and_tenant_scoped_child_ids() {
-        let first = LocalRuleSet::compile(include_bytes!(
-            "../../../examples/direct-worker/rules/a.json"
-        ))
-        .unwrap();
-        let last = LocalRuleSet::compile(include_bytes!(
-            "../../../examples/direct-worker/rules/processed.json"
-        ))
-        .unwrap();
+        let first = sample_rules("first");
         let output = first.evaluate(&event("tenant-a")).unwrap().remove(0);
         assert_eq!(output.topic, "events");
         assert!(output.payload.get("tenant_id").is_none());
         let child: EventEnvelope = serde_json::from_value(output.payload).unwrap();
-        // Compute from byte lengths to keep the fixture aligned with the Go ID contract.
-        let name = "forward-to-next-worker";
-        let expected =
-            sha256_hex(format!("child|8:tenant-a|7:event-1|{}:{}|0", name.len(), name).as_bytes());
-        assert_eq!(child.id, expected);
-        assert_eq!(child.data["id"], "123");
-        let command = last.evaluate(&child).unwrap().remove(0);
-        assert_eq!(command.topic, "commands.b.handle");
-        assert_eq!(command.payload["idempotency_key"], command.payload["id"]);
-        assert_eq!(command.payload["tenant_id"], "tenant-a");
+        assert_sample_child(&child);
+        assert_sample_command(&child);
         let other = first.evaluate(&event("tenant-b")).unwrap().remove(0);
         assert_ne!(other.payload["id"], child.id);
     }
+    #[test]
+    fn rejects_early_otherwise_like_go_compiler() {
+        let source = json!({
+            "rule_set":"orders.created","revision":1,"mode":"first_match",
+            "rules":[
+                {"id":"high","priority":10,"when":{"path":"$.a","op":"exists"},
+                 "otherwise":[{"emit":{"topic":"alerts","data":{}}}]},
+                {"id":"low","priority":1,"when":{"path":"$.b","op":"exists"},
+                 "then":[{"emit":{"topic":"alerts","data":{}}}]}
+            ]
+        });
+        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_priorities_like_go_compiler() {
+        let source = json!({
+            "rule_set":"orders.created","revision":1,"mode":"all_matches",
+            "rules":[
+                {"id":"first","priority":0,"when":{"path":"$.a","op":"exists"},
+                 "then":[{"emit":{"topic":"alerts","data":{}}}]},
+                {"id":"second","priority":0,"when":{"path":"$.b","op":"exists"},
+                 "then":[{"emit":{"topic":"alerts","data":{}}}]}
+            ]
+        });
+        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
+    }
+
+    #[test]
+    fn rejects_rules_without_then_actions_like_go_compiler() {
+        let source = json!({
+            "rule_set":"orders.created","revision":1,"mode":"first_match",
+            "rules":[{"id":"empty","when":{"path":"$.a","op":"exists"},
+                      "otherwise":[{"emit":{"topic":"alerts","data":{}}}]}]
+        });
+        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
+    }
+
     #[test]
     fn unsupported_scheduled_actions_and_contracts_fail_at_startup() {
         let mut source: Value = serde_json::from_slice(include_bytes!(
@@ -251,5 +367,26 @@ mod tests {
         assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
         source["input_contract"] = json!({"name":"contract","version":"1"});
         assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
+    }
+    fn sample_rules(stage: &str) -> LocalRuleSet {
+        let source: &[u8] = match stage {
+            "first" => include_bytes!("../../../examples/direct-worker/rules/a.json"),
+            _ => include_bytes!("../../../examples/direct-worker/rules/processed.json"),
+        };
+        LocalRuleSet::compile(source).unwrap()
+    }
+    fn assert_sample_child(child: &EventEnvelope) {
+        // Byte lengths must match the Go child ID contract.
+        let name = "forward-to-next-worker";
+        let expected =
+            sha256_hex(format!("child|8:tenant-a|7:event-1|{}:{}|0", name.len(), name).as_bytes());
+        assert_eq!(child.id, expected);
+        assert_eq!(child.data["id"], "123");
+    }
+    fn assert_sample_command(child: &EventEnvelope) {
+        let command = sample_rules("last").evaluate(child).unwrap().remove(0);
+        assert_eq!(command.topic, "commands.b.handle");
+        assert_eq!(command.payload["idempotency_key"], command.payload["id"]);
+        assert_eq!(command.payload["tenant_id"], "tenant-a");
     }
 }

@@ -11,7 +11,6 @@ func TestShardHashUsesStableFNV1aValues(t *testing.T) {
 		{input: "a", want: 3826002220},
 		{input: "worker-test", want: 930350870},
 	}
-
 	for _, tt := range tests {
 		if got := ShardHash(tt.input); got != tt.want {
 			t.Errorf("ShardHash(%q) = %d, want %d", tt.input, got, tt.want)

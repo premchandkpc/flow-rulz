@@ -42,7 +42,6 @@ func TestFetchAndProcessDeliveriesReportsIdleWithoutOwnedShards(t *testing.T) {
 		shardService:    idlePollShardService{},
 		shardedConsumer: consumer,
 	}
-
 	didWork, err := worker.fetchAndProcessDeliveries(context.Background())
 	if err != nil {
 		t.Fatalf("fetchAndProcessDeliveries() error = %v", err)
@@ -61,7 +60,6 @@ func TestFetchAndProcessDeliveriesReportsIdleWhenNoMessages(t *testing.T) {
 		shardService:    idlePollShardService{owned: []uint32{7}},
 		shardedConsumer: consumer,
 	}
-
 	didWork, err := worker.fetchAndProcessDeliveries(context.Background())
 	if err != nil {
 		t.Fatalf("fetchAndProcessDeliveries() error = %v", err)

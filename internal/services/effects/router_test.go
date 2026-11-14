@@ -44,7 +44,6 @@ func TestRouterPublishesChildEvent(t *testing.T) {
 	publisher := &testPublisher{}
 	external := &testDestination{}
 	router := NewRouterWithConfig(publisher, external, "events", 64)
-
 	err := router.Send(context.Background(), &domain.Effect{
 		EffectType: domain.EffectTypeEmitEvent, Destination: "events.payment.requested", Payload: child,
 	}, "test-idempotency-key")

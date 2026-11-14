@@ -23,21 +23,29 @@ type testOutboxRepository struct {
 	quarantineCalls int
 	retryCalls      int
 	deliveredCalls  int
+	retryAttempts   int
+	claimTTL        time.Duration
 }
 
 func (r *testOutboxRepository) Insert(context.Context, []domain.OutboxEffect) error { return nil }
-func (r *testOutboxRepository) ClaimPending(_ context.Context, _ int, claimant string, _ time.Duration) ([]domain.OutboxEffect, error) {
+func (r *testOutboxRepository) ClaimPending(_ context.Context, _ int, claimant string, ttl time.Duration) ([]domain.OutboxEffect, error) {
 	r.claimToken = claimant
-	return append([]domain.OutboxEffect(nil), r.effects...), nil
+	r.claimTTL = ttl
+	effects := append([]domain.OutboxEffect(nil), r.effects...)
+	for i := range effects {
+		effects[i].Attempts++
+	}
+	return effects, nil
 }
 func (r *testOutboxRepository) MarkDelivered(_ context.Context, _ []string, claimant string) error {
 	r.deliveredCalls++
 	r.deliveredToken = claimant
 	return r.deliveredErr
 }
-func (r *testOutboxRepository) ScheduleRetry(_ context.Context, _ string, claimant string, _ time.Duration, _ int, _ string) error {
+func (r *testOutboxRepository) ScheduleRetry(_ context.Context, _ string, claimant string, _ time.Duration, attempts int, _ string) error {
 	r.retryCalls++
 	r.retryToken = claimant
+	r.retryAttempts = attempts
 	return r.retryErr
 }
 func (r *testOutboxRepository) Quarantine(_ context.Context, _ string, claimant, _ string) error {
@@ -53,10 +61,22 @@ func (r *testOutboxRepository) GetByExecution(context.Context, string) ([]domain
 }
 
 type testEffectSender struct {
-	err error
+	err   error
+	calls int
 }
 
-func (s *testEffectSender) Send(context.Context, *domain.Effect, string) error { return s.err }
+type blockingEffectSender struct{ calls int }
+
+func (s *blockingEffectSender) Send(ctx context.Context, _ *domain.Effect, _ string) error {
+	s.calls++
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (s *testEffectSender) Send(context.Context, *domain.Effect, string) error {
+	s.calls++
+	return s.err
+}
 
 type testQuarantineRepository struct {
 	saved     []*domain.QuarantineEntry
@@ -88,7 +108,6 @@ func TestPublishBatchUsesUniqueClaimTokenForDelivery(t *testing.T) {
 		Payload: []byte(`{}`), EffectType: domain.EffectTypeCommand, MaxAttempts: 3,
 	}}}
 	svc := NewService(outbox, &testEffectSender{}, &testQuarantineRepository{}, domain.SystemClock{}, "publisher")
-
 	if err := svc.PublishBatch(context.Background(), 10); err != nil {
 		t.Fatalf("PublishBatch() error = %v", err)
 	}
@@ -108,7 +127,6 @@ func TestPublishBatchPropagatesRetrySettlementFailure(t *testing.T) {
 	})
 	outbox.retryErr = retryErr
 	svc := NewService(outbox, &testEffectSender{err: errors.New("destination down")}, &testQuarantineRepository{}, domain.SystemClock{}, "publisher")
-
 	err := svc.PublishBatch(context.Background(), 10)
 	if !errors.Is(err, retryErr) {
 		t.Fatalf("PublishBatch() error = %v, want retry error", err)
@@ -129,7 +147,6 @@ func TestPublishBatchRemovesQuarantineRecordWhenClaimWasLost(t *testing.T) {
 	outbox.quarantineErr = claimErr
 	quarantine := &testQuarantineRepository{}
 	svc := NewService(outbox, &testEffectSender{err: errors.New("permanent destination error")}, quarantine, domain.SystemClock{}, "publisher")
-
 	err := svc.PublishBatch(context.Background(), 10)
 	if !errors.Is(err, claimErr) {
 		t.Fatalf("PublishBatch() error = %v, want claim error", err)
@@ -160,12 +177,50 @@ func TestPublishBatchPropagatesDeliverySettlementFailure(t *testing.T) {
 	})
 	outbox.deliveredErr = settleErr
 	svc := NewService(outbox, &testEffectSender{}, &testQuarantineRepository{}, domain.SystemClock{}, "publisher")
-
 	err := svc.PublishBatch(context.Background(), 10)
 	if !errors.Is(err, settleErr) {
 		t.Fatalf("PublishBatch() error = %v, want delivery settlement error", err)
 	}
 	if outbox.deliveredToken != outbox.claimToken {
 		t.Fatalf("MarkDelivered token=%q claim token=%q", outbox.deliveredToken, outbox.claimToken)
+	}
+}
+
+func TestExpiredFinalClaimQuarantinesWithoutSendingAgain(t *testing.T) {
+	outbox := singleEffectOutbox(domain.OutboxEffect{
+		ID: "effect-crashed", TenantID: "tenant-a", MaxAttempts: 1, Attempts: 1,
+	})
+	sender := &testEffectSender{}
+	svc := NewService(outbox, sender, &testQuarantineRepository{}, nil, "worker")
+	if err := svc.PublishBatch(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if sender.calls != 0 || outbox.quarantineCalls != 1 {
+		t.Fatalf("send calls=%d quarantine calls=%d", sender.calls, outbox.quarantineCalls)
+	}
+}
+
+func TestDestinationSendUsesBoundedContext(t *testing.T) {
+	outbox := singleEffectOutbox(domain.OutboxEffect{ID: "effect-timeout", MaxAttempts: 3})
+	sender := &blockingEffectSender{}
+	svc := NewService(outbox, sender, nil, nil, "worker")
+	svc.sendTimeout = time.Millisecond
+	if err := svc.PublishBatch(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if sender.calls != 1 || outbox.retryCalls != 1 || outbox.retryAttempts != 1 {
+		t.Fatalf("send=%d retry=%d attempts=%d", sender.calls, outbox.retryCalls, outbox.retryAttempts)
+	}
+}
+
+func TestClaimTTLCoversSequentialBatch(t *testing.T) {
+	outbox := &testOutboxRepository{}
+	svc := NewService(outbox, &testEffectSender{}, nil, nil, "worker")
+	svc.sendTimeout, svc.minimumTTL = 2*time.Second, time.Second
+	if _, err := svc.PublishBatchCount(context.Background(), 3); err != nil {
+		t.Fatal(err)
+	}
+	if want := 36 * time.Second; outbox.claimTTL != want {
+		t.Fatalf("claim TTL=%s want=%s", outbox.claimTTL, want)
 	}
 }

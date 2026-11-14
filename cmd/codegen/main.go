@@ -12,6 +12,7 @@ import (
 
 	postgresadapter "github.com/flowrulz/flow-rulz/internal/adapters/postgres"
 	"github.com/flowrulz/flow-rulz/internal/codegen"
+	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
 const codegenCommandName = "codegen"
@@ -25,93 +26,17 @@ func main() {
 
 // run owns resources so every error path executes deferred cleanup before main exits.
 func run() error {
-	flags := flag.NewFlagSet(codegenCommandName, flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
-	dsn := flags.String("dsn", "", "PostgreSQL connection string")
-	contract := flags.String("contract", "", "Registered contract name")
-	version := flags.String("version", "", "Registered contract version")
-	target := flags.String("target", codegen.TargetGo, "Target language: "+codegen.SupportedTargetsText)
-	output := flags.String("output", "", "Output directory (prints generated files when empty)")
-	list := flags.Bool("list", false, "List all registered contracts")
-	migrations := flags.String("migrations", "migrations", "Path to migrations directory")
-	if err := flags.Parse(os.Args[1:]); err != nil {
+	options, err := parseOptions(os.Args[1:])
+	if err != nil {
 		return err
 	}
-
-	if *dsn == "" {
-		*dsn = os.Getenv("DATABASE_URL")
-	}
-	if *dsn == "" {
-		*dsn = "postgres://postgres:postgres@localhost:5432/flowrulz?sslmode=disable"
-	}
-
 	ctx := context.Background()
-	db, err := postgresadapter.New(ctx, *dsn, *migrations)
+	db, err := postgresadapter.New(ctx, options.databaseURL(), options.migrations)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
-
-	registry := postgresadapter.NewContractRegistry(db.Pool())
-	if *list {
-		schemas, err := registry.List(ctx, "")
-		if err != nil {
-			return fmt.Errorf("list contracts: %w", err)
-		}
-		for _, schema := range schemas {
-			if _, err := fmt.Printf("%s@%s\n", schema.Name, schema.Version); err != nil {
-				return fmt.Errorf("write contract list: %w", err)
-			}
-		}
-		return nil
-	}
-
-	if *contract == "" || *version == "" {
-		return errors.New("usage: " + codegenCommandName + " -contract <name> -version <version> [-target " + codegen.SupportedTargetsText + "] [-output directory], or " + codegenCommandName + " -list")
-	}
-
-	schema, err := registry.Get(ctx, *contract, *version)
-	if err != nil {
-		return fmt.Errorf("get contract %s@%s: %w", *contract, *version, err)
-	}
-	if schema == nil {
-		return fmt.Errorf("contract %s@%s not found", *contract, *version)
-	}
-
-	generator := codegen.NewGenerator(schema)
-	if *output != "" {
-		if err := generateTarget(generator, *target, *output); err != nil {
-			return fmt.Errorf("generate %s: %w", *target, err)
-		}
-		_, err := fmt.Printf("Generated %s artifacts in %s\n", *target, *output)
-		return err
-	}
-
-	tmpDir, err := os.MkdirTemp("", "flowrulz-codegen-*")
-	if err != nil {
-		return fmt.Errorf("create temporary directory: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	files, err := generateTargetFiles(generator, *target, tmpDir)
-	if err != nil {
-		return fmt.Errorf("generate %s: %w", *target, err)
-	}
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			return fmt.Errorf("read generated file %s: %w", file, err)
-		}
-		if _, err := os.Stdout.Write(data); err != nil {
-			return fmt.Errorf("write generated file %s: %w", file, err)
-		}
-		if len(data) == 0 || data[len(data)-1] != '\n' {
-			if _, err := fmt.Fprintln(os.Stdout); err != nil {
-				return fmt.Errorf("write generated file separator: %w", err)
-			}
-		}
-	}
-	return nil
+	return executeGeneration(ctx, postgresadapter.NewContractRegistry(db.Pool()), options)
 }
 
 func generateTarget(generator *codegen.Generator, target, outputDir string) error {
@@ -132,4 +57,130 @@ func generateTargetFiles(generator *codegen.Generator, target, outputDir string)
 	default:
 		return nil, fmt.Errorf("unknown target %q (supported: %s)", target, codegen.SupportedTargetsText)
 	}
+}
+
+type generationOptions struct {
+	dsn, contract, version, target, output, migrations string
+	list                                               bool
+}
+
+func parseOptions(args []string) (generationOptions, error) {
+	flags := flag.NewFlagSet(codegenCommandName, flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	var options generationOptions
+	options.bind(flags)
+	err := flags.Parse(args)
+	return options, err
+}
+
+func (o *generationOptions) bind(flags *flag.FlagSet) {
+	flags.StringVar(&o.dsn, "dsn", "", "PostgreSQL connection string")
+	flags.StringVar(&o.contract, "contract", "", "Registered contract name")
+	flags.StringVar(&o.version, "version", "", "Registered contract version")
+	flags.StringVar(&o.target, "target", codegen.TargetGo, "Target language: "+codegen.SupportedTargetsText)
+	flags.StringVar(&o.output, "output", "", "Output directory (prints generated files when empty)")
+	flags.BoolVar(&o.list, "list", false, "List all registered contracts")
+	flags.StringVar(&o.migrations, "migrations", "migrations", "Path to migrations directory")
+}
+
+func (o generationOptions) databaseURL() string {
+	if o.dsn != "" {
+		return o.dsn
+	}
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		return dsn
+	}
+	return "postgres://postgres:postgres@localhost:5432/flowrulz?sslmode=disable"
+}
+
+func executeGeneration(ctx context.Context, registry ports.ContractRegistry, options generationOptions) error {
+	if options.list {
+		return listContracts(ctx, registry)
+	}
+	generator, err := loadGenerator(ctx, registry, options)
+	if err != nil {
+		return err
+	}
+	return options.generate(generator)
+}
+
+func listContracts(ctx context.Context, registry ports.ContractRegistry) error {
+	schemas, err := registry.List(ctx, "")
+	if err != nil {
+		return fmt.Errorf("list contracts: %w", err)
+	}
+	for _, schema := range schemas {
+		if _, err := fmt.Printf("%s@%s\n", schema.Name, schema.Version); err != nil {
+			return fmt.Errorf("write contract list: %w", err)
+		}
+	}
+	return nil
+}
+
+func (o generationOptions) generate(generator *codegen.Generator) error {
+	if o.output == "" {
+		return printGeneratedTarget(generator, o.target)
+	}
+	if err := generateTarget(generator, o.target, o.output); err != nil {
+		return fmt.Errorf("generate %s: %w", o.target, err)
+	}
+	_, err := fmt.Printf("Generated %s artifacts in %s\n", o.target, o.output)
+	return err
+}
+
+func printGeneratedTarget(generator *codegen.Generator, target string) error {
+	tmpDir, err := os.MkdirTemp("", "flowrulz-codegen-*")
+	if err != nil {
+		return fmt.Errorf("create temporary directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	files, err := generateTargetFiles(generator, target, tmpDir)
+	if err != nil {
+		return fmt.Errorf("generate %s: %w", target, err)
+	}
+	return printGeneratedFiles(files)
+}
+
+func printGeneratedFiles(files []string) error {
+	for _, file := range files {
+		if err := printGeneratedFile(file); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printGeneratedFile(file string) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("read generated file %s: %w", file, err)
+	}
+	if _, err := os.Stdout.Write(data); err != nil {
+		return fmt.Errorf("write generated file %s: %w", file, err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		return printGeneratedSeparator(file)
+	}
+	return nil
+}
+
+func printGeneratedSeparator(file string) error {
+	if _, err := fmt.Fprintln(os.Stdout); err != nil {
+		return fmt.Errorf("write generated file separator for %s: %w", file, err)
+	}
+	return nil
+}
+
+func loadGenerator(ctx context.Context, registry ports.ContractRegistry, options generationOptions) (*codegen.Generator, error) {
+	if options.contract == "" || options.version == "" {
+		return nil, errors.New("usage: " + codegenCommandName + " -contract <name> -version <version> [-target " + codegen.SupportedTargetsText + "] [-output directory], or " + codegenCommandName + " -list")
+	}
+	schema, err := registry.Get(ctx, options.contract, options.version)
+	if err != nil {
+		return nil, fmt.Errorf("get contract %s@%s: %w", options.contract, options.version, err)
+	}
+	if schema == nil {
+		return nil, fmt.Errorf("contract %s@%s not found", options.contract, options.version)
+	}
+	return codegen.NewGenerator(schema), nil
 }

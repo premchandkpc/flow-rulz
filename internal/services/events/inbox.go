@@ -16,14 +16,18 @@ func (s *Service) deduplicateEventForRuleset(ctx context.Context, repos ports.Ev
 	if err := rejectUnresolvedLegacyInbox(ctx, repos, envelope); err != nil {
 		return nil, err
 	}
+	return s.insertInboxOrResolveConflict(ctx, repos, envelope, ruleSet)
+}
+
+func (s *Service) insertInboxOrResolveConflict(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, ruleSet string) (*domain.Execution, error) {
 	inserted, err := repos.Inbox.Insert(ctx, s.newInboxEntry(envelope, ruleSet))
 	if err != nil {
 		return nil, fmt.Errorf("insert inbox: %w", err)
 	}
-	if inserted {
-		return nil, nil
+	if !inserted {
+		return resolveInboxConflict(ctx, repos, envelope, ruleSet)
 	}
-	return resolveInboxConflict(ctx, repos, envelope, ruleSet)
+	return nil, nil
 }
 
 func findInboxExecution(ctx context.Context, repos ports.EventTxRepos, envelope *domain.EventEnvelope, ruleSet, inboxOperation, executionOperation string) (*domain.Execution, error) {

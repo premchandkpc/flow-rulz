@@ -58,30 +58,13 @@ func (s *Service) Transition(ctx context.Context, tenantID, workflowID, fromStat
 // the read by tenant, validates the expected state and domain transition, then
 // persists using the repository's optimistic version check.
 func (s *Service) transition(ctx context.Context, tenantID, workflowID, expectedFrom, toState string, revision *int64) error {
-	if tenantID == "" {
-		return domain.ErrWorkflowNotFound
-	}
-
-	workflow, err := s.repo.Get(ctx, tenantID, workflowID)
+	workflow, err := s.loadTransitionWorkflow(ctx, tenantID, workflowID)
 	if err != nil {
-		return fmt.Errorf("get workflow: %w", err)
-	}
-	if workflow == nil {
-		return domain.ErrWorkflowNotFound
-	}
-	if expectedFrom != "" && workflow.State != expectedFrom {
-		return fmt.Errorf("workflow in state %s, expected %s", workflow.State, expectedFrom)
-	}
-	if !workflow.CanTransition(workflow.State, toState) {
-		return domain.ErrWorkflowInvalidTransition
-	}
-	if err := workflow.Transition(toState); err != nil {
 		return err
 	}
-	if revision != nil {
-		workflow.CurrentRevision = *revision
+	if err := applyTransition(workflow, expectedFrom, toState, revision); err != nil {
+		return err
 	}
-
 	now := s.clock.Now()
 	workflow.UpdatedAt = now
 	if toState == domain.WorkflowStatusCompleted || toState == domain.WorkflowStatusFailed {
@@ -104,4 +87,34 @@ func (s *Service) GetByCorrelation(ctx context.Context, tenantID, correlationID 
 		return nil, fmt.Errorf("tenant_id is required")
 	}
 	return s.repo.GetByCorrelation(ctx, tenantID, correlationID)
+}
+
+func (s *Service) loadTransitionWorkflow(ctx context.Context, tenantID, workflowID string) (*domain.WorkflowInstance, error) {
+	if tenantID == "" {
+		return nil, domain.ErrWorkflowNotFound
+	}
+	workflow, err := s.repo.Get(ctx, tenantID, workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("get workflow: %w", err)
+	}
+	if workflow == nil {
+		return nil, domain.ErrWorkflowNotFound
+	}
+	return workflow, nil
+}
+
+func applyTransition(workflow *domain.WorkflowInstance, expectedFrom, toState string, revision *int64) error {
+	if expectedFrom != "" && workflow.State != expectedFrom {
+		return fmt.Errorf("workflow in state %s, expected %s", workflow.State, expectedFrom)
+	}
+	if !workflow.CanTransition(workflow.State, toState) {
+		return domain.ErrWorkflowInvalidTransition
+	}
+	if err := workflow.Transition(toState); err != nil {
+		return err
+	}
+	if revision != nil {
+		workflow.CurrentRevision = *revision
+	}
+	return nil
 }

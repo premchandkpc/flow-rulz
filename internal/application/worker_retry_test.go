@@ -40,7 +40,6 @@ func TestRetryDelayForDeliveryUsesBoundedExponentialBackoff(t *testing.T) {
 		{name: "third attempt", attempt: 3, min: 4 * time.Second, max: 8 * time.Second},
 		{name: "capped attempt", attempt: 100, min: maxDeliveryRetryDelay / 2, max: maxDeliveryRetryDelay},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := retryDelayForDelivery(base, retryTestDelivery{attempt: tt.attempt})

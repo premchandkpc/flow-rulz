@@ -307,10 +307,8 @@ func (e *TestEnv) Publish(t *testing.T, envelope *domain.EventEnvelope) {
 	if err != nil {
 		t.Fatalf("marshal event: %v", err)
 	}
-
 	shard := envelope.VirtualShard(e.ShardCount)
 	subject := fmt.Sprintf("events.shard.%d", shard)
-
 	if err := e.NATSConn.Publish(subject, data); err != nil {
 		t.Fatalf("publish event: %v", err)
 	}

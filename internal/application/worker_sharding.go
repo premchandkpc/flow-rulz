@@ -32,12 +32,7 @@ func shardSet(shards []uint32) map[uint32]struct{} {
 	return set
 }
 
-func (w *Worker) removeUnownedShardConsumers(
-	ctx context.Context,
-	active []uint32,
-	ownedSet map[uint32]struct{},
-	activeSet map[uint32]struct{},
-) {
+func (w *Worker) removeUnownedShardConsumers(ctx context.Context, active []uint32, ownedSet map[uint32]struct{}, activeSet map[uint32]struct{}) {
 	for _, shardID := range active {
 		if _, stillOwned := ownedSet[shardID]; stillOwned {
 			continue
@@ -50,11 +45,7 @@ func (w *Worker) removeUnownedShardConsumers(
 	}
 }
 
-func (w *Worker) ensureOwnedShardConsumers(
-	ctx context.Context,
-	owned []uint32,
-	activeSet map[uint32]struct{},
-) {
+func (w *Worker) ensureOwnedShardConsumers(ctx context.Context, owned []uint32, activeSet map[uint32]struct{}) {
 	// Only consumers confirmed active are skipped; failed ensures are retried
 	// during the next reconciliation pass.
 	for _, shardID := range owned {

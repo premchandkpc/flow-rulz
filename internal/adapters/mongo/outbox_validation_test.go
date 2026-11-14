@@ -4,7 +4,17 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
+
+func TestClaimPendingCountsAttemptAtomically(t *testing.T) {
+	_, update, _ := outboxClaimOperation("worker", time.Now(), time.Minute)
+	increment, ok := update["$inc"].(bson.M)
+	if !ok || increment["attempts"] != 1 {
+		t.Fatalf("claim update increment = %#v", update["$inc"])
+	}
+}
 
 func TestClaimPendingRejectsInvalidArguments(t *testing.T) {
 	repo := &OutboxRepository{}

@@ -72,6 +72,7 @@ type WorkerConfig struct {
 	LeaseRenewalIntervalMS  int
 	NATSAckWaitMS           int
 	NATSMaxDeliver          int
+	MaxDeliveryAttempts     int
 	HotKeyThreshold         int
 	HotKeyCheckIntervalMS   int
 }
@@ -269,11 +270,11 @@ func loadWorkerCapacityConfig() WorkerConfig {
 	cfg := loadWorkerScheduleConfig()
 	cfg.MaxGlobalInFlight = toInt(getIntEnv("MAX_GLOBAL_IN_FLIGHT", 100))
 	cfg.FetchBatchSize = toInt(getIntEnv("FETCH_BATCH_SIZE", 100))
-	cfg.EffectPublishIntervalMS = toInt(getIntEnv("EFFECT_PUBLISH_INTERVAL_MS", 5000))
-	cfg.EffectPublishBatchSize = toInt(getIntEnv("EFFECT_PUBLISH_BATCH_SIZE", 10))
+	cfg.EffectPublishIntervalMS = toInt(getIntEnv("EFFECT_PUBLISH_INTERVAL_MS", 250))
+	cfg.EffectPublishBatchSize = toInt(getIntEnv("EFFECT_PUBLISH_BATCH_SIZE", 64))
 	cfg.RetryDelayMS = toInt(getIntEnv("EVENT_RETRY_DELAY_MS", 5000))
 	cfg.MaxPerKeyQueue = toInt(getIntEnv("MAX_PER_KEY_QUEUE", 100))
-	cfg.KeyQueueWorkers = toInt(getIntEnv("KEY_QUEUE_WORKERS", 1))
+	cfg.KeyQueueWorkers = toInt(getIntEnv("KEY_QUEUE_WORKERS", 8))
 	return cfg
 }
 
@@ -289,7 +290,8 @@ func loadWorkerScheduleConfig() WorkerConfig {
 		LeaseRenewalIntervalMS: toInt(getIntEnv("LEASE_RENEWAL_INTERVAL_MS", 10000)),
 		NATSAckWaitMS:          toInt(getIntEnv("NATS_ACK_WAIT_MS", 30000)),
 		NATSMaxDeliver:         getIntEnv("NATS_MAX_DELIVER", -1),
-		HotKeyThreshold:        toInt(getIntEnv("HOT_KEY_THRESHOLD", 1000)),
+		MaxDeliveryAttempts:    toInt(getIntEnv("EVENT_MAX_DELIVERY_ATTEMPTS", 24)),
+		HotKeyThreshold:        toInt(getIntEnv("HOT_KEY_THRESHOLD", 50)),
 		HotKeyCheckIntervalMS:  toInt(getIntEnv("HOT_KEY_CHECK_INTERVAL_MS", 10000)),
 	}
 }
@@ -798,7 +800,10 @@ func (c *Config) validateDeliverySettings() error {
 		return fmt.Errorf("NATS_ACK_WAIT_MS must be > 0")
 	}
 	if c.Worker.NATSMaxDeliver != -1 {
-		return fmt.Errorf("NATS_MAX_DELIVER must be -1 (unlimited) until durable exhausted-delivery recovery is implemented")
+		return fmt.Errorf("NATS_MAX_DELIVER must be -1 (unlimited) for application-managed quarantine")
+	}
+	if c.Worker.MaxDeliveryAttempts <= 0 {
+		return fmt.Errorf("EVENT_MAX_DELIVERY_ATTEMPTS must be > 0")
 	}
 	if c.Worker.HotKeyThreshold <= 0 {
 		return fmt.Errorf("HOT_KEY_THRESHOLD must be > 0")

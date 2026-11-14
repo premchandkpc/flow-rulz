@@ -29,7 +29,6 @@ func TestDomainDeploymentPinsImmutableRulesetRevisions(t *testing.T) {
 	if len(item.Deployments) != 1 || item.Deployments[0].Rulesets[0].Revision != 7 {
 		t.Fatalf("saved deployment lost its pinned ruleset revision: %#v", item.Deployments)
 	}
-
 	invalid := &domain.TenantDomain{
 		Name:       "billing",
 		EventTypes: []string{"billing.created"},
@@ -58,26 +57,22 @@ func TestDomainDeploymentChangesRequireRevisionBumpAndExplicitDeactivation(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	changed := *item
 	changed.Deployments = append([]domain.ServiceDeployment(nil), item.Deployments...)
 	changed.Deployments[0].Rulesets = []domain.RulesetAssignment{{RulesetID: "order-created", Revision: 8}}
 	if _, err := service.SaveDomain(context.Background(), "tenant-a", &changed); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("changed assignment without revision bump = %v, want ErrInvalidInput", err)
 	}
-
 	changed.Deployments[0].Revision = 2
 	updated, err := service.SaveDomain(context.Background(), "tenant-a", &changed)
 	if err != nil {
 		t.Fatalf("assignment update with revision bump: %v", err)
 	}
-
 	removed := *updated
 	removed.Deployments = nil
 	if _, err := service.SaveDomain(context.Background(), "tenant-a", &removed); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("removing active deployment = %v, want ErrInvalidInput", err)
 	}
-
 	deactivated := *updated
 	deactivated.Deployments = append([]domain.ServiceDeployment(nil), updated.Deployments...)
 	deactivated.Deployments[0].Active = false

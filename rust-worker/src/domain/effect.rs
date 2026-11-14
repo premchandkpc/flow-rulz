@@ -1,5 +1,5 @@
 use super::{ContractRef, OutputRoute};
-use crate::domain::identity::{deterministic_id, encode_hex};
+use crate::domain::identity::{deterministic_id, encode_hex, is_sha256_hex};
 use bytes::Bytes;
 use sha2::{Digest, Sha256};
 
@@ -28,6 +28,14 @@ pub struct EffectIntent {
 
 impl EffectIntent {
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_identity()?;
+        self.route.validate()?;
+        self.validate_contract()?;
+        self.validate_partition()?;
+        self.validate_payload()
+    }
+
+    fn validate_identity(&self) -> Result<(), String> {
         if self.effect_id.is_empty()
             || self.effect_key.trim().is_empty()
             || self.execution_id.is_empty()
@@ -37,17 +45,31 @@ impl EffectIntent {
         if self.tenant_id.is_empty() || self.source_event_id.is_empty() {
             return Err("effect tenant and source event are required".into());
         }
-        self.route.validate()?;
+        Ok(())
+    }
+
+    fn validate_contract(&self) -> Result<(), String> {
         if self.output_contract.name.trim().is_empty()
             || self.output_contract.version.trim().is_empty()
             || !is_sha256_hex(&self.output_contract.content_hash)
         {
             return Err("output contract must be immutable and versioned".into());
         }
+        Ok(())
+    }
+
+    fn validate_partition(&self) -> Result<(), String> {
         if self.partition_key.trim().is_empty() {
             return Err("effect partition key is required".into());
         }
-        let expected_id = deterministic_id(
+        if self.effect_id != self.expected_id() {
+            return Err("effect_id does not match its deterministic identity".into());
+        }
+        Ok(())
+    }
+
+    fn expected_id(&self) -> String {
+        deterministic_id(
             "effect",
             &[
                 &self.tenant_id,
@@ -56,10 +78,10 @@ impl EffectIntent {
                 &self.execution_id,
                 &self.effect_key,
             ],
-        );
-        if self.effect_id != expected_id {
-            return Err("effect_id does not match its deterministic identity".into());
-        }
+        )
+    }
+
+    fn validate_payload(&self) -> Result<(), String> {
         if self.payload.is_empty() {
             return Err("effect payload is required".into());
         }
@@ -73,11 +95,4 @@ impl EffectIntent {
         }
         Ok(())
     }
-}
-
-fn is_sha256_hex(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }

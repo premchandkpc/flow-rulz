@@ -44,6 +44,7 @@ pub(super) async fn consume_shard_subject(
                 filter_subject: subject.clone(),
                 ack_wait: config.ack_wait,
                 max_deliver: -1,
+                max_ack_pending: 1,
                 ..Default::default()
             },
         )
@@ -96,7 +97,7 @@ async fn handle_message(
     };
     if envelope.has_deployment_target() {
         let error = anyhow!("service-targeted events require service-specific routing");
-        return retry_event_later(&message, config, shard, &envelope, &error).await;
+        return retry_event_later(pool, &message, config, shard, &envelope, &error).await;
     }
     if let Err(error) = validate_message_routing(&envelope, config, shard) {
         quarantine_and_ack(
@@ -219,7 +220,7 @@ async fn process_and_settle_event(
             )
             .await
         }
-        Err(error) => retry_event_later(&message, config, shard, &envelope, &error).await,
+        Err(error) => retry_event_later(pool, &message, config, shard, &envelope, &error).await,
     }
 }
 
@@ -246,18 +247,64 @@ async fn settle_duplicate_event(
 }
 
 async fn retry_event_later(
+    pool: &PgPool,
     message: &jetstream::Message,
     config: &Config,
     shard: u32,
     envelope: &EventEnvelope,
     error: &anyhow::Error,
 ) -> Result<()> {
+    if delivery_exhausted(
+        message.info().ok().map(|info| info.delivered),
+        config.max_delivery_attempts,
+    ) {
+        warn!(shard, event_id=%envelope.id, error=%error, "retry limit reached; quarantining");
+        return quarantine_and_ack(
+            pool,
+            message,
+            &envelope.id,
+            Some(&envelope.tenant_id),
+            &error.to_string(),
+        )
+        .await;
+    }
     warn!(shard, event_id=%envelope.id, error=%error, "event processing failed; scheduling retry");
+    let attempts = message.info().ok().map(|info| info.delivered).unwrap_or(1);
+    let delay = retry_delay_with_jitter(config.retry_delay, attempts);
     message
-        .ack_with(jetstream::AckKind::Nak(Some(config.retry_delay)))
+        .ack_with(jetstream::AckKind::Nak(Some(delay)))
         .await
         .map_err(|error| anyhow!("nak failed event for retry: {error}"))?;
     Ok(())
+}
+
+// Match Go's bounded exponential retry with half-to-full jitter. Stable
+// event IDs are not used as a jitter seed, avoiding synchronized retries.
+fn retry_delay_with_jitter(base: std::time::Duration, attempts: i64) -> std::time::Duration {
+    const LIMIT: std::time::Duration = std::time::Duration::from_secs(300);
+    let mut ceiling = if base.is_zero() {
+        std::time::Duration::from_secs(5)
+    } else {
+        base.min(LIMIT)
+    };
+    for _ in 1..attempts.clamp(1, 64) {
+        ceiling = ceiling.saturating_mul(2).min(LIMIT);
+    }
+    let lower = ceiling / 2;
+    let range = ceiling.saturating_sub(lower).as_millis();
+    let jitter = if range == 0 {
+        0
+    } else {
+        uuid::Uuid::new_v4().as_u128() % (range + 1)
+    };
+    lower + std::time::Duration::from_millis(u64::try_from(jitter).unwrap_or(0))
+}
+
+// Missing delivery metadata remains retryable rather than discarded.
+fn delivery_exhausted(attempts: Option<i64>, limit: u64) -> bool {
+    attempts
+        .and_then(|count| u64::try_from(count).ok())
+        .is_some_and(|count| count > 0 && count >= limit)
 }
 
 fn log_processed_event(
@@ -317,6 +364,33 @@ fn is_permanent_event_error(error: &anyhow::Error) -> bool {
 }
 
 #[cfg(test)]
+mod retry_parity_tests {
+    use super::delivery_exhausted;
+
+    #[test]
+    fn bounded_retry_delay_matches_go_backoff_ranges() {
+        use std::time::Duration;
+        for (attempt, min_seconds, max_seconds) in
+            [(1, 1, 2), (2, 2, 4), (3, 4, 8), (100, 150, 300)]
+        {
+            let delay = super::retry_delay_with_jitter(Duration::from_secs(2), attempt);
+            assert!(delay >= Duration::from_secs(min_seconds));
+            assert!(delay <= Duration::from_secs(max_seconds));
+        }
+    }
+
+    #[test]
+    fn matches_go_delivery_exhaustion_policy() {
+        assert!(!delivery_exhausted(None, 24));
+        assert!(!delivery_exhausted(Some(0), 24));
+        assert!(!delivery_exhausted(Some(23), 24));
+        assert!(delivery_exhausted(Some(24), 24));
+        assert!(delivery_exhausted(Some(25), 24));
+        assert!(!delivery_exhausted(Some(-1), 24));
+    }
+}
+
+#[cfg(test)]
 mod deployment_routing_tests {
     use super::*;
     use crate::engine::{ContractRef, EventEnvelope};
@@ -349,9 +423,11 @@ mod deployment_routing_tests {
             lease_renew_interval: Duration::from_secs(5),
             ack_wait: Duration::from_secs(30),
             retry_delay: Duration::from_secs(5),
+            max_delivery_attempts: 24,
             fetch_batch_size: 10,
             rulesets: vec![],
-            effect_poll_interval: Duration::from_secs(5),
+            effect_poll_interval: Duration::from_millis(250),
+            effect_batch_size: 64,
             scheduler_poll_interval: Duration::from_secs(5),
             scheduler_batch_size: 10,
         }

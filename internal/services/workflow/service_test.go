@@ -27,14 +27,12 @@ func TestGetRequiresTenantScope(t *testing.T) {
 		workflow: &domain.WorkflowInstance{WorkflowID: "wf-1", TenantID: "tenant-a"},
 	}
 	service := NewService(repo, domain.SystemClock{})
-
 	if _, err := service.Get(context.Background(), "", "wf-1"); err == nil {
 		t.Fatal("Get with empty tenant returned no error")
 	}
 	if repo.getCalls != 0 {
 		t.Fatalf("repository calls = %d, want 0 for missing tenant", repo.getCalls)
 	}
-
 	got, err := service.Get(context.Background(), "tenant-a", "wf-1")
 	if err != nil {
 		t.Fatalf("Get returned error: %v", err)

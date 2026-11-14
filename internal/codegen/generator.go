@@ -98,6 +98,10 @@ func resolveAbsoluteGeneratedPaths(outputDir, relativePath string) (generatedFil
 		return generatedFilePaths{}, fmt.Errorf("resolve output dir: %w", err)
 	}
 	volumeRoot := filepath.VolumeName(absoluteOutputDir) + string(filepath.Separator)
+	return generatedPathsRelativeToVolume(outputDir, absoluteOutputDir, relativePath, volumeRoot)
+}
+
+func generatedPathsRelativeToVolume(outputDir, absoluteOutputDir, relativePath, volumeRoot string) (generatedFilePaths, error) {
 	relativeOutputDir, err := filepath.Rel(volumeRoot, absoluteOutputDir)
 	if err != nil {
 		return generatedFilePaths{}, fmt.Errorf("resolve output dir relative to volume root: %w", err)
@@ -105,8 +109,14 @@ func resolveAbsoluteGeneratedPaths(outputDir, relativePath string) (generatedFil
 	if !filepath.IsLocal(relativeOutputDir) {
 		return generatedFilePaths{}, fmt.Errorf("output directory must be local to its volume root")
 	}
-	return generatedFilePaths{outputDir: outputDir, absoluteOutputDir: absoluteOutputDir, relativePath: relativePath,
-		volumeRoot: volumeRoot, relativeOutputDir: relativeOutputDir}, nil
+	return generatedPaths(
+		outputDir, absoluteOutputDir, relativePath, volumeRoot, relativeOutputDir,
+	), nil
+}
+
+func generatedPaths(output, absolute, relative, volume, volumeRelative string) generatedFilePaths {
+	return generatedFilePaths{outputDir: output, absoluteOutputDir: absolute,
+		relativePath: relative, volumeRoot: volume, relativeOutputDir: volumeRelative}
 }
 
 func ensureGeneratedOutputDirectory(volumeRoot, relativeOutputDir string) error {
@@ -225,6 +235,10 @@ func (g *Generator) GenerateGo(outputDir string) ([]string, error) {
 		return nil, err
 	}
 
+	return g.generateGoFiles(outputDir)
+}
+
+func (g *Generator) generateGoFiles(outputDir string) ([]string, error) {
 	files, err := g.generate(outputDir, TargetGo, goTemplate, goFileExtension)
 	if err != nil {
 		return nil, err
@@ -924,8 +938,6 @@ package {{.GoPackageName}}
 
 import (
 		"context"
-		"encoding/json"
-		"fmt"
 
 		flowrulz "github.com/flowrulz/flow-rulz-sdk/go/flowrulz"
 )
@@ -963,22 +975,10 @@ func (c *Client) Subscribe(ctx context.Context, handler func(context.Context, *{
 
 // SubscribeRuleSet receives live events for the supplied rule set.
 func (c *Client) SubscribeRuleSet(ctx context.Context, ruleSet string, handler func(context.Context, *{{.TypeName}}, *flowrulz.Envelope) error) error {
-		if c == nil || c.client == nil {
-				return flowrulz.ErrInvalidArgument("client is required")
-		}
-		if handler == nil {
-				return flowrulz.ErrInvalidArgument("event handler is required")
-		}
-		return c.client.Subscribe(ctx, ruleSet, func(ctx context.Context, envelope *flowrulz.Envelope) error {
-				if envelope == nil {
-						return flowrulz.ErrInvalidArgument("event envelope is required")
-				}
-				var payload {{.TypeName}}
-				if err := json.Unmarshal(envelope.Data, &payload); err != nil {
-						return fmt.Errorf("decode %s payload: %w", envelope.Type, err)
-				}
-				return handler(ctx, &payload, envelope)
-		})
+        if c == nil {
+                return flowrulz.ErrInvalidArgument("client is required")
+        }
+        return flowrulz.SubscribeTyped(ctx, c.client, ruleSet, handler)
 }
 `))
 
@@ -1411,19 +1411,10 @@ func (g *Generator) buildCompiledRules() []CompiledRuleData {
 // buildCompiledRule compiles one rule into its condition code and emit
 // effects, skipping actions that do not emit an event.
 func (g *Generator) buildCompiledRule(rule Rule) CompiledRuleData {
-	conditionCode := g.buildConditionCode(rule.When)
-	var effects []EffectTemplateData
-	for _, action := range rule.Then {
-		if action.EmitEvent != nil {
-			effects = append(effects, EffectTemplateData{
-				EventType:          action.EmitEvent.Type,
-				PartitionKeyPolicy: action.EmitEvent.PartitionKeyPolicy,
-				DataTemplate:       action.EmitEvent.Data,
-			})
-		}
-	}
 	return CompiledRuleData{
-		ID: rule.ID, Priority: rule.Priority, ConditionCode: conditionCode, Effects: effects,
+		ID: rule.ID, Priority: rule.Priority,
+		ConditionCode: g.buildConditionCode(rule.When),
+		Effects:       buildEffectTemplates(rule.Then),
 	}
 }
 
@@ -1441,19 +1432,9 @@ func sortCompiledRulesByPriority(compiled []CompiledRuleData) {
 // conditionOperator maps a rule operator to its Go comparison operator,
 // defaulting to equality for unknown operators.
 func conditionOperator(op string) string {
-	switch op {
-	case "gt":
-		return ">"
-	case "gte":
-		return ">="
-	case "lt":
-		return "<"
-	case "lte":
-		return "<="
-	case "eq":
-		return "=="
-	case "neq":
-		return "!="
+	operators := map[string]string{"gt": ">", "gte": ">=", "lt": "<", "lte": "<=", "eq": "==", "neq": "!="}
+	if operator, ok := operators[op]; ok {
+		return operator
 	}
 	return "=="
 }
@@ -1546,4 +1527,18 @@ func (g *Generator) generateRuntimeComponent(outputDir string, component runtime
 		return nil, fmt.Errorf("execute %s template: %w", component.kind, err)
 	}
 	return []string{filePath}, nil
+}
+
+func buildEffectTemplates(actions []Action) []EffectTemplateData {
+	var effects []EffectTemplateData
+	for _, action := range actions {
+		if action.EmitEvent != nil {
+			effects = append(effects, EffectTemplateData{
+				EventType:          action.EmitEvent.Type,
+				PartitionKeyPolicy: action.EmitEvent.PartitionKeyPolicy,
+				DataTemplate:       action.EmitEvent.Data,
+			})
+		}
+	}
+	return effects
 }
