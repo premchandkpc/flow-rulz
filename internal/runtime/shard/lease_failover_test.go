@@ -123,16 +123,43 @@ func (r *sharedLeaseRepo) Acquire(_ context.Context, shard uint32, owner string,
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	lease, exists := r.leases[shard]
-	if !exists {
+	switch {
+	case !exists:
 		lease = &domain.ShardLease{VirtualShard: shard, Owner: owner, FencingToken: 1}
 		r.leases[shard] = lease
-	} else if lease.ExpiresAt.After(time.Now()) {
+	case lease.ExpiresAt.After(time.Now()):
 		return cloneLease(lease), nil // Unexpired: the current owner keeps the row.
-	} else {
+	default:
 		lease.Owner, lease.FencingToken = owner, lease.FencingToken+1
 	}
 	lease.ExpiresAt = time.Now().Add(ttl)
 	return cloneLease(lease), nil
+}
+
+// AcquireExpired implements the same optional recovery capability as the
+// PostgreSQL repository. Without it, this fake cannot exercise survivor takeover.
+func (r *sharedLeaseRepo) AcquireExpired(_ context.Context, owner string, ttl time.Duration, limit int) ([]*domain.ShardLease, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if limit <= 0 {
+		return nil, nil
+	}
+	now := time.Now()
+	shards := sortedShards(r.leases, func(lease *domain.ShardLease) bool {
+		return lease.ExpiresAt.Before(now)
+	})
+	var acquired []*domain.ShardLease
+	for _, shard := range shards {
+		if len(acquired) >= limit {
+			break
+		}
+		lease := r.leases[shard]
+		lease.Owner = owner
+		lease.FencingToken++
+		lease.ExpiresAt = now.Add(ttl)
+		acquired = append(acquired, cloneLease(lease))
+	}
+	return acquired, nil
 }
 
 func (r *sharedLeaseRepo) Renew(_ context.Context, shard uint32, owner string, fencingToken int64, ttl time.Duration) (*domain.ShardLease, error) {

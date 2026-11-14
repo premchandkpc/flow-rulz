@@ -138,7 +138,7 @@ fn evaluate_leaf_predicate(predicate: &Predicate, data: &Value) -> Result<bool> 
         "not_exists" => Ok(found.is_none()),
         _ => match found {
             Some(actual) => evaluate_comparison(operator, actual, predicate.value.as_ref()),
-            None => Ok(false),
+            None => Ok(matches!(operator, "neq" | "not_in")),
         },
     }
 }
