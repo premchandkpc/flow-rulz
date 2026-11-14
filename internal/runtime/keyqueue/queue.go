@@ -167,6 +167,68 @@ func queueIdentity(env *domain.EventEnvelope) string {
 	return fmt.Sprintf("%d:%s%s", len(env.TenantID), env.TenantID, env.PartitionKey)
 }
 
+// ErrQueueFull signals bounded admission failure; callers should retry with delay.
+var ErrQueueFull = errors.New("key queue is at capacity")
+
+// TrySubmit never waits for a busy key or exhausted global capacity.
+// A hot key can occupy at most half the available global slots.
+func (kq *KeyQueue) TrySubmit(ctx context.Context, item ports.QueueItem) error {
+	if err := validateQueueSubmission(ctx, item); err != nil {
+		return err
+	}
+	if err := kq.beginSubmission(); err != nil {
+		return err
+	}
+	defer kq.submitWG.Done()
+	queue := kq.registerQueueSubmitter(queueIdentity(item.Event))
+	defer kq.finishSubmit(queue)
+	return kq.tryEnqueue(ctx, queue, item)
+}
+
+func (kq *KeyQueue) tryEnqueue(ctx context.Context, queue *keyQueue, item ports.QueueItem) error {
+	if err := kq.acquireSlotWithoutWaiting(ctx); err != nil {
+		return err
+	}
+	if err := kq.tryEnqueueWithSlot(queue, item); err != nil {
+		<-kq.globalSem
+		return err
+	}
+	return nil
+}
+
+func (kq *KeyQueue) acquireSlotWithoutWaiting(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-kq.stopSubmitting:
+		return errors.New("submit event: key queue is stopping")
+	case kq.globalSem <- struct{}{}:
+		return nil
+	default:
+		return ErrQueueFull
+	}
+}
+
+func (kq *KeyQueue) tryEnqueueWithSlot(q *keyQueue, item ports.QueueItem) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.ch) >= kq.fairKeyLimit() {
+		return ErrQueueFull
+	}
+	queued := &queuedItem{env: item.Event, delivery: item.Delivery, fencingToken: item.FencingToken, vshard: item.Shard, workerID: item.WorkerID}
+	select {
+	case q.ch <- queued:
+		return nil
+	default:
+		return ErrQueueFull
+	}
+}
+
+func (kq *KeyQueue) fairKeyLimit() int {
+	return min(kq.maxPerKey, max(1, kq.maxGlobalInFlight/2))
+}
+
 // Submit enqueues an item for processing, respecting per-key ordering and global concurrency limits.
 func (kq *KeyQueue) Submit(ctx context.Context, item ports.QueueItem) error {
 	if err := validateQueueSubmission(ctx, item); err != nil {

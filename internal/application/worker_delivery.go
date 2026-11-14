@@ -128,11 +128,20 @@ func (w *Worker) submitOwnedDelivery(ctx context.Context, env *domain.EventEnvel
 		Event: env, Delivery: delivery, FencingToken: fencingToken,
 		Shard: vshard, WorkerID: w.workerID,
 	}
-	if err := w.keyQueue.Submit(ctx, item); err != nil {
+	if err := w.submitToKeyQueue(ctx, item); err != nil {
 		w.rejectQueueSubmission(ctx, delivery, err)
 		return err
 	}
 	return nil
+}
+
+func (w *Worker) submitToKeyQueue(ctx context.Context, item ports.QueueItem) error {
+	if queue, ok := w.keyQueue.(interface {
+		TrySubmit(context.Context, ports.QueueItem) error
+	}); ok {
+		return queue.TrySubmit(ctx, item)
+	}
+	return w.keyQueue.Submit(ctx, item)
 }
 
 // quarantineInvalidDelivery persists malformed broker messages before acknowledging
@@ -210,8 +219,8 @@ func (w *Worker) routeDeliveryToShard(ctx context.Context, env *domain.EventEnve
 
 func (w *Worker) rejectQueueSubmission(ctx context.Context, delivery ports.Delivery, err error) {
 	log.Printf("keyqueue submit failed: %v", err)
-	if nakErr := settleNak(ctx, delivery); nakErr != nil {
-		log.Printf("nak failed: %v", nakErr)
+	if retryErr := settleRetry(ctx, delivery, retryDelayForDelivery(w.config.RetryDelay, delivery)); retryErr != nil {
+		log.Printf("retry rejected keyqueue delivery: %v", retryErr)
 	}
 }
 
