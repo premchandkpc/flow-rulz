@@ -123,7 +123,8 @@ const shardLeaseRepositoryAcquireSQL = `
 		ON CONFLICT (virtual_shard) DO UPDATE SET
 			owner = CASE WHEN shard_leases.expires_at < NOW() THEN EXCLUDED.owner ELSE shard_leases.owner END,
 			fencing_token = CASE WHEN shard_leases.expires_at < NOW() THEN shard_leases.fencing_token + 1 ELSE shard_leases.fencing_token END,
-			expires_at = CASE WHEN shard_leases.expires_at < NOW() THEN EXCLUDED.expires_at ELSE shard_leases.expires_at END
+			expires_at = EXCLUDED.expires_at
+		WHERE shard_leases.expires_at < NOW()
 	`
 
 const shardLeaseRepositoryRenewSQL = `

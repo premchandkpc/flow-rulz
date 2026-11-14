@@ -1,16 +1,6 @@
-# Worker review remediation
+undefined
+## Additional implemented improvements
+- The PostgreSQL lease acquisition UPSERT now skips conflict updates on live leases, avoiding unnecessary WAL, locks and dead tuples when another worker owns a shard.
+- The outbox publisher reports claimed-batch size through an optional capability and drains up to 16 full batches per wake-up, including at startup. The existing publisher port stays compatible.
 
-This narrowly scoped PR builds on `refactor/fifteen-line-functions` and does not bring its broad changes into main independently.
-
-## Fixed
-- Scope queue serialization by both tenant and partition key; avoid noisy-neighbour contention.
-- Set a reachable hot-key threshold default (50), bounded by per-key queue capacity.
-- Regression tests cover unambiguous queue identities and hot-key threshold bounds.
-
-## Follow-up work, not claimed fixed
-- Live lease membership and takeover after worker death.
-- Strict ordering across retry and outbox publication.
-- Exhausted-delivery quarantine and shutdown settlement.
-- Throughput benchmarking, broker consumer optimizations and outbox drain policy.
-
-The review's proposed non-blocking enqueue example is not copied because enqueueing before reserving the global slot introduces accounting races.
+These improve performance; they do not establish per-key outbox ordering or bounded retry semantics.

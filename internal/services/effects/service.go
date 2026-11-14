@@ -43,17 +43,24 @@ func publisherDefaults(claimant string, clock ports.Clock) (string, ports.Clock)
 // PublishBatch claims pending effects and publishes them, then settles each
 // claim as delivered, scheduled for retry, or quarantined.
 func (s *Service) PublishBatch(ctx context.Context, batchSize int) error {
+	_, err := s.PublishBatchCount(ctx, batchSize)
+	return err
+}
+
+// PublishBatchCount reports the number of claimed effects, allowing workers to
+// drain backlog immediately without changing the existing EffectPublisher port.
+func (s *Service) PublishBatchCount(ctx context.Context, batchSize int) (int, error) {
 	if err := s.validateBatchConfig(); err != nil {
-		return err
+		return 0, err
 	}
 	if batchSize <= 0 {
-		return nil
+		return 0, nil
 	}
 	claimToken, effects, err := s.claimPendingEffects(ctx, batchSize)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return s.deliverClaimedBatch(ctx, effects, claimToken)
+	return len(effects), s.deliverClaimedBatch(ctx, effects, claimToken)
 }
 
 // validateBatchConfig rejects a publisher that cannot send or settle effects.
