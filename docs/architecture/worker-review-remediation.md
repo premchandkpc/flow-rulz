@@ -13,3 +13,6 @@ After queue workers have exited, Stop returns any remaining buffered deliveries 
 
 ## JetStream consumer lookup caching
 The NATS adapter retains the handle returned by `CreateOrUpdateConsumer` and reuses it in the fetch loop instead of looking up every durable on each poll. Handles are removed when their shard consumer is deleted; the uncached fallback preserves compatibility with external callers. The one-consumer-per-shard architecture remains and should be load-tested before changing shard cardinality.
+
+## Batched outbox persistence
+PostgreSQL outbox inserts use parameterized multi-row INSERT statements in bounded chunks of 100 rather than one round trip per effect. Existing transaction ownership, conflict idempotency and tenant validation are preserved. Additional integration/load testing should compare write amplification and lock behavior.
