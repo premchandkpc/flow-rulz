@@ -93,6 +93,8 @@ impl Source {
         Ok(())
     }
     fn into_revision(self, content_hash: String) -> Result<rules::RuleRevision> {
+        let compiled: Vec<rules::Rule> = serde_json::from_value(self.rules)?;
+        validate_first_match_otherwise(&self.mode, &compiled)?;
         Ok(rules::RuleRevision {
             tenant_scope: "__domain_configuration__".into(),
             rule_id: self.rule_set,
@@ -100,9 +102,22 @@ impl Source {
             content_hash,
             match_mode: self.mode,
             input_contract: None,
-            compiled: serde_json::from_value(self.rules)?,
+            compiled,
         })
     }
+}
+
+fn validate_first_match_otherwise(mode: &str, rules: &[rules::Rule]) -> Result<()> {
+    if mode != "first_match" {
+        return Ok(());
+    }
+    let lowest = rules.iter().map(|rule| rule.priority).min();
+    for rule in rules {
+        if Some(rule.priority) != lowest && !rule.otherwise.is_empty() {
+            bail!("first_match permits otherwise only on the lowest-priority rule");
+        }
+    }
+    Ok(())
 }
 
 fn validate_rules(value: &Value) -> Result<()> {
@@ -293,6 +308,20 @@ mod tests {
         let other = first.evaluate(&event("tenant-b")).unwrap().remove(0);
         assert_ne!(other.payload["id"], child.id);
     }
+    #[test]
+    fn rejects_early_otherwise_like_go_compiler() {
+        let source = json!({
+            "rule_set":"orders.created","revision":1,"mode":"first_match",
+            "rules":[
+                {"id":"high","priority":10,"when":{"path":"$.a","op":"exists"},
+                 "otherwise":[{"emit":{"topic":"alerts","data":{}}}]},
+                {"id":"low","priority":1,"when":{"path":"$.b","op":"exists"},
+                 "then":[{"emit":{"topic":"alerts","data":{}}}]}
+            ]
+        });
+        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
+    }
+
     #[test]
     fn unsupported_scheduled_actions_and_contracts_fail_at_startup() {
         let mut source: Value = serde_json::from_slice(include_bytes!(

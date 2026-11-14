@@ -532,10 +532,26 @@ mod tests {
     }
 
     #[test]
+    fn missing_fields_match_go_predicate_semantics() {
+        for op in ["neq", "not_in"] {
+            let predicate: Predicate = serde_json::from_value(json!({
+                "path":"$.missing","op":op,"value":1
+            })).unwrap();
+            assert!(eval_predicate(&predicate, &json!({})).unwrap(), "{op}");
+        }
+        for op in ["eq","in","gt","gte","lt","lte"] {
+            let predicate: Predicate = serde_json::from_value(json!({
+                "path":"$.missing","op":op,"value":1
+            })).unwrap();
+            assert!(!eval_predicate(&predicate, &json!({})).unwrap(), "{op}");
+        }
+    }
+
+    #[test]
     fn numeric_string_comparison_matches_go_rules() {
         assert!(compare_eq(&json!(10), Some(&json!("10"))));
         assert!(
-            !eval_predicate(
+            eval_predicate(
                 &Predicate {
                     all: None,
                     any: None,
