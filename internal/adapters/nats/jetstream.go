@@ -257,16 +257,24 @@ func (c *Consumer) ensureConsumerLocked(ctx context.Context, key consumerKey) er
 		filterSubject = ruleSetSubject(key.baseSubject, key.ruleSet, key.shard)
 		durable = fmt.Sprintf("%s-%s-rs-%s-shard-%d", c.baseDurable, safeDurableToken(key.baseSubject), token[:32], key.shard)
 	}
-	_, err := c.js.CreateOrUpdateConsumer(ctx, c.cfg.Stream, jetstream.ConsumerConfig{
-		Durable: durable, AckPolicy: jetstream.AckExplicitPolicy, FilterSubject: filterSubject,
-		MaxDeliver: c.cfg.MaxDeliver, AckWait: c.cfg.AckWait,
-	})
+	_, err := c.js.CreateOrUpdateConsumer(ctx, c.cfg.Stream, shardConsumerConfig(c.cfg, durable, filterSubject))
 	if err != nil {
 		return fmt.Errorf("create consumer for subject %q shard %d: %w", filterSubject, key.shard, err)
 	}
 	c.consumers[key] = durable
 	log.Printf("created durable consumer subject=%s ruleset=%q shard=%d durable=%s", key.baseSubject, key.ruleSet, key.shard, durable)
 	return nil
+}
+
+// shardConsumerConfig enforces per-shard head-of-line ordering even during
+// delayed redelivery. Parallelism remains available across distinct shards.
+func shardConsumerConfig(cfg Config, durable, subject string) jetstream.ConsumerConfig {
+	return jetstream.ConsumerConfig{
+		Durable: durable, FilterSubject: subject,
+		AckPolicy: jetstream.AckExplicitPolicy,
+		MaxDeliver: cfg.MaxDeliver, AckWait: cfg.AckWait,
+		MaxAckPending: 1,
+	}
 }
 
 // EnsureShardConsumer ensures durable consumers exist for the given shard.
