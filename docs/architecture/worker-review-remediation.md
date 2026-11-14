@@ -10,3 +10,6 @@ Durable worker defaults now start 8 independent key-queue processors; the outbox
 
 ## Shutdown handoff
 After queue workers have exited, Stop returns any remaining buffered deliveries to the broker using delayed retries and releases their admission permits. It relies on the caller's bounded shutdown context and broker redelivery if a retry settlement itself fails. In-flight processors still need cancellation-safe settlement; this change specifically prevents buffered deliveries from being silently abandoned until their ACK deadline.
+
+## JetStream consumer lookup caching
+The NATS adapter retains the handle returned by `CreateOrUpdateConsumer` and reuses it in the fetch loop instead of looking up every durable on each poll. Handles are removed when their shard consumer is deleted; the uncached fallback preserves compatibility with external callers. The one-consumer-per-shard architecture remains and should be load-tested before changing shard cardinality.
