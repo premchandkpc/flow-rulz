@@ -254,9 +254,19 @@ async fn retry_event_later(
     envelope: &EventEnvelope,
     error: &anyhow::Error,
 ) -> Result<()> {
-    if delivery_exhausted(message.info().ok().map(|info| info.delivered), config.max_delivery_attempts) {
+    if delivery_exhausted(
+        message.info().ok().map(|info| info.delivered),
+        config.max_delivery_attempts,
+    ) {
         warn!(shard, event_id=%envelope.id, error=%error, "retry limit reached; quarantining");
-        return quarantine_and_ack(pool, message, &envelope.id, Some(&envelope.tenant_id), &error.to_string()).await;
+        return quarantine_and_ack(
+            pool,
+            message,
+            &envelope.id,
+            Some(&envelope.tenant_id),
+            &error.to_string(),
+        )
+        .await;
     }
     warn!(shard, event_id=%envelope.id, error=%error, "event processing failed; scheduling retry");
     message

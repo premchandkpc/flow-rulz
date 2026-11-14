@@ -536,13 +536,15 @@ mod tests {
         for op in ["neq", "not_in"] {
             let predicate: Predicate = serde_json::from_value(json!({
                 "path":"$.missing","op":op,"value":1
-            })).unwrap();
+            }))
+            .unwrap();
             assert!(eval_predicate(&predicate, &json!({})).unwrap(), "{op}");
         }
-        for op in ["eq","in","gt","gte","lt","lte"] {
+        for op in ["eq", "in", "gt", "gte", "lt", "lte"] {
             let predicate: Predicate = serde_json::from_value(json!({
                 "path":"$.missing","op":op,"value":1
-            })).unwrap();
+            }))
+            .unwrap();
             assert!(!eval_predicate(&predicate, &json!({})).unwrap(), "{op}");
         }
     }
