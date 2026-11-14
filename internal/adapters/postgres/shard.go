@@ -29,6 +29,17 @@ func (r *ShardLeaseRepository) Acquire(ctx context.Context, shard uint32, owner 
 	return r.GetOwner(ctx, shard)
 }
 
+// AcquireExpired claims only expired leases using SKIP LOCKED so multiple
+// survivors can reclaim failed-worker shards without contending on live leases.
+func (r *ShardLeaseRepository) AcquireExpired(ctx context.Context, owner string, ttl time.Duration, limit int) ([]*domain.ShardLease, error) {
+	rows, err := r.db.Query(ctx, shardLeaseAcquireExpiredSQL, owner, ttl.Milliseconds(), limit)
+	if err != nil {
+		return nil, fmt.Errorf("acquire expired leases: %w", err)
+	}
+	defer rows.Close()
+	return scanOwnedLeases(rows)
+}
+
 // Renew renews a shard lease if the fencing token matches.
 func (r *ShardLeaseRepository) Renew(ctx context.Context, shard uint32, owner string, fencingToken int64, ttl time.Duration) (*domain.ShardLease, error) {
 	tag, err := r.db.Exec(ctx, shardLeaseRepositoryRenewSQL, shard, owner, fencingToken, ttl.Milliseconds())
@@ -125,6 +136,21 @@ const shardLeaseRepositoryAcquireSQL = `
 			fencing_token = CASE WHEN shard_leases.expires_at < NOW() THEN shard_leases.fencing_token + 1 ELSE shard_leases.fencing_token END,
 			expires_at = EXCLUDED.expires_at
 		WHERE shard_leases.expires_at < NOW()
+	`
+
+const shardLeaseAcquireExpiredSQL = `
+		WITH expired AS (
+			SELECT virtual_shard FROM shard_leases
+			WHERE expires_at < NOW()
+			ORDER BY virtual_shard
+			LIMIT $3 FOR UPDATE SKIP LOCKED
+		)
+		UPDATE shard_leases AS lease SET
+			owner = $1, fencing_token = lease.fencing_token + 1,
+			expires_at = NOW() + ($2 * INTERVAL '1 millisecond')
+		FROM expired WHERE lease.virtual_shard = expired.virtual_shard
+		RETURNING lease.virtual_shard, lease.owner, lease.fencing_token,
+			lease.expires_at, lease.routing_epoch
 	`
 
 const shardLeaseRepositoryRenewSQL = `
