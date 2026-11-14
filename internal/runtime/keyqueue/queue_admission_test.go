@@ -37,7 +37,7 @@ func TestTrySubmitHotKeyDoesNotBlockOtherKeys(t *testing.T) {
 	defer func() { _ = queue.Stop(ctx) }()
 	submit := func(key, id string) error {
 		return queue.TrySubmit(ctx, ports.QueueItem{
-			Event: &domain.EventEnvelope{TenantID: "tenant-a", PartitionKey: key, ID: id},
+			Event:    &domain.EventEnvelope{TenantID: "tenant-a", PartitionKey: key, ID: id},
 			Delivery: &mockDelivery{},
 		})
 	}

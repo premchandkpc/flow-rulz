@@ -11,7 +11,7 @@ func TestDeliveryAttemptsExhausted(t *testing.T) {
 	for _, tc := range []struct {
 		attempt   uint64
 		exhausted bool
-	} {
+	}{
 		{attempt: 1, exhausted: false},
 		{attempt: 2, exhausted: false},
 		{attempt: 3, exhausted: true},

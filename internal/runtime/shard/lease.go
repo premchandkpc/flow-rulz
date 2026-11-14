@@ -29,7 +29,7 @@ type LeaseManager struct {
 
 	mu          sync.RWMutex
 	ownedShards map[uint32]*domain.ShardLease
-	recovered  map[uint32]struct{}
+	recovered   map[uint32]struct{}
 	stopRenew   chan struct{}
 	wg          sync.WaitGroup
 
