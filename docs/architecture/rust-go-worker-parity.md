@@ -7,6 +7,7 @@ This is a focused first parity increment, not a declaration of complete equivale
 - Rust local `first_match` rejects `otherwise` on a higher-priority rule, matching Go compiler behavior.
 - Rust local rule compilation rejects duplicate priorities and rules without a nonempty `then` action list, matching Go's compiler validation.
 - Rust JetStream shard consumers set `max_ack_pending = 1` for ordered redelivery per consumer, trading throughput for correctness.
+- Rust uses bounded exponential retry backoff (half-to-full jitter, capped at 5 minutes) like Go.
 - Rust uses application-side `EVENT_MAX_DELIVERY_ATTEMPTS` (default 24): persist quarantine before ACK when a transient failure reaches its limit. Missing attempt metadata is retried; server max_deliver stays unlimited.
 
 ## Not yet equivalent

@@ -269,11 +269,35 @@ async fn retry_event_later(
         .await;
     }
     warn!(shard, event_id=%envelope.id, error=%error, "event processing failed; scheduling retry");
+    let attempts = message.info().ok().map(|info| info.delivered).unwrap_or(1);
+    let delay = retry_delay_with_jitter(config.retry_delay, attempts);
     message
-        .ack_with(jetstream::AckKind::Nak(Some(config.retry_delay)))
+        .ack_with(jetstream::AckKind::Nak(Some(delay)))
         .await
         .map_err(|error| anyhow!("nak failed event for retry: {error}"))?;
     Ok(())
+}
+
+// Match Go's bounded exponential retry with half-to-full jitter. Stable
+// event IDs are not used as a jitter seed, avoiding synchronized retries.
+fn retry_delay_with_jitter(base: std::time::Duration, attempts: i64) -> std::time::Duration {
+    const LIMIT: std::time::Duration = std::time::Duration::from_secs(300);
+    let mut ceiling = if base.is_zero() {
+        std::time::Duration::from_secs(5)
+    } else {
+        base.min(LIMIT)
+    };
+    for _ in 1..attempts.clamp(1, 64) {
+        ceiling = ceiling.saturating_mul(2).min(LIMIT);
+    }
+    let lower = ceiling / 2;
+    let range = ceiling.saturating_sub(lower).as_millis();
+    let jitter = if range == 0 {
+        0
+    } else {
+        uuid::Uuid::new_v4().as_u128() % (range + 1)
+    };
+    lower + std::time::Duration::from_millis(u64::try_from(jitter).unwrap_or(0))
 }
 
 // Missing delivery metadata remains retryable rather than discarded.
@@ -342,6 +366,21 @@ fn is_permanent_event_error(error: &anyhow::Error) -> bool {
 #[cfg(test)]
 mod retry_parity_tests {
     use super::delivery_exhausted;
+
+    #[test]
+    fn bounded_retry_delay_matches_go_backoff_ranges() {
+        use std::time::Duration;
+        for (attempt, min_seconds, max_seconds) in [
+            (1, 1, 2),
+            (2, 2, 4),
+            (3, 4, 8),
+            (100, 150, 300),
+        ] {
+            let delay = super::retry_delay_with_jitter(Duration::from_secs(2), attempt);
+            assert!(delay >= Duration::from_secs(min_seconds));
+            assert!(delay <= Duration::from_secs(max_seconds));
+        }
+    }
 
     #[test]
     fn matches_go_delivery_exhaustion_policy() {
