@@ -27,11 +27,7 @@ pub(super) async fn outbox_loop(
 }
 
 // Bound each burst so the worker checks shutdown and retries other tasks.
-async fn drain_outbox(
-    pool: &PgPool,
-    js: &jetstream::Context,
-    config: &Config,
-) -> Result<()> {
+async fn drain_outbox(pool: &PgPool, js: &jetstream::Context, config: &Config) -> Result<()> {
     const MAX_CONSECUTIVE_BATCHES: usize = 16;
     for _ in 0..MAX_CONSECUTIVE_BATCHES {
         let count = process_outbox_batch(pool, js, config).await?;

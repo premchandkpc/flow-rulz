@@ -176,10 +176,7 @@ fn load_delivery_settings() -> Result<DeliverySettings> {
         max_delivery_attempts: parse_u64("EVENT_MAX_DELIVERY_ATTEMPTS", 24)?,
         fetch_batch_size: usize::try_from(parse_u64("FETCH_BATCH_SIZE", 100)?)?,
         rulesets,
-        effect_poll_interval: Duration::from_millis(parse_u64(
-            "EFFECT_PUBLISH_INTERVAL_MS",
-            250,
-        )?),
+        effect_poll_interval: Duration::from_millis(parse_u64("EFFECT_PUBLISH_INTERVAL_MS", 250)?),
         effect_batch_size: usize::try_from(parse_u64("EFFECT_PUBLISH_BATCH_SIZE", 64)?)?,
         scheduler_poll_interval: Duration::from_millis(parse_u64("SCHEDULER_POLL_MS", 5_000)?),
         scheduler_batch_size: i64::try_from(parse_u64("SCHEDULER_BATCH_SIZE", 100)?)?,
