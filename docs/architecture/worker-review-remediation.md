@@ -7,3 +7,6 @@ NATS durable consumers now specify `MaxAckPending: 1`, so an unacknowledged or d
 
 ## Bounded concurrency defaults
 Durable worker defaults now start 8 independent key-queue processors; the outbox scans every 250 ms with a batch of 64 and bounded drain of up to 16 batches. These are starting configurations only. Tune against measured database latency, NATS consumer overhead and downstream effect throughput.
+
+## Shutdown handoff
+After queue workers have exited, Stop returns any remaining buffered deliveries to the broker using delayed retries and releases their admission permits. It relies on the caller's bounded shutdown context and broker redelivery if a retry settlement itself fails. In-flight processors still need cancellation-safe settlement; this change specifically prevents buffered deliveries from being silently abandoned until their ACK deadline.

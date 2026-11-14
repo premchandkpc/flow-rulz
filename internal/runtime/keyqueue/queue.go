@@ -23,6 +23,7 @@ type KeyQueue struct {
 	started        bool
 	stopped        bool
 	stopOnce       sync.Once
+	drainOnce      sync.Once
 	submitWG       sync.WaitGroup
 	maxPerKey      int
 	globalSem      chan struct{}
@@ -100,7 +101,43 @@ func (kq *KeyQueue) Stop(ctx context.Context) error {
 	kq.stopOnce.Do(kq.stopSubmissionsAndWorkers)
 	kq.wg.Wait()
 	kq.wgHot.Wait()
+	kq.drainOnce.Do(func() { kq.drainPending(ctx) })
 	return nil
+}
+
+// drainPending hands queued, unprocessed deliveries back to the broker after
+// workers stop; otherwise they wait for AckWait while this pod releases leases.
+func (kq *KeyQueue) drainPending(ctx context.Context) {
+	kq.mu.Lock()
+	queues := make([]*keyQueue, 0, len(kq.queues))
+	for _, queue := range kq.queues {
+		queues = append(queues, queue)
+	}
+	kq.mu.Unlock()
+	for _, queue := range queues {
+		kq.drainQueue(ctx, queue)
+	}
+}
+
+func (kq *KeyQueue) drainQueue(ctx context.Context, queue *keyQueue) {
+	for {
+		select {
+		case item := <-queue.ch:
+			kq.retryUnprocessed(ctx, item)
+			<-kq.globalSem
+		default:
+			return
+		}
+	}
+}
+
+func (kq *KeyQueue) retryUnprocessed(ctx context.Context, item *queuedItem) {
+	if item == nil || item.delivery == nil {
+		return
+	}
+	if err := item.delivery.Retry(ctx, time.Second); err != nil {
+		log.Printf("retry queued delivery on shutdown: %v", err)
+	}
 }
 
 func (kq *KeyQueue) hotKeyCheckLoop(ctx context.Context) {
