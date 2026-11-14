@@ -98,6 +98,10 @@ func resolveAbsoluteGeneratedPaths(outputDir, relativePath string) (generatedFil
 		return generatedFilePaths{}, fmt.Errorf("resolve output dir: %w", err)
 	}
 	volumeRoot := filepath.VolumeName(absoluteOutputDir) + string(filepath.Separator)
+	return generatedPathsRelativeToVolume(outputDir, absoluteOutputDir, relativePath, volumeRoot)
+}
+
+func generatedPathsRelativeToVolume(outputDir, absoluteOutputDir, relativePath, volumeRoot string) (generatedFilePaths, error) {
 	relativeOutputDir, err := filepath.Rel(volumeRoot, absoluteOutputDir)
 	if err != nil {
 		return generatedFilePaths{}, fmt.Errorf("resolve output dir relative to volume root: %w", err)
@@ -105,8 +109,14 @@ func resolveAbsoluteGeneratedPaths(outputDir, relativePath string) (generatedFil
 	if !filepath.IsLocal(relativeOutputDir) {
 		return generatedFilePaths{}, fmt.Errorf("output directory must be local to its volume root")
 	}
-	return generatedFilePaths{outputDir: outputDir, absoluteOutputDir: absoluteOutputDir, relativePath: relativePath,
-		volumeRoot: volumeRoot, relativeOutputDir: relativeOutputDir}, nil
+	return generatedPaths(
+		outputDir, absoluteOutputDir, relativePath, volumeRoot, relativeOutputDir,
+	), nil
+}
+
+func generatedPaths(output, absolute, relative, volume, volumeRelative string) generatedFilePaths {
+	return generatedFilePaths{outputDir: output, absoluteOutputDir: absolute,
+		relativePath: relative, volumeRoot: volume, relativeOutputDir: volumeRelative}
 }
 
 func ensureGeneratedOutputDirectory(volumeRoot, relativeOutputDir string) error {
@@ -225,6 +235,10 @@ func (g *Generator) GenerateGo(outputDir string) ([]string, error) {
 		return nil, err
 	}
 
+	return g.generateGoFiles(outputDir)
+}
+
+func (g *Generator) generateGoFiles(outputDir string) ([]string, error) {
 	files, err := g.generate(outputDir, TargetGo, goTemplate, goFileExtension)
 	if err != nil {
 		return nil, err

@@ -23,12 +23,17 @@ func TestGenerateGoIncludesTypedClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateGo() error = %v", err)
 	}
-	if len(files) != 2 {
-		t.Fatalf("GenerateGo() returned %d files, want contract and typed client", len(files))
-	}
+	assertGeneratedFileCount(t, files, 2)
 	assertGeneratedFilesParse(t, files)
 	assertGeneratedContractFields(t, filepath.Join(outputDir, TargetGo, "created.go"))
 	assertGeneratedTypedClient(t, filepath.Join(outputDir, TargetGo, "created_client.go"))
+}
+
+func assertGeneratedFileCount(t *testing.T, files []string, want int) {
+	t.Helper()
+	if len(files) != want {
+		t.Fatalf("GenerateGo() returned %d files, want %d", len(files), want)
+	}
 }
 
 func TestToGoIdentifier(t *testing.T) {
@@ -252,7 +257,7 @@ func assertGeneratedTypedClient(t *testing.T, path string) {
 func assertNestedTypeContract(t *testing.T, outputDir string) {
 	t.Helper()
 	content := readGeneratedFile(t, filepath.Join(outputDir, TargetGo, "created.go"))
-	for _, expected := range []string{
+	assertContainsAll(t, content, []string{
 		"Items []Item `json:\"items,omitempty\"`",
 		"ShippingAddress ShippingAddress `json:\"shipping_address,omitempty\"`",
 		"Tags []string `json:\"tags,omitempty\"`",
@@ -260,7 +265,12 @@ func assertNestedTypeContract(t *testing.T, outputDir string) {
 		"ProductId string `json:\"product_id,omitempty\"`",
 		"Quantity int64 `json:\"quantity,omitempty\"`",
 		"type ShippingAddress struct",
-	} {
+	})
+}
+
+func assertContainsAll(t *testing.T, content string, expectedValues []string) {
+	t.Helper()
+	for _, expected := range expectedValues {
 		if !strings.Contains(content, expected) {
 			t.Errorf("generated contract missing %q:\n%s", expected, content)
 		}
