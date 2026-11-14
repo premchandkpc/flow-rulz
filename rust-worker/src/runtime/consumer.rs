@@ -370,12 +370,9 @@ mod retry_parity_tests {
     #[test]
     fn bounded_retry_delay_matches_go_backoff_ranges() {
         use std::time::Duration;
-        for (attempt, min_seconds, max_seconds) in [
-            (1, 1, 2),
-            (2, 2, 4),
-            (3, 4, 8),
-            (100, 150, 300),
-        ] {
+        for (attempt, min_seconds, max_seconds) in
+            [(1, 1, 2), (2, 2, 4), (3, 4, 8), (100, 150, 300)]
+        {
             let delay = super::retry_delay_with_jitter(Duration::from_secs(2), attempt);
             assert!(delay >= Duration::from_secs(min_seconds));
             assert!(delay <= Duration::from_secs(max_seconds));
