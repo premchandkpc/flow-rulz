@@ -127,7 +127,12 @@ fn validate_rules(value: &Value) -> Result<()> {
     }
     let mut actions = 0;
     let mut ids = std::collections::HashSet::new();
+    let mut priorities = std::collections::HashSet::new();
     for rule in items {
+        let priority = rule["priority"].as_i64().unwrap_or(0);
+        if !priorities.insert(priority) {
+            bail!("duplicate rule priority is ambiguous");
+        }
         actions += validate_rule(rule, &mut ids)?;
     }
     if actions > 10 {
@@ -145,6 +150,9 @@ fn validate_rule<'a>(
         bail!("invalid or duplicate local rule id");
     }
     validate_predicate(&rule["when"], 0)?;
+    if !rule["then"].as_array().is_some_and(|actions| !actions.is_empty()) {
+        bail!("Go rule compiler requires at least one then action");
+    }
     let mut count = 0;
     for name in ["then", "otherwise"] {
         if let Some(items) = rule.get(name) {
@@ -318,6 +326,30 @@ mod tests {
                 {"id":"low","priority":1,"when":{"path":"$.b","op":"exists"},
                  "then":[{"emit":{"topic":"alerts","data":{}}}]}
             ]
+        });
+        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_priorities_like_go_compiler() {
+        let source = json!({
+            "rule_set":"orders.created","revision":1,"mode":"all_matches",
+            "rules":[
+                {"id":"first","priority":0,"when":{"path":"$.a","op":"exists"},
+                 "then":[{"emit":{"topic":"alerts","data":{}}}]},
+                {"id":"second","priority":0,"when":{"path":"$.b","op":"exists"},
+                 "then":[{"emit":{"topic":"alerts","data":{}}}]}
+            ]
+        });
+        assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
+    }
+
+    #[test]
+    fn rejects_rules_without_then_actions_like_go_compiler() {
+        let source = json!({
+            "rule_set":"orders.created","revision":1,"mode":"first_match",
+            "rules":[{"id":"empty","when":{"path":"$.a","op":"exists"},
+                      "otherwise":[{"emit":{"topic":"alerts","data":{}}}]}]
         });
         assert!(LocalRuleSet::compile(&serde_json::to_vec(&source).unwrap()).is_err());
     }
