@@ -10,6 +10,12 @@ import (
 	"github.com/flowrulz/flow-rulz/internal/ports"
 )
 
+const (
+	defaultEffectSendTimeout = 10 * time.Second
+	minimumEffectClaimTTL    = 2 * time.Minute
+	effectSettlementMargin   = 30 * time.Second
+)
+
 // Service handles effect publishing, retries, and quarantine.
 type Service struct {
 	outbox       ports.OutboxDeliveryStore
@@ -17,6 +23,8 @@ type Service struct {
 	quarantine   ports.QuarantineRepository
 	clock        ports.Clock
 	claimant     string
+	sendTimeout  time.Duration
+	minimumTTL   time.Duration
 }
 
 // NewService creates a new effects Service for publishing, retrying, and quarantining effects.
@@ -24,7 +32,8 @@ func NewService(outbox ports.OutboxDeliveryStore, effectSender ports.EffectSende
 	claimant, clock = publisherDefaults(claimant, clock)
 	return &Service{
 		outbox: outbox, effectSender: effectSender, quarantine: quarantine,
-		clock: clock, claimant: claimant,
+		clock: clock, claimant: claimant, sendTimeout: defaultEffectSendTimeout,
+		minimumTTL: minimumEffectClaimTTL,
 	}
 }
 
@@ -80,29 +89,49 @@ func (s *Service) validateBatchConfig() error {
 // being logged and silently discarded.
 func (s *Service) claimPendingEffects(ctx context.Context, batchSize int) (string, []domain.OutboxEffect, error) {
 	claimToken := fmt.Sprintf("%s-%s", s.claimant, domain.NewID())
-	effects, err := s.outbox.ClaimPending(ctx, batchSize, claimToken, 2*time.Minute)
+	effects, err := s.outbox.ClaimPending(ctx, batchSize, claimToken, s.claimTTL(batchSize))
 	if err != nil {
 		return "", nil, fmt.Errorf("claim pending: %w", err)
 	}
 	return claimToken, effects, nil
 }
 
+func (s *Service) claimTTL(batchSize int) time.Duration {
+	ttl := time.Duration(batchSize)*s.sendTimeout + effectSettlementMargin
+	if ttl < s.minimumTTL {
+		return s.minimumTTL
+	}
+	return ttl
+}
+
 // deliverClaimedEffect sends one claimed effect and returns the settlement
 // failures for that effect, preserving the claim, deliver and settle order.
 func (s *Service) deliverClaimedEffect(ctx context.Context, ef domain.OutboxEffect, claimToken string) []error {
+	if ef.MaxAttempts > 0 && ef.Attempts > ef.MaxAttempts {
+		return s.quarantineExhaustedEffect(ctx, ef, claimToken, domain.ErrMaxAttemptsExceeded)
+	}
 	idempotencyKey := fmt.Sprintf("effect-%s", ef.ID)
-	sendErr := s.effectSender.Send(ctx, claimedDomainEffect(ef), idempotencyKey)
+	sendErr := s.sendClaimedEffect(ctx, ef, idempotencyKey)
 	if sendErr == nil {
 		return s.settleDeliveredEffect(ctx, ef, claimToken)
 	}
-	attempts := ef.Attempts + 1
-	if attempts >= ef.MaxAttempts {
+	return s.settleFailedEffect(ctx, ef, claimToken, sendErr)
+}
+
+func (s *Service) settleFailedEffect(ctx context.Context, ef domain.OutboxEffect, claimToken string, sendErr error) []error {
+	if ef.MaxAttempts > 0 && ef.Attempts >= ef.MaxAttempts {
 		return s.quarantineExhaustedEffect(ctx, ef, claimToken, sendErr)
 	}
-	if retryErr := s.outbox.ScheduleRetry(ctx, ef.ID, claimToken, backoffDuration(attempts), attempts, sendErr.Error()); retryErr != nil {
+	if retryErr := s.outbox.ScheduleRetry(ctx, ef.ID, claimToken, backoffDuration(ef.Attempts), ef.Attempts, sendErr.Error()); retryErr != nil {
 		return []error{fmt.Errorf("schedule retry for effect %s: %w", ef.ID, retryErr)}
 	}
 	return nil
+}
+
+func (s *Service) sendClaimedEffect(ctx context.Context, ef domain.OutboxEffect, key string) error {
+	sendCtx, cancel := context.WithTimeout(ctx, s.sendTimeout)
+	defer cancel()
+	return s.effectSender.Send(sendCtx, claimedDomainEffect(ef), key)
 }
 
 // claimedDomainEffect converts a stored outbox effect into the dispatch form.

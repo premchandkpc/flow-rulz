@@ -91,10 +91,13 @@ func outboxClaimOperation(
 		{"status": domain.OutboxStatusPending, "available_at": bson.M{"$lte": now}},
 		{"status": domain.OutboxStatusClaimed, "claim_expires_at": bson.M{"$lte": now}},
 	}}
-	update := bson.M{"$set": bson.M{
-		"status": domain.OutboxStatusClaimed, "claimed_by": owner,
-		"claimed_at": now, "claim_expires_at": now.Add(claimTTL), "updated_at": now,
-	}}
+	update := bson.M{
+		"$set": bson.M{
+			"status": domain.OutboxStatusClaimed, "claimed_by": owner,
+			"claimed_at": now, "claim_expires_at": now.Add(claimTTL), "updated_at": now,
+		},
+		"$inc": bson.M{"attempts": 1},
+	}
 	opts := options.FindOneAndUpdate().
 		SetSort(bson.D{{Key: "available_at", Value: 1}, {Key: "created_at", Value: 1}}).
 		SetReturnDocument(options.After)

@@ -86,6 +86,7 @@ const claimPendingOutboxSQL = `
 	)
 	UPDATE outbox_effects AS o
 	SET status = 'claimed',
+		attempts = o.attempts + 1,
 		claimed_by = $2,
 		claimed_at = NOW(),
 		claim_expires_at = NOW() + $3,

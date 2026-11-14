@@ -2,9 +2,16 @@ package postgres
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestClaimPendingCountsAttemptAtomically(t *testing.T) {
+	if !strings.Contains(claimPendingOutboxSQL, "attempts = o.attempts + 1") {
+		t.Fatal("claim SQL must increment attempts atomically")
+	}
+}
 
 func TestClaimPendingRejectsInvalidArguments(t *testing.T) {
 	repo := &OutboxRepository{}
