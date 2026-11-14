@@ -78,13 +78,7 @@ func (c *immutableRevisionCache) evictOverflow() {
 	c.order.Remove(oldest)
 }
 
-func (s *Service) getRevision(
-	ctx context.Context,
-	repository ports.RuleRepository,
-	tenantScope string,
-	ruleSet string,
-	revision int64,
-) (*domain.RuleRevision, error) {
+func (s *Service) getRevision(ctx context.Context, repository ports.RuleRepository, tenantScope string, ruleSet string, revision int64) (*domain.RuleRevision, error) {
 	key := revisionCacheKey{tenantScope: tenantScope, ruleSet: ruleSet, revision: revision}
 	if cached, ok := s.revisions.get(key); ok {
 		return cached, nil

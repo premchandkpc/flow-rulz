@@ -20,13 +20,7 @@ type Service struct {
 }
 
 // NewService creates a new effects Service for publishing, retrying, and quarantining effects.
-func NewService(
-	outbox ports.OutboxDeliveryStore,
-	effectSender ports.EffectSender,
-	quarantine ports.QuarantineRepository,
-	clock ports.Clock,
-	claimant string,
-) *Service {
+func NewService(outbox ports.OutboxDeliveryStore, effectSender ports.EffectSender, quarantine ports.QuarantineRepository, clock ports.Clock, claimant string) *Service {
 	claimant, clock = publisherDefaults(claimant, clock)
 	return &Service{
 		outbox: outbox, effectSender: effectSender, quarantine: quarantine,
@@ -59,11 +53,7 @@ func (s *Service) PublishBatch(ctx context.Context, batchSize int) error {
 	if err != nil {
 		return err
 	}
-	var failures []error
-	for _, ef := range effects {
-		failures = append(failures, s.deliverClaimedEffect(ctx, ef, claimToken)...)
-	}
-	return errors.Join(failures...)
+	return s.deliverClaimedBatch(ctx, effects, claimToken)
 }
 
 // validateBatchConfig rejects a publisher that cannot send or settle effects.
@@ -93,7 +83,6 @@ func (s *Service) claimPendingEffects(ctx context.Context, batchSize int) (strin
 // deliverClaimedEffect sends one claimed effect and returns the settlement
 // failures for that effect, preserving the claim, deliver and settle order.
 func (s *Service) deliverClaimedEffect(ctx context.Context, ef domain.OutboxEffect, claimToken string) []error {
-	// The outbox effect ID remains the idempotency key across retries.
 	idempotencyKey := fmt.Sprintf("effect-%s", ef.ID)
 	sendErr := s.effectSender.Send(ctx, claimedDomainEffect(ef), idempotencyKey)
 	if sendErr == nil {
@@ -128,13 +117,11 @@ func (s *Service) settleDeliveredEffect(ctx context.Context, ef domain.OutboxEff
 
 // quarantineExhaustedEffect persists a claim-specific quarantine record for an
 // effect that exhausted its attempts, then marks the outbox effect quarantined.
+// The claim-specific ID prevents stale-claim cleanup deleting a newer record.
 func (s *Service) quarantineExhaustedEffect(ctx context.Context, ef domain.OutboxEffect, claimToken string, sendErr error) []error {
 	if s.quarantine == nil {
 		return []error{fmt.Errorf("quarantine effect %s: quarantine repository is not configured (send error: %w)", ef.ID, sendErr)}
 	}
-	// Use a claim-specific ID. If this claim expired while sending, a
-	// newer publisher's quarantine record must never be deleted as
-	// cleanup for this stale claim.
 	quarantineID := fmt.Sprintf("effect-%s-%s", ef.ID, domain.NewID())
 	qEntry := newEffectQuarantineEntry(ef, quarantineID, sendErr, s.clock.Now())
 	if qErr := s.quarantine.Save(ctx, qEntry); qErr != nil {
@@ -202,4 +189,12 @@ func (s *Service) GetPending(ctx context.Context, limit int) ([]domain.OutboxEff
 // GetByExecution returns outbox effects for a specific execution.
 func (s *Service) GetByExecution(ctx context.Context, executionID string) ([]domain.OutboxEffect, error) {
 	return s.outbox.GetByExecution(ctx, executionID)
+}
+
+func (s *Service) deliverClaimedBatch(ctx context.Context, effects []domain.OutboxEffect, claimToken string) error {
+	var failures []error
+	for _, effect := range effects {
+		failures = append(failures, s.deliverClaimedEffect(ctx, effect, claimToken)...)
+	}
+	return errors.Join(failures...)
 }

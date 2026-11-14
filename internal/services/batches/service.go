@@ -29,12 +29,7 @@ type Service struct {
 }
 
 // NewService creates a new batch Service with the given dependencies.
-func NewService(
-	batches ports.BatchRepository,
-	events ports.EventProcessor,
-	clock ports.Clock,
-	cfg domain.BatchConfig,
-) *Service {
+func NewService(batches ports.BatchRepository, events ports.EventProcessor, clock ports.Clock, cfg domain.BatchConfig) *Service {
 	return &Service{
 		batches:   batches,
 		events:    events,
@@ -47,15 +42,7 @@ func NewService(
 // NewServiceWithLeaseProvider creates a batch Service with lease provider
 // for fencing token validation. Batch events must obey the same lease invariant
 // as ordinary events; a synthetic token or fencing bypass is never permitted.
-func NewServiceWithLeaseProvider(
-	batches ports.BatchRepository,
-	events ports.EventProcessor,
-	clock ports.Clock,
-	cfg domain.BatchConfig,
-	leaseProvider ports.ShardLeaseView,
-	workerID string,
-	numShards uint32,
-) *Service {
+func NewServiceWithLeaseProvider(batches ports.BatchRepository, events ports.EventProcessor, clock ports.Clock, cfg domain.BatchConfig, leaseProvider ports.ShardLeaseView, workerID string, numShards uint32) *Service {
 	service := NewService(batches, events, clock, cfg)
 	service.leaseProvider = leaseProvider
 	service.workerID = workerID
@@ -121,11 +108,7 @@ func groupInboxEntries(entries []*domain.InboxEntry) (map[batchGroupKey][]*domai
 	return groups, order
 }
 
-func (s *Service) processReadyGroups(
-	ctx context.Context,
-	groups map[batchGroupKey][]*domain.InboxEntry,
-	order []batchGroupKey,
-) (int, error) {
+func (s *Service) processReadyGroups(ctx context.Context, groups map[batchGroupKey][]*domain.InboxEntry, order []batchGroupKey) (int, error) {
 	formed := 0
 	for _, key := range order {
 		members := groups[key]
@@ -148,11 +131,7 @@ func (s *Service) processReadyGroups(
 }
 
 // CreateBatch creates a new batch from unbatched entries (manual batch formation)
-func (s *Service) CreateBatch(
-	ctx context.Context,
-	tenantID, partitionKey, ruleSet string,
-	eventIDs []string,
-) (*domain.BatchRun, error) {
+func (s *Service) CreateBatch(ctx context.Context, tenantID, partitionKey, ruleSet string, eventIDs []string) (*domain.BatchRun, error) {
 	if err := s.validateManualBatchRequest(tenantID, partitionKey, ruleSet, eventIDs); err != nil {
 		return nil, err
 	}
@@ -168,15 +147,11 @@ func (s *Service) CreateBatch(
 	if _, err := s.processGroup(ctx, members); err != nil {
 		return nil, err
 	}
-
 	batchID := domain.ComputeBatchID(tenantID, partitionKey, ruleSet, eventIDs)
 	return s.batches.GetRun(ctx, batchID)
 }
 
-func (s *Service) validateManualBatchRequest(
-	tenantID, partitionKey, ruleSet string,
-	eventIDs []string,
-) error {
+func (s *Service) validateManualBatchRequest(tenantID, partitionKey, ruleSet string, eventIDs []string) error {
 	if s.events == nil {
 		return domain.ErrBatchProcessingUnavailable
 	}
@@ -206,11 +181,7 @@ func validateUniqueEventIDs(eventIDs []string) error {
 	return nil
 }
 
-func (s *Service) loadManualBatchMembers(
-	ctx context.Context,
-	tenantID, partitionKey, ruleSet string,
-	eventIDs []string,
-) ([]*domain.InboxEntry, error) {
+func (s *Service) loadManualBatchMembers(ctx context.Context, tenantID, partitionKey, ruleSet string, eventIDs []string) ([]*domain.InboxEntry, error) {
 	members, err := s.batches.ListUnbatchedByIDs(ctx, tenantID, partitionKey, ruleSet, eventIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list requested unbatched events: %w", err)
@@ -265,7 +236,6 @@ func (s *Service) processGroup(ctx context.Context, members []*domain.InboxEntry
 	if len(members) == 0 {
 		return 0, nil
 	}
-
 	members = s.limitBatchMembers(members)
 	input := buildBatchInput(members)
 	existing, err := s.batches.GetRun(ctx, input.batchID)
@@ -275,7 +245,6 @@ func (s *Service) processGroup(ctx context.Context, members []*domain.InboxEntry
 	if existing != nil && existing.Status == domain.BatchRunStatusCompleted {
 		return s.recoverCompletedBatch(ctx, existing, input.eventIDs)
 	}
-
 	now := s.clock.Now()
 	envelope, windowFrom, err := s.buildBatchEnvelope(input, now)
 	if err != nil {
@@ -288,7 +257,6 @@ func (s *Service) processGroup(ctx context.Context, members []*domain.InboxEntry
 	if execution == nil {
 		return 0, nil
 	}
-
 	run := buildCompletedBatchRun(input, execution, windowFrom, now)
 	if err := s.batches.CompleteBatch(ctx, run, input.eventIDs); err != nil {
 		return 0, fmt.Errorf("complete batch: %w", err)
@@ -331,11 +299,7 @@ func buildBatchInput(members []*domain.InboxEntry) batchInput {
 	return input
 }
 
-func (s *Service) recoverCompletedBatch(
-	ctx context.Context,
-	existing *domain.BatchRun,
-	eventIDs []string,
-) (int, error) {
+func (s *Service) recoverCompletedBatch(ctx context.Context, existing *domain.BatchRun, eventIDs []string) (int, error) {
 	// Processing may commit before membership finalization. Completing the same
 	// deterministic batch is idempotent and recovers that interrupted operation.
 	if err := s.batches.CompleteBatch(ctx, existing, eventIDs); err != nil {
@@ -383,11 +347,7 @@ func (s *Service) processBatchEnvelope(ctx context.Context, envelope *domain.Eve
 	return execution, nil
 }
 
-func buildCompletedBatchRun(
-	input batchInput,
-	execution *domain.Execution,
-	windowFrom, now time.Time,
-) *domain.BatchRun {
+func buildCompletedBatchRun(input batchInput, execution *domain.Execution, windowFrom, now time.Time) *domain.BatchRun {
 	return &domain.BatchRun{
 		BatchID: input.batchID, TenantID: input.tenantID, PartitionKey: input.partitionKey,
 		RuleSet: input.ruleSet, Status: domain.BatchRunStatusCompleted, MemberCount: len(input.members),

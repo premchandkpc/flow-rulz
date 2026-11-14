@@ -1,6 +1,7 @@
 # Docker Compose deployment
 
-This is the supported local full-stack topology. It builds the Go API, worker, and React console; starts PostgreSQL, NATS JetStream, Redis, Loki, and Promtail; and connects them on a private Docker network.
+`docker-compose.yml` is the single Compose manifest, including optional `direct`,
+`rust`, `examples`, and `tools` profiles. This is the supported local full-stack topology. It builds the Go API, worker, and React console; starts PostgreSQL, NATS JetStream, Redis, Loki, and Promtail; and connects them on a private Docker network.
 
 ## Start
 
@@ -48,6 +49,10 @@ The defaults are for local development only. Use a secret manager or orchestrato
 | `loki` | Local log query/store | Private; queried through console |
 | `promtail` | Discovers Compose containers and forwards Docker logs to Loki | No published port |
 | `codegen` | On-demand generator CLI | Run with the `tools` profile |
+| `migrate` | Explicit migration-up CLI | Run with the `tools` profile |
+| `worker-direct`, `nats-direct` | Isolated local-rule pipeline | Target `worker-direct` with the `direct` profile; see [direct mode](direct-worker.md) |
+| `worker-rust` | Experimental worker | See [Rust mode](rust-worker.md) before selecting the `rust` profile |
+| `random-producer` | Optional sample/load producer | Run with the `examples` profile |
 
 PostgreSQL migrations are applied by the application storage initialization. The Compose file deliberately does not also mount migrations into PostgreSQL's one-time init directory, which could execute them outside the migration tracking mechanism.
 
@@ -79,12 +84,35 @@ docker compose logs -f api worker console
 # Stop without deleting persisted data
 docker compose down
 
-# Destructively remove local database, broker, Redis and Loki data
+# Destructively remove named volumes (Loki, Promtail, and direct NATS if selected)
 docker compose down -v
 
 # Run the code generator CLI
 docker compose --profile tools run --rm codegen --help
+
+# Apply pending migrations explicitly
+docker compose --profile tools run --rm migrate
 ```
+
+## Persisted data and tools
+
+The default stack retains the previous local-development bind mounts:
+`./data/postgres`, `./data/nats`, and `./data/redis`. Consolidation does not move
+or delete that data. `docker compose down -v` removes named volumes, not these
+host directories. Loki and Promtail continue to use named volumes; direct mode
+uses its own `direct_nats` volume.
+
+If you previously selected only the base file with `-f docker-compose.yml`,
+Compose skipped the former development override and used named volumes instead.
+Keep the same project name and set `POSTGRES_DATA_SOURCE=postgres_data`,
+`NATS_DATA_SOURCE=nats_data`, and `REDIS_DATA_SOURCE=redis_data` in `.env` before
+restarting to retain that storage. These sources can also name explicit host
+paths. The consolidation performs no data migration.
+
+The generator runs its compiled CLI from `/app`. Repository source is mounted
+at `/workspace`, examples at `/examples`, and generated output at `/generated`.
+This keeps source mounts from hiding the executable. The `migrate` tool mounts
+the repository at `/app` and joins the same network as PostgreSQL.
 
 ## Known boundaries
 

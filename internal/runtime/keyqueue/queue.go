@@ -62,50 +62,17 @@ type queuedItem struct {
 }
 
 // NewKeyQueue creates a new KeyQueue with the given configuration.
-func NewKeyQueue(
-	maxGlobalInFlight int,
-	maxPerKeyQueue int,
-	workerCount int,
-	processor func(ctx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, fencingToken int64, vshard uint32, workerID string) error,
-	clock func() time.Time,
-	hotKeyThreshold int,
-	hotKeyCheckInterval time.Duration,
-	hotKeyCallback func(partitionKey string, depth int),
-) *KeyQueue {
-	if maxGlobalInFlight <= 0 {
-		maxGlobalInFlight = 100
-	}
-	if maxPerKeyQueue <= 0 {
-		maxPerKeyQueue = 100
-	}
-	if workerCount <= 0 {
-		workerCount = 1
-	}
-	if clock == nil {
-		clock = time.Now
-	}
-	if hotKeyThreshold <= 0 {
-		hotKeyThreshold = 1000
-	}
-	if hotKeyCheckInterval <= 0 {
-		hotKeyCheckInterval = 10 * time.Second
-	}
-	return &KeyQueue{
-		queues:              make(map[string]*keyQueue),
-		maxPerKey:           maxPerKeyQueue,
-		globalSem:           make(chan struct{}, maxGlobalInFlight),
-		workerCount:         workerCount,
-		stopWorkers:         make(chan struct{}),
-		stopSubmitting:      make(chan struct{}),
-		processor:           processor,
-		clock:               clock,
-		hotKeyThreshold:     hotKeyThreshold,
-		hotKeyCheckInterval: hotKeyCheckInterval,
-		hotKeyCallback:      hotKeyCallback,
-		hotKeys:             make(map[string]time.Time),
-		stopHotKeyCheck:     make(chan struct{}),
-		maxGlobalInFlight:   maxGlobalInFlight,
-	}
+func NewKeyQueue(maxGlobalInFlight int, maxPerKeyQueue int, workerCount int, processor func(ctx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, fencingToken int64, vshard uint32, workerID string) error, clock func() time.Time, hotKeyThreshold int, hotKeyCheckInterval time.Duration, hotKeyCallback func(partitionKey string, depth int)) *KeyQueue {
+	kq := &KeyQueue{maxGlobalInFlight: maxGlobalInFlight, maxPerKey: maxPerKeyQueue,
+		workerCount: workerCount, processor: processor, clock: clock,
+		hotKeyThreshold: hotKeyThreshold, hotKeyCheckInterval: hotKeyCheckInterval, hotKeyCallback: hotKeyCallback}
+	kq.normalizeCapacity()
+	kq.initializeHotKeys()
+	kq.queues = make(map[string]*keyQueue)
+	kq.globalSem = make(chan struct{}, kq.maxGlobalInFlight)
+	kq.stopWorkers = make(chan struct{})
+	kq.stopSubmitting = make(chan struct{})
+	return kq
 }
 
 // Start launches the queue workers once. A stopped KeyQueue cannot be restarted.
@@ -114,20 +81,12 @@ func (kq *KeyQueue) Start(ctx context.Context) error {
 		return errors.New("keyqueue start: context is required")
 	}
 	kq.lifecycleMu.Lock()
+	defer kq.lifecycleMu.Unlock()
 	if kq.started || kq.stopped {
-		kq.lifecycleMu.Unlock()
 		return nil
 	}
 	kq.started = true
-	for i := 0; i < kq.workerCount; i++ {
-		kq.wg.Add(1)
-		go kq.workerLoop(ctx, i)
-	}
-	if kq.hotKeyCallback != nil {
-		kq.wgHot.Add(1)
-		go kq.hotKeyCheckLoop(ctx)
-	}
-	kq.lifecycleMu.Unlock()
+	kq.startLoops(ctx)
 	return nil
 }
 
@@ -137,18 +96,7 @@ func (kq *KeyQueue) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("keyqueue stop: context is required")
 	}
-	kq.stopOnce.Do(func() {
-		kq.lifecycleMu.Lock()
-		kq.stopped = true
-		close(kq.stopSubmitting)
-		kq.lifecycleMu.Unlock()
-
-		// Let submissions already admitted finish before closing the worker
-		// signal channels. Workers remain alive while these submissions drain.
-		kq.submitWG.Wait()
-		close(kq.stopWorkers)
-		close(kq.stopHotKeyCheck)
-	})
+	kq.stopOnce.Do(kq.stopSubmissionsAndWorkers)
 	kq.wg.Wait()
 	kq.wgHot.Wait()
 	return nil
@@ -158,7 +106,6 @@ func (kq *KeyQueue) hotKeyCheckLoop(ctx context.Context) {
 	defer kq.wgHot.Done()
 	ticker := time.NewTicker(kq.hotKeyCheckInterval)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -198,20 +145,11 @@ func (kq *KeyQueue) updateHotKeyState(queues map[string]*keyQueue, now time.Time
 	defer kq.muHot.Unlock()
 	for key, queue := range queues {
 		depth := len(queue.ch)
-		if depth >= kq.hotKeyThreshold {
-			if _, tracked := kq.hotKeys[key]; !tracked {
-				kq.hotKeys[key] = now
-				notices = append(notices, hotKeyNotice{key: key, depth: depth})
-			}
-		} else {
-			delete(kq.hotKeys, key)
+		if kq.updateHotKeyLocked(key, depth, now) {
+			notices = append(notices, hotKeyNotice{key: key, depth: depth})
 		}
 	}
-	for key := range kq.hotKeys {
-		if _, exists := queues[key]; !exists {
-			delete(kq.hotKeys, key)
-		}
-	}
+	kq.removeInactiveHotKeysLocked(queues)
 	return notices
 }
 
@@ -276,10 +214,7 @@ func (kq *KeyQueue) registerQueueSubmitter(partitionKey string) *keyQueue {
 	defer kq.mu.Unlock()
 	queue, exists := kq.queues[partitionKey]
 	if !exists {
-		queue = &keyQueue{
-			ch:           make(chan *queuedItem, kq.maxPerKey),
-			partitionKey: partitionKey,
-		}
+		queue = newPartitionQueue(partitionKey, kq.maxPerKey)
 		kq.queues[partitionKey] = queue
 	}
 	queue.mu.Lock()
@@ -289,21 +224,16 @@ func (kq *KeyQueue) registerQueueSubmitter(partitionKey string) *keyQueue {
 }
 
 func (kq *KeyQueue) enqueueItem(ctx context.Context, queue *keyQueue, item ports.QueueItem) error {
-	queued := &queuedItem{
-		env: item.Event, delivery: item.Delivery, fencingToken: item.FencingToken,
-		vshard: item.Shard, workerID: item.WorkerID,
-	}
+	defer kq.finishSubmit(queue)
+	queued := &queuedItem{env: item.Event, delivery: item.Delivery, fencingToken: item.FencingToken, vshard: item.Shard, workerID: item.WorkerID}
 	select {
 	case queue.ch <- queued:
-		kq.finishSubmit(queue)
 		return nil
 	case <-ctx.Done():
 		<-kq.globalSem
-		kq.finishSubmit(queue)
 		return ctx.Err()
 	case <-kq.stopSubmitting:
 		<-kq.globalSem
-		kq.finishSubmit(queue)
 		return errors.New("submit event: key queue is stopping")
 	}
 }
@@ -324,10 +254,7 @@ func (kq *KeyQueue) finishSubmit(q *keyQueue) {
 
 func (kq *KeyQueue) workerLoop(ctx context.Context, workerID int) {
 	defer kq.wg.Done()
-	for {
-		if !kq.workerShouldContinue(ctx) {
-			return
-		}
+	for kq.workerShouldContinue(ctx) {
 		item := kq.nextEvent()
 		if item == nil {
 			if !waitForQueueWork(ctx, kq.stopWorkers) {
@@ -382,29 +309,12 @@ func (kq *KeyQueue) processQueuedItem(ctx context.Context, workerID int, item *q
 }
 
 func (kq *KeyQueue) nextEvent() *queuedItem {
-	kq.mu.Lock()
-	var selected *keyQueue
-	for _, q := range kq.queues {
-		q.mu.Lock()
-		if !q.processing && len(q.ch) > 0 {
-			selected = q
-			q.processing = true
-		}
-		q.mu.Unlock()
-		if selected != nil {
-			break
-		}
-	}
-	kq.mu.Unlock()
-
+	selected := kq.selectReadyQueue()
 	if selected == nil {
 		return nil
 	}
-
-	item := <-selected.ch
-	// Keep selected.processing true until the processor has completed. Otherwise
-	// another worker can dequeue the next event for this key concurrently.
-	return item
+	// Keep processing true until the processor finishes, preserving per-key exclusion.
+	return <-selected.ch
 }
 
 func (kq *KeyQueue) finishEvent(partitionKey string) {
@@ -427,27 +337,14 @@ func (kq *KeyQueue) finishEvent(partitionKey string) {
 func (kq *KeyQueue) Stats() ports.QueueStats {
 	kq.mu.Lock()
 	defer kq.mu.Unlock()
-	stats := ports.QueueStats{
-		ActiveKeys:     len(kq.queues),
-		GlobalDepth:    0,
-		MaxGlobalDepth: kq.maxGlobalInFlight,
-	}
+	stats := ports.QueueStats{ActiveKeys: len(kq.queues), MaxGlobalDepth: kq.maxGlobalInFlight}
 	for _, q := range kq.queues {
 		stats.GlobalDepth += len(q.ch)
 		if len(q.ch) > 0 && !q.processing {
 			stats.Processing++
 		}
 	}
-	// Hot keys
-	kq.muHot.Lock()
-	for key, since := range kq.hotKeys {
-		stats.HotKeys = append(stats.HotKeys, ports.HotKeyInfo{
-			PartitionKey: key,
-			Depth:        len(kq.queues[key].ch),
-			Since:        since,
-		})
-	}
-	kq.muHot.Unlock()
+	stats.HotKeys = kq.hotKeyStatsLocked()
 	return stats
 }
 
@@ -466,4 +363,107 @@ func (kq *KeyQueue) ActiveKeys() int {
 	kq.mu.Lock()
 	defer kq.mu.Unlock()
 	return len(kq.queues)
+}
+
+func (kq *KeyQueue) normalizeCapacity() {
+	if kq.maxGlobalInFlight <= 0 {
+		kq.maxGlobalInFlight = 100
+	}
+	if kq.maxPerKey <= 0 {
+		kq.maxPerKey = 100
+	}
+	if kq.workerCount <= 0 {
+		kq.workerCount = 1
+	}
+	if kq.clock == nil {
+		kq.clock = time.Now
+	}
+}
+
+func (kq *KeyQueue) initializeHotKeys() {
+	if kq.hotKeyThreshold <= 0 {
+		kq.hotKeyThreshold = 1000
+	}
+	if kq.hotKeyCheckInterval <= 0 {
+		kq.hotKeyCheckInterval = 10 * time.Second
+	}
+	kq.hotKeys = make(map[string]time.Time)
+	kq.stopHotKeyCheck = make(chan struct{})
+}
+
+func (kq *KeyQueue) startLoops(ctx context.Context) {
+	for i := 0; i < kq.workerCount; i++ {
+		kq.wg.Add(1)
+		go kq.workerLoop(ctx, i)
+	}
+	if kq.hotKeyCallback != nil {
+		kq.wgHot.Add(1)
+		go kq.hotKeyCheckLoop(ctx)
+	}
+}
+
+func (kq *KeyQueue) stopSubmissionsAndWorkers() {
+	kq.lifecycleMu.Lock()
+	kq.stopped = true
+	close(kq.stopSubmitting)
+	kq.lifecycleMu.Unlock()
+	// Drain admitted submissions while workers remain alive.
+	kq.submitWG.Wait()
+	close(kq.stopWorkers)
+	close(kq.stopHotKeyCheck)
+}
+
+func (kq *KeyQueue) updateHotKeyLocked(key string, depth int, now time.Time) bool {
+	if depth < kq.hotKeyThreshold {
+		delete(kq.hotKeys, key)
+		return false
+	}
+	if _, tracked := kq.hotKeys[key]; tracked {
+		return false
+	}
+	kq.hotKeys[key] = now
+	return true
+}
+
+func (kq *KeyQueue) removeInactiveHotKeysLocked(queues map[string]*keyQueue) {
+	for key := range kq.hotKeys {
+		if _, exists := queues[key]; !exists {
+			delete(kq.hotKeys, key)
+		}
+	}
+}
+
+func (kq *KeyQueue) selectReadyQueue() *keyQueue {
+	kq.mu.Lock()
+	defer kq.mu.Unlock()
+	for _, q := range kq.queues {
+		if q.acquireProcessing() {
+			return q
+		}
+	}
+	return nil
+}
+
+func (q *keyQueue) acquireProcessing() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.processing || len(q.ch) == 0 {
+		return false
+	}
+	q.processing = true
+	return true
+}
+
+func (kq *KeyQueue) hotKeyStatsLocked() []ports.HotKeyInfo {
+	kq.muHot.Lock()
+	defer kq.muHot.Unlock()
+	var keys []ports.HotKeyInfo
+	for key, since := range kq.hotKeys {
+		keys = append(keys, ports.HotKeyInfo{PartitionKey: key, Depth: len(kq.queues[key].ch), Since: since})
+	}
+	return keys
+}
+
+func newPartitionQueue(partitionKey string, capacity int) *keyQueue {
+	return &keyQueue{ch: make(chan *queuedItem, capacity), partitionKey: partitionKey}
 }

@@ -70,58 +70,22 @@ type Worker struct {
 
 // NewWorker validates dependencies and configuration without starting resources.
 // The key queue is created by Run so its lifecycle is owned by the worker.
-func NewWorker(
-	consumer ports.BrokerConsumer,
-	events ports.EventProcessor,
-	effects ports.EffectPublisher,
-	batches ports.BatchProcessor,
-	batchInterval time.Duration,
-	clock ports.Clock,
-	shardService ports.ShardService,
-	workerID string,
-	numShards uint32,
-	config WorkerConfig,
-) (*Worker, error) {
+func NewWorker(consumer ports.BrokerConsumer, events ports.EventProcessor, effects ports.EffectPublisher, batches ports.BatchProcessor, batchInterval time.Duration, clock ports.Clock, shardService ports.ShardService, workerID string, numShards uint32, config WorkerConfig) (*Worker, error) {
 	if err := validateWorkerDependencies(consumer, events, effects, clock, shardService, workerID); err != nil {
 		return nil, err
 	}
-
 	config, err := normalizeWorkerConfig(config)
 	if err != nil {
 		return nil, err
 	}
-	if numShards == 0 {
-		numShards = 4096
-	}
-
 	sharded, ok := consumer.(shardedConsumer)
 	if !ok {
 		return nil, errors.New("consumer must implement sharded consumer; non-sharded mode is not supported")
 	}
-
-	return &Worker{
-		consumer:        consumer,
-		events:          events,
-		effects:         effects,
-		batches:         batches,
-		batchInterval:   batchInterval,
-		clock:           clock,
-		shardService:    shardService,
-		workerID:        workerID,
-		numShards:       numShards,
-		config:          config,
-		shardedConsumer: sharded,
-	}, nil
+	return configuredWorker(consumer, events, effects, batches, batchInterval, clock, shardService, workerID, numShards, config, sharded), nil
 }
 
-func validateWorkerDependencies(
-	consumer ports.BrokerConsumer,
-	events ports.EventProcessor,
-	effects ports.EffectPublisher,
-	clock ports.Clock,
-	shardService ports.ShardService,
-	workerID string,
-) error {
+func validateWorkerDependencies(consumer ports.BrokerConsumer, events ports.EventProcessor, effects ports.EffectPublisher, clock ports.Clock, shardService ports.ShardService, workerID string) error {
 	switch {
 	case consumer == nil:
 		return errors.New("worker consumer is required")
@@ -129,14 +93,8 @@ func validateWorkerDependencies(
 		return errors.New("worker event processor is required")
 	case effects == nil:
 		return errors.New("worker effect publisher is required")
-	case clock == nil:
-		return errors.New("worker clock is required")
-	case shardService == nil:
-		return errors.New("worker shard service is required")
-	case workerID == "":
-		return errors.New("worker ID is required")
 	default:
-		return nil
+		return validateWorkerRuntime(clock, shardService, workerID)
 	}
 }
 
@@ -145,26 +103,15 @@ func normalizeWorkerConfig(config WorkerConfig) (WorkerConfig, error) {
 		return WorkerConfig{}, errors.New("service-specific worker routing and ruleset isolation are not supported")
 	}
 	defaults := DefaultWorkerConfig()
-	if config.MaxGlobalInFlight == 0 {
+	if config.MaxGlobalInFlight <= 0 {
 		config.MaxGlobalInFlight = defaults.MaxGlobalInFlight
 	}
-	if config.MaxGlobalInFlight < 0 {
-		config.MaxGlobalInFlight = defaults.MaxGlobalInFlight
-	}
-
 	fetchBatchWasUnset := config.FetchBatchSize <= 0
 	applyWorkerConfigDefaults(&config, defaults)
 	if fetchBatchWasUnset && config.FetchBatchSize > config.MaxGlobalInFlight {
 		config.FetchBatchSize = config.MaxGlobalInFlight
 	}
-	if config.FetchBatchSize > config.MaxGlobalInFlight {
-		return WorkerConfig{}, fmt.Errorf(
-			"worker fetch batch size (%d) must not exceed max global in-flight (%d)",
-			config.FetchBatchSize,
-			config.MaxGlobalInFlight,
-		)
-	}
-	return config, nil
+	return validateWorkerFetchLimit(config)
 }
 
 func applyWorkerConfigDefaults(config *WorkerConfig, defaults WorkerConfig) {
@@ -180,6 +127,46 @@ func applyWorkerConfigDefaults(config *WorkerConfig, defaults WorkerConfig) {
 	if config.RetryDelay <= 0 {
 		config.RetryDelay = defaults.RetryDelay
 	}
+	applyWorkerQueueDefaults(config, defaults)
+}
+
+func configuredWorker(consumer ports.BrokerConsumer, events ports.EventProcessor, effects ports.EffectPublisher, batches ports.BatchProcessor, batchInterval time.Duration, clock ports.Clock, shardService ports.ShardService, workerID string, numShards uint32, config WorkerConfig, sharded shardedConsumer) *Worker {
+	if numShards == 0 {
+		numShards = 4096
+	}
+	return &Worker{
+		consumer: consumer, events: events, effects: effects,
+		batches: batches, batchInterval: batchInterval, clock: clock,
+		shardService: shardService, workerID: workerID, numShards: numShards,
+		config: config, shardedConsumer: sharded,
+	}
+}
+
+func validateWorkerRuntime(clock ports.Clock, shards ports.ShardService, workerID string) error {
+	switch {
+	case clock == nil:
+		return errors.New("worker clock is required")
+	case shards == nil:
+		return errors.New("worker shard service is required")
+	case workerID == "":
+		return errors.New("worker ID is required")
+	default:
+		return nil
+	}
+}
+
+func validateWorkerFetchLimit(config WorkerConfig) (WorkerConfig, error) {
+	if config.FetchBatchSize > config.MaxGlobalInFlight {
+		return WorkerConfig{}, fmt.Errorf(
+			"worker fetch batch size (%d) must not exceed max global in-flight (%d)",
+			config.FetchBatchSize,
+			config.MaxGlobalInFlight,
+		)
+	}
+	return config, nil
+}
+
+func applyWorkerQueueDefaults(config *WorkerConfig, defaults WorkerConfig) {
 	if config.MaxPerKeyQueue <= 0 {
 		config.MaxPerKeyQueue = defaults.MaxPerKeyQueue
 	}

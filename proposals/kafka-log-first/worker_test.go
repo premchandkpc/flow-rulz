@@ -67,7 +67,6 @@ func TestRuleEvaluatorRejectsEventForDifferentServiceDeployment(t *testing.T) {
 		EventType: "orders.created", PartitionKey: "order-1",
 		Metadata: EventMetadata{TargetServiceID: "domain-a/service-b", DeploymentRevision: 2},
 	}
-
 	if _, _, err := evaluator.Evaluate(context.Background(), "domain-a/service-a", 2, event); err == nil {
 		t.Fatal("expected target deployment mismatch error")
 	}

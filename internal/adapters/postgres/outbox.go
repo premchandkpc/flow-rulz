@@ -28,11 +28,7 @@ func (r *OutboxRepository) Insert(ctx context.Context, effects []domain.OutboxEf
 		if ef.TenantID == "" {
 			return fmt.Errorf("insert outbox: tenant_id is required")
 		}
-		_, err := r.db.Exec(ctx, `
-			INSERT INTO outbox_effects (effect_id, execution_id, tenant_id, destination, name, payload, effect_type, status, attempts, max_attempts, available_at, last_error, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-			ON CONFLICT (effect_id) DO NOTHING
-		`, ef.ID, ef.ExecutionID, ef.TenantID, ef.Destination, ef.Name, ef.Payload, ef.EffectType,
+		_, err := r.db.Exec(ctx, outboxRepositoryInsertSQL, ef.ID, ef.ExecutionID, ef.TenantID, ef.Destination, ef.Name, ef.Payload, ef.EffectType,
 			ef.Status, ef.Attempts, ef.MaxAttempts, ef.AvailableAt, ef.LastError, ef.CreatedAt, ef.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("insert outbox: %w", err)
@@ -107,21 +103,7 @@ func (r *OutboxRepository) MarkDelivered(ctx context.Context, effectIDs []string
 	if len(effectIDs) == 0 {
 		return nil
 	}
-	// Build placeholders for the effect IDs; all settlement timestamps use the database clock.
-	placeholders := make([]string, len(effectIDs))
-	args := make([]any, 1, len(effectIDs)+1)
-	args[0] = claimant
-	for i, id := range effectIDs {
-		placeholders[i] = fmt.Sprintf("$%d", i+2)
-		args = append(args, id)
-	}
-
-	query := fmt.Sprintf(`
-		UPDATE outbox_effects
-		SET status = 'delivered', claimed_by = NULL, claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
-		WHERE effect_id IN (%s) AND status = 'claimed' AND claimed_by = $1 AND claim_expires_at > NOW()
-	`, strings.Join(placeholders, ","))
-
+	query, args := deliveredOutboxQuery(effectIDs, claimant)
 	tag, err := r.db.Exec(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("mark delivered: %w", err)
@@ -134,13 +116,7 @@ func (r *OutboxRepository) MarkDelivered(ctx context.Context, effectIDs []string
 
 // ScheduleRetry performs its documented repository operation.
 func (r *OutboxRepository) ScheduleRetry(ctx context.Context, effectID, claimant string, delay time.Duration, attempts int, errMsg string) error {
-	tag, err := r.db.Exec(ctx, `
-		UPDATE outbox_effects
-		SET status = 'pending', attempts = $3,
-			available_at = NOW() + ($4 * INTERVAL '1 millisecond'), last_error = $5,
-			claimed_by = NULL, claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
-		WHERE effect_id = $1 AND status = 'claimed' AND claimed_by = $2 AND claim_expires_at > NOW()
-	`, effectID, claimant, attempts, delay.Milliseconds(), errMsg)
+	tag, err := r.db.Exec(ctx, outboxRepositoryScheduleRetrySQL, effectID, claimant, attempts, delay.Milliseconds(), errMsg)
 	if err != nil {
 		return fmt.Errorf("schedule retry: %w", err)
 	}
@@ -152,12 +128,7 @@ func (r *OutboxRepository) ScheduleRetry(ctx context.Context, effectID, claimant
 
 // Quarantine performs its documented repository operation.
 func (r *OutboxRepository) Quarantine(ctx context.Context, effectID, claimant, errMsg string) error {
-	tag, err := r.db.Exec(ctx, `
-		UPDATE outbox_effects
-		SET status = 'quarantined', last_error = $3,
-			claimed_by = NULL, claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
-		WHERE effect_id = $1 AND status = 'claimed' AND claimed_by = $2 AND claim_expires_at > NOW()
-	`, effectID, claimant, errMsg)
+	tag, err := r.db.Exec(ctx, outboxRepositoryQuarantineSQL, effectID, claimant, errMsg)
 	if err != nil {
 		return fmt.Errorf("quarantine effect: %w", err)
 	}
@@ -170,65 +141,24 @@ func (r *OutboxRepository) Quarantine(ctx context.Context, effectID, claimant, e
 // GetPending performs its documented repository operation.
 func (r *OutboxRepository) GetPending(ctx context.Context, limit int) ([]domain.OutboxEffect, error) {
 	limit = normalizeOutboxLimit(limit)
-	rows, err := r.db.Query(ctx, `
-		SELECT effect_id, execution_id, tenant_id, destination, name, payload, effect_type,
-		       status, attempts, max_attempts, available_at, last_error, created_at, updated_at
-		FROM outbox_effects
-		WHERE status = 'pending' AND available_at <= NOW()
-		ORDER BY available_at, created_at
-		LIMIT $1
-	`, limit)
+	rows, err := r.db.Query(ctx, outboxRepositoryGetPendingSQL, limit)
 	if err != nil {
 		return nil, fmt.Errorf("get pending: %w", err)
 	}
 	defer rows.Close()
 
-	var effects []domain.OutboxEffect
-	for rows.Next() {
-		var ef domain.OutboxEffect
-		if err := rows.Scan(
-			&ef.ID, &ef.ExecutionID, &ef.TenantID, &ef.Destination, &ef.Name, &ef.Payload, &ef.EffectType,
-			&ef.Status, &ef.Attempts, &ef.MaxAttempts, &ef.AvailableAt, &ef.LastError, &ef.CreatedAt, &ef.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan outbox: %w", err)
-		}
-		effects = append(effects, ef)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate outbox rows: %w", err)
-	}
-	return effects, nil
+	return scanOutboxEffects(rows)
 }
 
 // GetByExecution performs its documented repository operation.
 func (r *OutboxRepository) GetByExecution(ctx context.Context, executionID string) ([]domain.OutboxEffect, error) {
-	rows, err := r.db.Query(ctx, `
-		SELECT effect_id, execution_id, tenant_id, destination, name, payload, effect_type,
-		       status, attempts, max_attempts, available_at, last_error, created_at, updated_at
-		FROM outbox_effects
-		WHERE execution_id = $1
-		ORDER BY created_at
-	`, executionID)
+	rows, err := r.db.Query(ctx, outboxRepositoryGetByExecutionSQL, executionID)
 	if err != nil {
 		return nil, fmt.Errorf("get by execution: %w", err)
 	}
 	defer rows.Close()
 
-	var effects []domain.OutboxEffect
-	for rows.Next() {
-		var ef domain.OutboxEffect
-		if err := rows.Scan(
-			&ef.ID, &ef.ExecutionID, &ef.TenantID, &ef.Destination, &ef.Name, &ef.Payload, &ef.EffectType,
-			&ef.Status, &ef.Attempts, &ef.MaxAttempts, &ef.AvailableAt, &ef.LastError, &ef.CreatedAt, &ef.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan outbox: %w", err)
-		}
-		effects = append(effects, ef)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate outbox rows: %w", err)
-	}
-	return effects, nil
+	return scanOutboxEffects(rows)
 }
 
 func validateClaimArguments(batchSize int, owner string, claimTTL time.Duration) error {
@@ -252,4 +182,59 @@ func normalizeOutboxLimit(limit int) int {
 		return 500
 	}
 	return limit
+}
+
+const outboxRepositoryInsertSQL = `
+			INSERT INTO outbox_effects (effect_id, execution_id, tenant_id, destination, name, payload, effect_type, status, attempts, max_attempts, available_at, last_error, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			ON CONFLICT (effect_id) DO NOTHING
+		`
+
+const outboxRepositoryMarkDeliveredSQL = `
+		UPDATE outbox_effects
+		SET status = 'delivered', claimed_by = NULL, claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
+		WHERE effect_id IN (%s) AND status = 'claimed' AND claimed_by = $1 AND claim_expires_at > NOW()
+	`
+
+const outboxRepositoryScheduleRetrySQL = `
+		UPDATE outbox_effects
+		SET status = 'pending', attempts = $3,
+			available_at = NOW() + ($4 * INTERVAL '1 millisecond'), last_error = $5,
+			claimed_by = NULL, claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
+		WHERE effect_id = $1 AND status = 'claimed' AND claimed_by = $2 AND claim_expires_at > NOW()
+	`
+
+const outboxRepositoryQuarantineSQL = `
+		UPDATE outbox_effects
+		SET status = 'quarantined', last_error = $3,
+			claimed_by = NULL, claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
+		WHERE effect_id = $1 AND status = 'claimed' AND claimed_by = $2 AND claim_expires_at > NOW()
+	`
+
+const outboxRepositoryGetPendingSQL = `
+		SELECT effect_id, execution_id, tenant_id, destination, name, payload, effect_type,
+		       status, attempts, max_attempts, available_at, last_error, created_at, updated_at
+		FROM outbox_effects
+		WHERE status = 'pending' AND available_at <= NOW()
+		ORDER BY available_at, created_at
+		LIMIT $1
+	`
+
+const outboxRepositoryGetByExecutionSQL = `
+		SELECT effect_id, execution_id, tenant_id, destination, name, payload, effect_type,
+		       status, attempts, max_attempts, available_at, last_error, created_at, updated_at
+		FROM outbox_effects
+		WHERE execution_id = $1
+		ORDER BY created_at
+	`
+
+func deliveredOutboxQuery(effectIDs []string, claimant string) (string, []any) {
+	placeholders := make([]string, len(effectIDs))
+	args := make([]any, 1, len(effectIDs)+1)
+	args[0] = claimant
+	for i, id := range effectIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+2)
+		args = append(args, id)
+	}
+	return fmt.Sprintf(outboxRepositoryMarkDeliveredSQL, strings.Join(placeholders, ",")), args
 }

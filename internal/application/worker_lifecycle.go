@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flowrulz/flow-rulz/internal/domain"
-	"github.com/flowrulz/flow-rulz/internal/ports"
 	"github.com/flowrulz/flow-rulz/internal/runtime/keyqueue"
 )
 
@@ -25,18 +23,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		return fmt.Errorf("start shard service: %w", err)
 	}
 	defer w.stopShardService(ctx)
-
-	if err := w.startKeyQueue(ctx); err != nil {
-		return err
-	}
-	defer w.stopKeyQueue(ctx)
-
-	var background sync.WaitGroup
-	w.startBackgroundLoops(ctx, &background)
-	defer background.Wait()
-
-	w.runSharded(ctx)
-	return nil
+	return w.runWithKeyQueue(ctx)
 }
 
 func (w *Worker) stopShardService(ctx context.Context) {
@@ -52,18 +39,13 @@ func (w *Worker) startKeyQueue(ctx context.Context) error {
 		w.config.MaxGlobalInFlight,
 		w.config.MaxPerKeyQueue,
 		w.config.KeyQueueWorkers,
-		func(ctx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, fencingToken int64, vshard uint32, workerID string) error {
-			return w.processDelivery(ctx, env, delivery, fencingToken, vshard, workerID)
-		},
+		w.processDelivery,
 		w.clock.Now,
 		w.config.HotKeyThreshold,
 		w.config.HotKeyCheckInterval,
 		w.config.HotKeyCallback,
 	)
-	if err := w.keyQueue.Start(ctx); err != nil {
-		return fmt.Errorf("start key queue: %w", err)
-	}
-	return nil
+	return w.startConfiguredQueue(ctx)
 }
 
 func (w *Worker) stopKeyQueue(ctx context.Context) {
@@ -80,15 +62,13 @@ func (w *Worker) startBackgroundLoops(ctx context.Context, background *sync.Wait
 		defer background.Done()
 		w.publishLoop(ctx)
 	}()
-
-	if w.batches == nil || w.batchInterval <= 0 {
-		return
+	if w.batches != nil && w.batchInterval > 0 {
+		background.Add(1)
+		go func() {
+			defer background.Done()
+			w.batchLoop(ctx)
+		}()
 	}
-	background.Add(1)
-	go func() {
-		defer background.Done()
-		w.batchLoop(ctx)
-	}()
 }
 
 func (w *Worker) publishLoop(ctx context.Context) {
@@ -114,17 +94,39 @@ func (w *Worker) batchLoop(ctx context.Context) {
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if n, err := w.batches.Tick(ctx); err != nil {
-				log.Printf("batch tick: %v", err)
-			} else if n > 0 {
-				log.Printf("batch tick formed %d batch runs", n)
-			}
+			w.tickBatches(ctx)
 		}
+	}
+}
+
+func (w *Worker) runWithKeyQueue(ctx context.Context) error {
+	if err := w.startKeyQueue(ctx); err != nil {
+		return err
+	}
+	defer w.stopKeyQueue(ctx)
+	var background sync.WaitGroup
+	w.startBackgroundLoops(ctx, &background)
+	defer background.Wait()
+	w.runSharded(ctx)
+	return nil
+}
+
+func (w *Worker) startConfiguredQueue(ctx context.Context) error {
+	if err := w.keyQueue.Start(ctx); err != nil {
+		return fmt.Errorf("start key queue: %w", err)
+	}
+	return nil
+}
+
+func (w *Worker) tickBatches(ctx context.Context) {
+	if n, err := w.batches.Tick(ctx); err != nil {
+		log.Printf("batch tick: %v", err)
+	} else if n > 0 {
+		log.Printf("batch tick formed %d batch runs", n)
 	}
 }

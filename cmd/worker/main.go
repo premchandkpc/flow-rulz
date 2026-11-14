@@ -43,7 +43,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-
 	ctx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopSignals()
 	if cfg.Worker.Mode == "broker" {
@@ -52,7 +51,6 @@ func run() error {
 	if cfg.Worker.Mode == "direct" {
 		return runDirect(ctx, cfg)
 	}
-
 	return runDurable(ctx, cfg)
 }
 

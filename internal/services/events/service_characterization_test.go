@@ -100,7 +100,6 @@ func TestProcessValidatesShardLeaseBeforeMutatingInbox(t *testing.T) {
 			return repos, nil
 		},
 	)
-
 	_, err := service.Process(ctx, testEnvelope(), 7, 12, "worker-a")
 	if !errors.Is(err, leaseErr) {
 		t.Fatalf("Process() error = %v, want wrapped lease error", err)
@@ -165,7 +164,6 @@ func TestProcessReturnsExistingExecutionForRedelivery(t *testing.T) {
 		nil, nil, nil, domain.SystemClock{}, transactionManagerStub{tx: tx},
 		func(ports.Transaction) (ports.EventTxRepos, error) { return repos, nil },
 	)
-
 	got, err := service.Process(ctx, testEnvelope(), 1, 0, "worker-a")
 	if err != nil {
 		t.Fatalf("Process() error = %v", err)
@@ -194,7 +192,6 @@ func TestProcessReturnsDuplicateErrorWhenInboxInsertLosesRaceWithoutExecution(t 
 		nil, nil, nil, domain.SystemClock{}, transactionManagerStub{tx: tx},
 		func(ports.Transaction) (ports.EventTxRepos, error) { return repos, nil },
 	)
-
 	_, err := service.Process(ctx, testEnvelope(), 1, 0, "worker-a")
 	if !errors.Is(err, domain.ErrInboxDuplicate) {
 		t.Fatalf("Process() error = %v, want ErrInboxDuplicate", err)
@@ -243,7 +240,6 @@ func TestProcessRollsBackWhenCommitFails(t *testing.T) {
 		transactionManagerStub{tx: tx},
 		func(ports.Transaction) (ports.EventTxRepos, error) { return repos, nil },
 	)
-
 	_, err := service.Process(ctx, testEnvelope(), 1, 0, "worker-a")
 	if !errors.Is(err, commitErr) {
 		t.Fatalf("Process() error = %v, want wrapped commit error", err)

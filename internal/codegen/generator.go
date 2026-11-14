@@ -924,8 +924,6 @@ package {{.GoPackageName}}
 
 import (
 		"context"
-		"encoding/json"
-		"fmt"
 
 		flowrulz "github.com/flowrulz/flow-rulz-sdk/go/flowrulz"
 )
@@ -963,22 +961,10 @@ func (c *Client) Subscribe(ctx context.Context, handler func(context.Context, *{
 
 // SubscribeRuleSet receives live events for the supplied rule set.
 func (c *Client) SubscribeRuleSet(ctx context.Context, ruleSet string, handler func(context.Context, *{{.TypeName}}, *flowrulz.Envelope) error) error {
-		if c == nil || c.client == nil {
-				return flowrulz.ErrInvalidArgument("client is required")
-		}
-		if handler == nil {
-				return flowrulz.ErrInvalidArgument("event handler is required")
-		}
-		return c.client.Subscribe(ctx, ruleSet, func(ctx context.Context, envelope *flowrulz.Envelope) error {
-				if envelope == nil {
-						return flowrulz.ErrInvalidArgument("event envelope is required")
-				}
-				var payload {{.TypeName}}
-				if err := json.Unmarshal(envelope.Data, &payload); err != nil {
-						return fmt.Errorf("decode %s payload: %w", envelope.Type, err)
-				}
-				return handler(ctx, &payload, envelope)
-		})
+        if c == nil {
+                return flowrulz.ErrInvalidArgument("client is required")
+        }
+        return flowrulz.SubscribeTyped(ctx, c.client, ruleSet, handler)
 }
 `))
 
@@ -1411,19 +1397,10 @@ func (g *Generator) buildCompiledRules() []CompiledRuleData {
 // buildCompiledRule compiles one rule into its condition code and emit
 // effects, skipping actions that do not emit an event.
 func (g *Generator) buildCompiledRule(rule Rule) CompiledRuleData {
-	conditionCode := g.buildConditionCode(rule.When)
-	var effects []EffectTemplateData
-	for _, action := range rule.Then {
-		if action.EmitEvent != nil {
-			effects = append(effects, EffectTemplateData{
-				EventType:          action.EmitEvent.Type,
-				PartitionKeyPolicy: action.EmitEvent.PartitionKeyPolicy,
-				DataTemplate:       action.EmitEvent.Data,
-			})
-		}
-	}
 	return CompiledRuleData{
-		ID: rule.ID, Priority: rule.Priority, ConditionCode: conditionCode, Effects: effects,
+		ID: rule.ID, Priority: rule.Priority,
+		ConditionCode: g.buildConditionCode(rule.When),
+		Effects:       buildEffectTemplates(rule.Then),
 	}
 }
 
@@ -1441,19 +1418,9 @@ func sortCompiledRulesByPriority(compiled []CompiledRuleData) {
 // conditionOperator maps a rule operator to its Go comparison operator,
 // defaulting to equality for unknown operators.
 func conditionOperator(op string) string {
-	switch op {
-	case "gt":
-		return ">"
-	case "gte":
-		return ">="
-	case "lt":
-		return "<"
-	case "lte":
-		return "<="
-	case "eq":
-		return "=="
-	case "neq":
-		return "!="
+	operators := map[string]string{"gt": ">", "gte": ">=", "lt": "<", "lte": "<=", "eq": "==", "neq": "!="}
+	if operator, ok := operators[op]; ok {
+		return operator
 	}
 	return "=="
 }
@@ -1546,4 +1513,18 @@ func (g *Generator) generateRuntimeComponent(outputDir string, component runtime
 		return nil, fmt.Errorf("execute %s template: %w", component.kind, err)
 	}
 	return []string{filePath}, nil
+}
+
+func buildEffectTemplates(actions []Action) []EffectTemplateData {
+	var effects []EffectTemplateData
+	for _, action := range actions {
+		if action.EmitEvent != nil {
+			effects = append(effects, EffectTemplateData{
+				EventType:          action.EmitEvent.Type,
+				PartitionKeyPolicy: action.EmitEvent.PartitionKeyPolicy,
+				DataTemplate:       action.EmitEvent.Data,
+			})
+		}
+	}
+	return effects
 }

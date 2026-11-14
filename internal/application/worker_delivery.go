@@ -22,31 +22,13 @@ func retryDelayForDelivery(base time.Duration, delivery ports.Delivery) time.Dur
 	if base <= 0 {
 		base = 5 * time.Second
 	}
-	attempt := uint64(1)
-	if source, ok := delivery.(ports.DeliveryAttempt); ok {
-		if n := source.Attempt(); n > 0 {
-			attempt = n
-		}
-	}
-
-	ceiling := base
-	for n := uint64(1); n < attempt && ceiling < maxDeliveryRetryDelay; n++ {
-		if ceiling > maxDeliveryRetryDelay/2 {
-			ceiling = maxDeliveryRetryDelay
-			break
-		}
-		ceiling *= 2
-	}
-	if ceiling > maxDeliveryRetryDelay {
-		ceiling = maxDeliveryRetryDelay
-	}
-
+	ceiling := deliveryBackoffCeiling(base, deliveryAttempt(delivery))
 	lower := ceiling / 2
 	jitterRange := int64(ceiling - lower)
 	if jitterRange <= 0 {
 		return ceiling
 	}
-	return lower + time.Duration(rand.Int64N(jitterRange+1)) //nolint:gosec // jitter is for retry spreading, not security
+	return lower + time.Duration(rand.Int64N(jitterRange+1)) //nolint:gosec // Retry spreading does not require cryptographic randomness.
 }
 
 func (w *Worker) processDelivery(ctx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, fencingToken int64, vshard uint32, workerID string) error {
@@ -65,13 +47,7 @@ func (w *Worker) processDelivery(ctx context.Context, env *domain.EventEnvelope,
 	return w.settleEventResult(ctx, env, delivery, execution, err)
 }
 
-func (w *Worker) settleEventResult(
-	ctx context.Context,
-	env *domain.EventEnvelope,
-	delivery ports.Delivery,
-	execution *domain.Execution,
-	processErr error,
-) error {
+func (w *Worker) settleEventResult(ctx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, execution *domain.Execution, processErr error) error {
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 
@@ -85,12 +61,7 @@ func (w *Worker) settleEventResult(
 	return nil
 }
 
-func (w *Worker) handleEventProcessingFailure(
-	settleCtx context.Context,
-	env *domain.EventEnvelope,
-	delivery ports.Delivery,
-	processErr error,
-) error {
+func (w *Worker) handleEventProcessingFailure(settleCtx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, processErr error) error {
 	log.Printf("process event %s: %v", env.ID, processErr)
 	if domain.IsPermanent(processErr) {
 		return w.quarantinePermanentEvent(settleCtx, env, delivery, processErr)
@@ -104,12 +75,7 @@ func (w *Worker) handleEventProcessingFailure(
 	return processErr
 }
 
-func (w *Worker) quarantinePermanentEvent(
-	settleCtx context.Context,
-	env *domain.EventEnvelope,
-	delivery ports.Delivery,
-	processErr error,
-) error {
+func (w *Worker) quarantinePermanentEvent(settleCtx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, processErr error) error {
 	if err := w.measureDeliveryStage("quarantine", func() error {
 		return w.events.QuarantineEvent(settleCtx, env.ID, env.ID, env.TenantID, domain.ClassifyError(processErr), processErr.Error())
 	}); err != nil {
@@ -141,45 +107,22 @@ func (w *Worker) processSingleDelivery(ctx context.Context, delivery ports.Deliv
 	env, err := delivery.Event()
 	if err != nil || env == nil {
 		w.quarantineInvalidDelivery(ctx, delivery, err)
-		return nil // The malformed delivery has been quarantined or scheduled for retry.
+		return nil // Malformed deliveries are quarantined or scheduled for retry.
 	}
 	if err := rejectDeploymentTarget(env); err != nil {
-		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		return errors.Join(err, w.retryQueuedDelivery(settleCtx, delivery))
+		return errors.Join(err, w.retryDeploymentTarget(ctx, delivery))
 	}
-
-	vshard := w.shardService.VirtualShardForEvent(env)
-	if !w.shardService.IsOwner(vshard) {
-		if err := settleRetry(ctx, delivery, retryDelayForDelivery(w.config.RetryDelay, delivery)); err != nil {
-			log.Printf("delay non-owned shard %d: %v", vshard, err)
-		}
-		return nil
-	}
-	return w.submitOwnedDelivery(ctx, env, delivery, vshard)
+	return w.routeDeliveryToShard(ctx, env, delivery)
 }
 
-func (w *Worker) submitOwnedDelivery(
-	ctx context.Context,
-	env *domain.EventEnvelope,
-	delivery ports.Delivery,
-	vshard uint32,
-) error {
-	fencingToken := int64(0)
-	if token, ok := w.shardService.GetFencingToken(vshard); ok {
-		fencingToken = token
+func (w *Worker) submitOwnedDelivery(ctx context.Context, env *domain.EventEnvelope, delivery ports.Delivery, vshard uint32) error {
+	fencingToken, _ := w.shardService.GetFencingToken(vshard)
+	item := ports.QueueItem{
+		Event: env, Delivery: delivery, FencingToken: fencingToken,
+		Shard: vshard, WorkerID: w.workerID,
 	}
-	if err := w.keyQueue.Submit(ctx, ports.QueueItem{
-		Event:        env,
-		Delivery:     delivery,
-		FencingToken: fencingToken,
-		Shard:        vshard,
-		WorkerID:     w.workerID,
-	}); err != nil {
-		log.Printf("keyqueue submit failed: %v", err)
-		if nakErr := settleNak(ctx, delivery); nakErr != nil {
-			log.Printf("nak failed: %v", nakErr)
-		}
+	if err := w.keyQueue.Submit(ctx, item); err != nil {
+		w.rejectQueueSubmission(ctx, delivery, err)
 		return err
 	}
 	return nil
@@ -191,16 +134,11 @@ func (w *Worker) quarantineInvalidDelivery(ctx context.Context, delivery ports.D
 	sourceID := domain.ComputeSourceHash(delivery.Raw())
 	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-
-	message := "invalid event envelope JSON"
 	if parseErr != nil {
 		log.Printf("invalid event envelope: subject=%q bytes=%d error=%v", delivery.Subject(), len(delivery.Raw()), parseErr)
 	}
-	if err := w.events.QuarantineEvent(settleCtx, sourceID, "", "", domain.ErrorClassValidation, message); err != nil {
-		log.Printf("quarantine invalid event %s: %v", sourceID, err)
-		if retryErr := delivery.Retry(settleCtx, retryDelayForDelivery(w.config.RetryDelay, delivery)); retryErr != nil {
-			log.Printf("retry invalid event %s: %v", sourceID, retryErr)
-		}
+	if err := w.events.QuarantineEvent(settleCtx, sourceID, "", "", domain.ErrorClassValidation, "invalid event envelope JSON"); err != nil {
+		w.retryInvalidDelivery(settleCtx, delivery, sourceID, err)
 		return
 	}
 	if err := delivery.Ack(settleCtx); err != nil {
@@ -226,4 +164,53 @@ func rejectDeploymentTarget(env *domain.EventEnvelope) error {
 		return errors.New("service-targeted events require service-specific routing, which is not implemented")
 	}
 	return nil
+}
+
+func deliveryAttempt(delivery ports.Delivery) uint64 {
+	if source, ok := delivery.(ports.DeliveryAttempt); ok && source.Attempt() > 0 {
+		return source.Attempt()
+	}
+	return 1
+}
+
+func deliveryBackoffCeiling(base time.Duration, attempt uint64) time.Duration {
+	ceiling := base
+	for n := uint64(1); n < attempt && ceiling < maxDeliveryRetryDelay; n++ {
+		if ceiling > maxDeliveryRetryDelay/2 {
+			return maxDeliveryRetryDelay
+		}
+		ceiling *= 2
+	}
+	return min(ceiling, maxDeliveryRetryDelay)
+}
+
+func (w *Worker) retryDeploymentTarget(ctx context.Context, delivery ports.Delivery) error {
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return w.retryQueuedDelivery(settleCtx, delivery)
+}
+
+func (w *Worker) routeDeliveryToShard(ctx context.Context, env *domain.EventEnvelope, delivery ports.Delivery) error {
+	vshard := w.shardService.VirtualShardForEvent(env)
+	if !w.shardService.IsOwner(vshard) {
+		if err := settleRetry(ctx, delivery, retryDelayForDelivery(w.config.RetryDelay, delivery)); err != nil {
+			log.Printf("delay non-owned shard %d: %v", vshard, err)
+		}
+		return nil
+	}
+	return w.submitOwnedDelivery(ctx, env, delivery, vshard)
+}
+
+func (w *Worker) rejectQueueSubmission(ctx context.Context, delivery ports.Delivery, err error) {
+	log.Printf("keyqueue submit failed: %v", err)
+	if nakErr := settleNak(ctx, delivery); nakErr != nil {
+		log.Printf("nak failed: %v", nakErr)
+	}
+}
+
+func (w *Worker) retryInvalidDelivery(ctx context.Context, delivery ports.Delivery, sourceID string, err error) {
+	log.Printf("quarantine invalid event %s: %v", sourceID, err)
+	if retryErr := delivery.Retry(ctx, retryDelayForDelivery(w.config.RetryDelay, delivery)); retryErr != nil {
+		log.Printf("retry invalid event %s: %v", sourceID, retryErr)
+	}
 }

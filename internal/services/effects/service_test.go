@@ -88,7 +88,6 @@ func TestPublishBatchUsesUniqueClaimTokenForDelivery(t *testing.T) {
 		Payload: []byte(`{}`), EffectType: domain.EffectTypeCommand, MaxAttempts: 3,
 	}}}
 	svc := NewService(outbox, &testEffectSender{}, &testQuarantineRepository{}, domain.SystemClock{}, "publisher")
-
 	if err := svc.PublishBatch(context.Background(), 10); err != nil {
 		t.Fatalf("PublishBatch() error = %v", err)
 	}
@@ -108,7 +107,6 @@ func TestPublishBatchPropagatesRetrySettlementFailure(t *testing.T) {
 	})
 	outbox.retryErr = retryErr
 	svc := NewService(outbox, &testEffectSender{err: errors.New("destination down")}, &testQuarantineRepository{}, domain.SystemClock{}, "publisher")
-
 	err := svc.PublishBatch(context.Background(), 10)
 	if !errors.Is(err, retryErr) {
 		t.Fatalf("PublishBatch() error = %v, want retry error", err)
@@ -129,7 +127,6 @@ func TestPublishBatchRemovesQuarantineRecordWhenClaimWasLost(t *testing.T) {
 	outbox.quarantineErr = claimErr
 	quarantine := &testQuarantineRepository{}
 	svc := NewService(outbox, &testEffectSender{err: errors.New("permanent destination error")}, quarantine, domain.SystemClock{}, "publisher")
-
 	err := svc.PublishBatch(context.Background(), 10)
 	if !errors.Is(err, claimErr) {
 		t.Fatalf("PublishBatch() error = %v, want claim error", err)
@@ -160,7 +157,6 @@ func TestPublishBatchPropagatesDeliverySettlementFailure(t *testing.T) {
 	})
 	outbox.deliveredErr = settleErr
 	svc := NewService(outbox, &testEffectSender{}, &testQuarantineRepository{}, domain.SystemClock{}, "publisher")
-
 	err := svc.PublishBatch(context.Background(), 10)
 	if !errors.Is(err, settleErr) {
 		t.Fatalf("PublishBatch() error = %v, want delivery settlement error", err)

@@ -27,7 +27,6 @@ func DefaultConfig() Config {
 			port = v
 		}
 	}
-
 	return Config{
 		ServiceName:   os.Getenv("SERVICE_NAME"),
 		Environment:   os.Getenv("ENVIRONMENT"),
@@ -100,13 +99,11 @@ func (o *Observability) Shutdown(ctx context.Context) error {
 			return err
 		}
 	}
-
 	if o.TracerProvider != nil {
 		if err := o.TracerProvider.Shutdown(ctx); err != nil {
 			o.Logger.Error("shutdown tracer", "error", err)
 			return err
 		}
 	}
-
 	return nil
 }

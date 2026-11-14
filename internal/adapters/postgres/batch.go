@@ -12,17 +12,7 @@ import (
 
 // GetRunForTenant retrieves a batch run scoped to a tenant and batch ID.
 func (r *BatchRepository) GetRunForTenant(ctx context.Context, tenantID, batchID string) (*domain.BatchRun, error) {
-	run := &domain.BatchRun{}
-	err := r.db.QueryRow(ctx, `
-		SELECT batch_id, tenant_id, partition_key, rule_set, status, member_count,
-		       execution_id, decision_hash, window_from, window_to, created_at
-		FROM batch_runs
-		WHERE tenant_id = $1 AND batch_id = $2
-	`, tenantID, batchID).Scan(
-		&run.BatchID, &run.TenantID, &run.PartitionKey, &run.RuleSet, &run.Status,
-		&run.MemberCount, &run.ExecutionID, &run.DecisionHash,
-		&run.WindowFrom, &run.WindowTo, &run.CreatedAt,
-	)
+	run, err := scanBatchRun(r.db.QueryRow(ctx, batchRepositoryGetRunForTenantSQL, tenantID, batchID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -37,48 +27,13 @@ func (r *BatchRepository) ListRuns(ctx context.Context, tenantID, ruleSet string
 	if strings.TrimSpace(tenantID) == "" {
 		return nil, fmt.Errorf("tenant ID is required to list batch runs")
 	}
-	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 500 {
-		limit = 500
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	query := `
-		SELECT batch_id, tenant_id, partition_key, rule_set, status, member_count,
-		       execution_id, decision_hash, window_from, window_to, created_at
-		FROM batch_runs
-		WHERE tenant_id = $1`
-	args := []any{tenantID}
-	if ruleSet != "" {
-		query += " AND rule_set = $2"
-		args = append(args, ruleSet)
-	}
-	query += fmt.Sprintf(" ORDER BY created_at DESC, batch_id DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
-	args = append(args, limit, offset)
+	query, args := batchRunsQuery(tenantID, ruleSet, limit, offset)
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list batch runs: %w", err)
 	}
 	defer rows.Close()
-	var runs []*domain.BatchRun
-	for rows.Next() {
-		run := &domain.BatchRun{}
-		if err := rows.Scan(
-			&run.BatchID, &run.TenantID, &run.PartitionKey, &run.RuleSet, &run.Status,
-			&run.MemberCount, &run.ExecutionID, &run.DecisionHash,
-			&run.WindowFrom, &run.WindowTo, &run.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan batch run: %w", err)
-		}
-		runs = append(runs, run)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate batch runs: %w", err)
-	}
-	return runs, nil
+	return scanBatchRuns(rows)
 }
 
 // BatchRepository persists batch runs and inbox batch membership in PostgreSQL.
@@ -96,35 +51,13 @@ func (r *BatchRepository) ListUnbatched(ctx context.Context, limit int) ([]*doma
 	if limit <= 0 {
 		limit = 400
 	}
-	rows, err := r.db.Query(ctx, `
-		SELECT tenant_id, event_id, status, execution_id, first_seen_at, committed_at,
-		       COALESCE(partition_key, ''), COALESCE(rule_set, ''), payload, COALESCE(batch_id, '')
-		FROM inbox
-		WHERE status = 'committed' AND batch_id IS NULL
-		ORDER BY first_seen_at, tenant_id, event_id
-		LIMIT $1
-	`, limit)
+	rows, err := r.db.Query(ctx, batchRepositoryListUnbatchedSQL, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list unbatched: %w", err)
 	}
 	defer rows.Close()
 
-	var entries []*domain.InboxEntry
-	for rows.Next() {
-		var e domain.InboxEntry
-		if err := rows.Scan(
-			&e.TenantID, &e.EventID, &e.Status, &e.ExecutionID,
-			&e.FirstSeenAt, &e.CommittedAt,
-			&e.PartitionKey, &e.RuleSet, &e.Payload, &e.BatchID,
-		); err != nil {
-			return nil, fmt.Errorf("scan unbatched: %w", err)
-		}
-		entries = append(entries, &e)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate unbatched rows: %w", err)
-	}
-	return entries, nil
+	return scanUnbatchedEntries(rows, "scan unbatched", "iterate unbatched rows")
 }
 
 // ListUnbatchedByIDs returns only requested eligible events in one tenant partition.
@@ -132,39 +65,13 @@ func (r *BatchRepository) ListUnbatchedByIDs(ctx context.Context, tenantID, part
 	if len(eventIDs) == 0 {
 		return []*domain.InboxEntry{}, nil
 	}
-	rows, err := r.db.Query(ctx, `
-		SELECT tenant_id, event_id, status, execution_id, first_seen_at, committed_at,
-		       COALESCE(partition_key, ''), COALESCE(rule_set, ''), payload, COALESCE(batch_id, '')
-		FROM inbox
-		WHERE tenant_id = $1
-		  AND COALESCE(partition_key, '') = $2
-		  AND COALESCE(rule_set, '') = $3
-		  AND event_id = ANY($4::text[])
-		  AND status = 'committed'
-		  AND batch_id IS NULL
-		ORDER BY first_seen_at, tenant_id, event_id
-	`, tenantID, partitionKey, ruleSet, eventIDs)
+	rows, err := r.db.Query(ctx, batchRepositoryListUnbatchedByIDsSQL, tenantID, partitionKey, ruleSet, eventIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list requested unbatched events: %w", err)
 	}
 	defer rows.Close()
 
-	var entries []*domain.InboxEntry
-	for rows.Next() {
-		var e domain.InboxEntry
-		if err := rows.Scan(
-			&e.TenantID, &e.EventID, &e.Status, &e.ExecutionID,
-			&e.FirstSeenAt, &e.CommittedAt,
-			&e.PartitionKey, &e.RuleSet, &e.Payload, &e.BatchID,
-		); err != nil {
-			return nil, fmt.Errorf("scan requested unbatched event: %w", err)
-		}
-		entries = append(entries, &e)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate requested unbatched events: %w", err)
-	}
-	return entries, nil
+	return scanUnbatchedEntries(rows, "scan requested unbatched event", "iterate requested unbatched events")
 }
 
 // CompleteBatch writes the run and all inbox membership changes in one PostgreSQL
@@ -179,17 +86,7 @@ func (r *BatchRepository) CompleteBatch(ctx context.Context, run *domain.BatchRu
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-
-	if err := upsertBatchRun(ctx, tx, run); err != nil {
-		return err
-	}
-	if err := associateBatchMembers(ctx, tx, run, eventIDs); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit batch completion: %w", err)
-	}
-	return nil
+	return completeBatchTransaction(ctx, tx, run, eventIDs)
 }
 
 func validateBatchCompletion(run *domain.BatchRun, eventIDs []string) error {
@@ -199,17 +96,7 @@ func validateBatchCompletion(run *domain.BatchRun, eventIDs []string) error {
 	if len(eventIDs) == 0 || len(eventIDs) != run.MemberCount {
 		return fmt.Errorf("batch member count does not match run")
 	}
-	seen := make(map[string]struct{}, len(eventIDs))
-	for _, id := range eventIDs {
-		if id == "" {
-			return fmt.Errorf("batch event ID must not be empty")
-		}
-		if _, exists := seen[id]; exists {
-			return fmt.Errorf("duplicate batch event ID %q", id)
-		}
-		seen[id] = struct{}{}
-	}
-	return nil
+	return validateBatchEventIDs(eventIDs)
 }
 
 func (r *BatchRepository) beginBatchCompletion(ctx context.Context) (pgx.Tx, error) {
@@ -227,18 +114,7 @@ func (r *BatchRepository) beginBatchCompletion(ctx context.Context) (pgx.Tx, err
 }
 
 func upsertBatchRun(ctx context.Context, tx pgx.Tx, run *domain.BatchRun) error {
-	tag, err := tx.Exec(ctx, `
-		INSERT INTO batch_runs (batch_id, tenant_id, partition_key, rule_set, status, member_count,
-		                        execution_id, decision_hash, window_from, window_to, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (batch_id) DO UPDATE SET
-			status = EXCLUDED.status, member_count = EXCLUDED.member_count,
-			execution_id = EXCLUDED.execution_id, decision_hash = EXCLUDED.decision_hash,
-			window_from = EXCLUDED.window_from, window_to = EXCLUDED.window_to
-		WHERE batch_runs.tenant_id = EXCLUDED.tenant_id
-		  AND batch_runs.partition_key = EXCLUDED.partition_key
-		  AND batch_runs.rule_set = EXCLUDED.rule_set
-	`, run.BatchID, run.TenantID, run.PartitionKey, run.RuleSet, run.Status,
+	tag, err := tx.Exec(ctx, upsertBatchRunSQL, run.BatchID, run.TenantID, run.PartitionKey, run.RuleSet, run.Status,
 		run.MemberCount, run.ExecutionID, run.DecisionHash, run.WindowFrom, run.WindowTo, run.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("upsert batch run: %w", err)
@@ -250,16 +126,7 @@ func upsertBatchRun(ctx context.Context, tx pgx.Tx, run *domain.BatchRun) error 
 }
 
 func associateBatchMembers(ctx context.Context, tx pgx.Tx, run *domain.BatchRun, eventIDs []string) error {
-	tag, err := tx.Exec(ctx, `
-		UPDATE inbox
-		SET batch_id = $5
-		WHERE tenant_id = $1
-		  AND COALESCE(partition_key, '') = $2
-		  AND COALESCE(rule_set, '') = $3
-		  AND event_id = ANY($4::text[])
-		  AND status = 'committed'
-		  AND (batch_id IS NULL OR batch_id = $5)
-	`, run.TenantID, run.PartitionKey, run.RuleSet, eventIDs, run.BatchID)
+	tag, err := tx.Exec(ctx, associateBatchMembersSQL, run.TenantID, run.PartitionKey, run.RuleSet, eventIDs, run.BatchID)
 	if err != nil {
 		return fmt.Errorf("associate batch members: %w", err)
 	}
@@ -271,10 +138,7 @@ func associateBatchMembers(ctx context.Context, tx pgx.Tx, run *domain.BatchRun,
 
 // MarkBatched assigns an inbox event to a batch if it is not already assigned.
 func (r *BatchRepository) MarkBatched(ctx context.Context, tenantID, eventID, batchID string) error {
-	_, err := r.db.Exec(ctx, `
-		UPDATE inbox SET batch_id = $3
-		WHERE tenant_id = $1 AND event_id = $2 AND batch_id IS NULL
-	`, tenantID, eventID, batchID)
+	_, err := r.db.Exec(ctx, batchRepositoryMarkBatchedSQL, tenantID, eventID, batchID)
 	if err != nil {
 		return fmt.Errorf("mark batched: %w", err)
 	}
@@ -283,18 +147,7 @@ func (r *BatchRepository) MarkBatched(ctx context.Context, tenantID, eventID, ba
 
 // SaveRun inserts or updates a batch run.
 func (r *BatchRepository) SaveRun(ctx context.Context, run *domain.BatchRun) error {
-	_, err := r.db.Exec(ctx, `
-		INSERT INTO batch_runs (batch_id, tenant_id, partition_key, rule_set, status, member_count,
-		                        execution_id, decision_hash, window_from, window_to, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (batch_id) DO UPDATE SET
-			status = EXCLUDED.status,
-			member_count = EXCLUDED.member_count,
-			execution_id = EXCLUDED.execution_id,
-			decision_hash = EXCLUDED.decision_hash,
-			window_from = EXCLUDED.window_from,
-			window_to = EXCLUDED.window_to
-	`, run.BatchID, run.TenantID, run.PartitionKey, run.RuleSet, run.Status,
+	_, err := r.db.Exec(ctx, batchRepositorySaveRunSQL, run.BatchID, run.TenantID, run.PartitionKey, run.RuleSet, run.Status,
 		run.MemberCount, run.ExecutionID, run.DecisionHash,
 		run.WindowFrom, run.WindowTo, run.CreatedAt)
 	if err != nil {
@@ -305,17 +158,7 @@ func (r *BatchRepository) SaveRun(ctx context.Context, run *domain.BatchRun) err
 
 // GetRun retrieves a batch run by its batch ID, or returns nil when it does not exist.
 func (r *BatchRepository) GetRun(ctx context.Context, batchID string) (*domain.BatchRun, error) {
-	run := &domain.BatchRun{}
-	err := r.db.QueryRow(ctx, `
-		SELECT batch_id, tenant_id, partition_key, rule_set, status, member_count,
-		       execution_id, decision_hash, window_from, window_to, created_at
-		FROM batch_runs
-		WHERE batch_id = $1
-	`, batchID).Scan(
-		&run.BatchID, &run.TenantID, &run.PartitionKey, &run.RuleSet, &run.Status,
-		&run.MemberCount, &run.ExecutionID, &run.DecisionHash,
-		&run.WindowFrom, &run.WindowTo, &run.CreatedAt,
-	)
+	run, err := scanBatchRun(r.db.QueryRow(ctx, batchRepositoryGetRunSQL, batchID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -323,4 +166,170 @@ func (r *BatchRepository) GetRun(ctx context.Context, batchID string) (*domain.B
 		return nil, fmt.Errorf("get batch run: %w", err)
 	}
 	return run, nil
+}
+
+const batchRepositoryGetRunForTenantSQL = `
+		SELECT batch_id, tenant_id, partition_key, rule_set, status, member_count,
+		       execution_id, decision_hash, window_from, window_to, created_at
+		FROM batch_runs
+		WHERE tenant_id = $1 AND batch_id = $2
+	`
+
+const batchRepositoryListRunsSQL = `
+		SELECT batch_id, tenant_id, partition_key, rule_set, status, member_count,
+		       execution_id, decision_hash, window_from, window_to, created_at
+		FROM batch_runs
+		WHERE tenant_id = $1`
+
+const batchRepositoryListUnbatchedSQL = `
+		SELECT tenant_id, event_id, status, execution_id, first_seen_at, committed_at,
+		       COALESCE(partition_key, ''), COALESCE(rule_set, ''), payload, COALESCE(batch_id, '')
+		FROM inbox
+		WHERE status = 'committed' AND batch_id IS NULL
+		ORDER BY first_seen_at, tenant_id, event_id
+		LIMIT $1
+	`
+
+const batchRepositoryListUnbatchedByIDsSQL = `
+		SELECT tenant_id, event_id, status, execution_id, first_seen_at, committed_at,
+		       COALESCE(partition_key, ''), COALESCE(rule_set, ''), payload, COALESCE(batch_id, '')
+		FROM inbox
+		WHERE tenant_id = $1
+		  AND COALESCE(partition_key, '') = $2
+		  AND COALESCE(rule_set, '') = $3
+		  AND event_id = ANY($4::text[])
+		  AND status = 'committed'
+		  AND batch_id IS NULL
+		ORDER BY first_seen_at, tenant_id, event_id
+	`
+
+const upsertBatchRunSQL = `
+		INSERT INTO batch_runs (batch_id, tenant_id, partition_key, rule_set, status, member_count,
+		                        execution_id, decision_hash, window_from, window_to, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (batch_id) DO UPDATE SET
+			status = EXCLUDED.status, member_count = EXCLUDED.member_count,
+			execution_id = EXCLUDED.execution_id, decision_hash = EXCLUDED.decision_hash,
+			window_from = EXCLUDED.window_from, window_to = EXCLUDED.window_to
+		WHERE batch_runs.tenant_id = EXCLUDED.tenant_id
+		  AND batch_runs.partition_key = EXCLUDED.partition_key
+		  AND batch_runs.rule_set = EXCLUDED.rule_set
+	`
+
+const associateBatchMembersSQL = `
+		UPDATE inbox
+		SET batch_id = $5
+		WHERE tenant_id = $1
+		  AND COALESCE(partition_key, '') = $2
+		  AND COALESCE(rule_set, '') = $3
+		  AND event_id = ANY($4::text[])
+		  AND status = 'committed'
+		  AND (batch_id IS NULL OR batch_id = $5)
+	`
+
+const batchRepositoryMarkBatchedSQL = `
+		UPDATE inbox SET batch_id = $3
+		WHERE tenant_id = $1 AND event_id = $2 AND batch_id IS NULL
+	`
+
+const batchRepositorySaveRunSQL = `
+		INSERT INTO batch_runs (batch_id, tenant_id, partition_key, rule_set, status, member_count,
+		                        execution_id, decision_hash, window_from, window_to, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (batch_id) DO UPDATE SET
+			status = EXCLUDED.status,
+			member_count = EXCLUDED.member_count,
+			execution_id = EXCLUDED.execution_id,
+			decision_hash = EXCLUDED.decision_hash,
+			window_from = EXCLUDED.window_from,
+			window_to = EXCLUDED.window_to
+	`
+
+const batchRepositoryGetRunSQL = `
+		SELECT batch_id, tenant_id, partition_key, rule_set, status, member_count,
+		       execution_id, decision_hash, window_from, window_to, created_at
+		FROM batch_runs
+		WHERE batch_id = $1
+	`
+
+func scanBatchRun(row pgx.Row) (*domain.BatchRun, error) {
+	run := &domain.BatchRun{}
+	err := row.Scan(&run.BatchID, &run.TenantID, &run.PartitionKey, &run.RuleSet, &run.Status,
+		&run.MemberCount, &run.ExecutionID, &run.DecisionHash, &run.WindowFrom, &run.WindowTo, &run.CreatedAt)
+	return run, err
+}
+
+func scanBatchRuns(rows pgx.Rows) ([]*domain.BatchRun, error) {
+	var runs []*domain.BatchRun
+	for rows.Next() {
+		run, err := scanBatchRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan batch run: %w", err)
+		}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate batch runs: %w", err)
+	}
+	return runs, nil
+}
+
+func batchRunsQuery(tenantID, ruleSet string, limit, offset int) (string, []any) {
+	query := batchRepositoryListRunsSQL
+	args := []any{tenantID}
+	if ruleSet != "" {
+		query += " AND rule_set = $2"
+		args = append(args, ruleSet)
+	}
+	query += fmt.Sprintf(" ORDER BY created_at DESC, batch_id DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	return query, append(args, normalizeOutboxLimit(limit), max(offset, 0))
+}
+
+func scanUnbatchedEntry(row pgx.Row) (*domain.InboxEntry, error) {
+	entry := &domain.InboxEntry{}
+	err := row.Scan(&entry.TenantID, &entry.EventID, &entry.Status, &entry.ExecutionID,
+		&entry.FirstSeenAt, &entry.CommittedAt, &entry.PartitionKey, &entry.RuleSet, &entry.Payload, &entry.BatchID)
+	return entry, err
+}
+
+func scanUnbatchedEntries(rows pgx.Rows, scanMessage, iterationMessage string) ([]*domain.InboxEntry, error) {
+	var entries []*domain.InboxEntry
+	for rows.Next() {
+		entry, err := scanUnbatchedEntry(rows)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", scanMessage, err)
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: %w", iterationMessage, err)
+	}
+	return entries, nil
+}
+
+func completeBatchTransaction(ctx context.Context, tx pgx.Tx, run *domain.BatchRun, eventIDs []string) error {
+	if err := upsertBatchRun(ctx, tx, run); err != nil {
+		return err
+	}
+	if err := associateBatchMembers(ctx, tx, run, eventIDs); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit batch completion: %w", err)
+	}
+	return nil
+}
+
+func validateBatchEventIDs(eventIDs []string) error {
+	seen := make(map[string]struct{}, len(eventIDs))
+	for _, id := range eventIDs {
+		if id == "" {
+			return fmt.Errorf("batch event ID must not be empty")
+		}
+		if _, exists := seen[id]; exists {
+			return fmt.Errorf("duplicate batch event ID %q", id)
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
 }

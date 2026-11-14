@@ -28,7 +28,6 @@ func newHTTPTransport(cfg *TransportConfig) (Transport, error) {
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, ErrConfig("HTTP_ADDR must be an absolute http or https URL")
 	}
-
 	return &httpTransport{
 		cfg:     cfg,
 		client:  &http.Client{Timeout: cfg.Config.HTTPTimeout},

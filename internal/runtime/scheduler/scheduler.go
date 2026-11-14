@@ -34,32 +34,11 @@ type Scheduler struct {
 }
 
 // NewScheduler creates a new Scheduler with the given dependencies and configuration.
-func NewScheduler(
-	repo ports.ScheduledEventRepository,
-	publisher ports.EventPublisher,
-	clock ports.Clock,
-	pollInterval time.Duration,
-	batchSize int,
-	numShards uint32,
-) *Scheduler {
-	if pollInterval <= 0 {
-		pollInterval = 5 * time.Second
-	}
-	if batchSize <= 0 {
-		batchSize = 100
-	}
-	if numShards == 0 {
-		numShards = 4096
-	}
-	return &Scheduler{
-		repo:         repo,
-		publisher:    publisher,
-		clock:        clock,
-		pollInterval: pollInterval,
-		batchSize:    batchSize,
-		numShards:    numShards,
-		stopChan:     make(chan struct{}),
-	}
+func NewScheduler(repo ports.ScheduledEventRepository, publisher ports.EventPublisher, clock ports.Clock, pollInterval time.Duration, batchSize int, numShards uint32) *Scheduler {
+	s := &Scheduler{repo: repo, publisher: publisher, clock: clock,
+		pollInterval: pollInterval, batchSize: batchSize, numShards: numShards, stopChan: make(chan struct{})}
+	s.normalizeConfig()
+	return s
 }
 
 // NewEnvelopeScheduler uses a domain-envelope publisher in durable mode.
@@ -76,16 +55,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 		log.Printf("scheduler: refusing to start with nil context")
 		return
 	}
-
-	s.mu.Lock()
-	if s.running || s.stopped {
-		s.mu.Unlock()
+	if !s.beginRun() {
 		return
 	}
-	s.running = true
-	s.wg.Add(1)
-	s.mu.Unlock()
-
 	go s.runLoop(ctx)
 	log.Println("scheduler started")
 }
@@ -106,13 +78,9 @@ func (s *Scheduler) Stop() {
 
 func (s *Scheduler) runLoop(ctx context.Context) {
 	defer s.wg.Done()
-
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
-
-	// Initial tick
 	s.tick(ctx)
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -131,27 +99,12 @@ func (s *Scheduler) tick(ctx context.Context) {
 		log.Printf("scheduler: get due events: %v", err)
 		return
 	}
-	if len(events) == 0 {
-		return
-	}
-
-	claimant := "scheduler-" + domain.NewID()
-	claimed, err := s.claimDueEvents(ctx, events, claimant)
-	if err != nil {
-		log.Printf("scheduler: claim events: %v", err)
-		return
-	}
-	log.Printf("scheduler: releasing %d scheduled events", len(claimed))
-	for _, event := range claimed {
-		s.processClaimedEvent(ctx, event, claimant)
+	if len(events) > 0 {
+		s.releaseDueEvents(ctx, events)
 	}
 }
 
-func (s *Scheduler) claimDueEvents(
-	ctx context.Context,
-	events []*domain.ScheduledEvent,
-	claimant string,
-) ([]*domain.ScheduledEvent, error) {
+func (s *Scheduler) claimDueEvents(ctx context.Context, events []*domain.ScheduledEvent, claimant string) ([]*domain.ScheduledEvent, error) {
 	eventIDs := scheduledEventIDs(events)
 	return s.repo.Claim(ctx, eventIDs, claimant, 5*time.Minute)
 }
@@ -173,12 +126,7 @@ func (s *Scheduler) processClaimedEvent(ctx context.Context, event *domain.Sched
 	s.markEventReleased(ctx, event, claimant)
 }
 
-func (s *Scheduler) handleReleaseFailure(
-	ctx context.Context,
-	event *domain.ScheduledEvent,
-	claimant string,
-	releaseErr error,
-) {
+func (s *Scheduler) handleReleaseFailure(ctx context.Context, event *domain.ScheduledEvent, claimant string, releaseErr error) {
 	log.Printf("scheduler: release event %s: %v", event.EventID, releaseErr)
 	nextAttempt := event.RetryCount + 1
 	if nextAttempt >= maxScheduledEventAttempts {
@@ -215,7 +163,52 @@ func scheduledRetryDelay(attempt int) time.Duration {
 }
 
 func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent, idempotencyKey string) error {
-	env := &domain.EventEnvelope{
+	env := scheduledEnvelope(evt, s.clock.Now())
+	if env.Headers == nil {
+		env.Headers = make(map[string]string)
+	}
+	env.Headers["Idempotency-Key"] = idempotencyKey
+	return s.publishEnvelope(ctx, env)
+}
+
+func (s *Scheduler) normalizeConfig() {
+	if s.pollInterval <= 0 {
+		s.pollInterval = 5 * time.Second
+	}
+	if s.batchSize <= 0 {
+		s.batchSize = 100
+	}
+	if s.numShards == 0 {
+		s.numShards = 4096
+	}
+}
+
+func (s *Scheduler) beginRun() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.running || s.stopped {
+		return false
+	}
+	s.running = true
+	s.wg.Add(1)
+	return true
+}
+
+func (s *Scheduler) releaseDueEvents(ctx context.Context, events []*domain.ScheduledEvent) {
+	claimant := "scheduler-" + domain.NewID()
+	claimed, err := s.claimDueEvents(ctx, events, claimant)
+	if err != nil {
+		log.Printf("scheduler: claim events: %v", err)
+		return
+	}
+	log.Printf("scheduler: releasing %d scheduled events", len(claimed))
+	for _, event := range claimed {
+		s.processClaimedEvent(ctx, event, claimant)
+	}
+}
+
+func scheduledEnvelope(evt *domain.ScheduledEvent, now time.Time) *domain.EventEnvelope {
+	return &domain.EventEnvelope{
 		ID:            evt.EventID,
 		Type:          evt.EventType,
 		TenantID:      evt.TenantID,
@@ -223,17 +216,13 @@ func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent
 		WorkflowID:    evt.WorkflowID,
 		CorrelationID: evt.Headers["flowrulz_correlation_id"],
 		CausationID:   evt.Headers["flowrulz_parent_event_id"],
-		OccurredAt:    s.clock.Now(),
+		OccurredAt:    now,
 		Data:          evt.Payload,
 		Headers:       maps.Clone(evt.Headers),
 	}
+}
 
-	// Add idempotency key to headers
-	if env.Headers == nil {
-		env.Headers = make(map[string]string)
-	}
-	env.Headers["Idempotency-Key"] = idempotencyKey
-
+func (s *Scheduler) publishEnvelope(ctx context.Context, env *domain.EventEnvelope) error {
 	if s.envelopePublisher != nil {
 		return s.envelopePublisher.PublishEvent(ctx, env)
 	}
@@ -241,9 +230,6 @@ func (s *Scheduler) releaseEvent(ctx context.Context, evt *domain.ScheduledEvent
 	if err != nil {
 		return fmt.Errorf("marshal event: %w", err)
 	}
-
-	// Publish to shard-specific subject using the shared base subject
-	shard := env.VirtualShard(s.numShards)
-	baseSubject := "events" // Must match consumer stream subject pattern
-	return s.publisher.PublishToShard(ctx, baseSubject, shard, data)
+	// Match the durable consumer's subject family and shared shard routing.
+	return s.publisher.PublishToShard(ctx, "events", env.VirtualShard(s.numShards), data)
 }
