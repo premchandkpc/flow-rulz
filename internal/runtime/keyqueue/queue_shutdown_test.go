@@ -40,7 +40,7 @@ func TestStopRetriesUnprocessedQueueDeliveries(t *testing.T) {
 	submit := func(id string) {
 		t.Helper()
 		err := q.Submit(ctx, ports.QueueItem{
-			Event: &domain.EventEnvelope{ID: id, PartitionKey: "same"},
+			Event:    &domain.EventEnvelope{ID: id, PartitionKey: "same"},
 			Delivery: &shutdownDelivery{retried: retries},
 		})
 		if err != nil {

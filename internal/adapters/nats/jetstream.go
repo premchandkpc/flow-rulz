@@ -271,7 +271,7 @@ func (c *Consumer) ensureConsumerLocked(ctx context.Context, key consumerKey) er
 func shardConsumerConfig(cfg Config, durable, subject string) jetstream.ConsumerConfig {
 	return jetstream.ConsumerConfig{
 		Durable: durable, FilterSubject: subject,
-		AckPolicy: jetstream.AckExplicitPolicy,
+		AckPolicy:  jetstream.AckExplicitPolicy,
 		MaxDeliver: cfg.MaxDeliver, AckWait: cfg.AckWait,
 		MaxAckPending: 1,
 	}
