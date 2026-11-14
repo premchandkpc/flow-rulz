@@ -20,18 +20,38 @@ pub(super) async fn outbox_loop(
 
     loop {
         ticker.tick().await;
-        process_outbox_batch(&pool, &js, &config).await?;
+        if let Err(error) = drain_outbox(&pool, &js, &config).await {
+            warn!(error = %error, "outbox publish failed; retaining claims for retry");
+        }
     }
+}
+
+// Bound each burst so the worker checks shutdown and retries other tasks.
+async fn drain_outbox(
+    pool: &PgPool,
+    js: &jetstream::Context,
+    config: &Config,
+) -> Result<()> {
+    const MAX_CONSECUTIVE_BATCHES: usize = 16;
+    for _ in 0..MAX_CONSECUTIVE_BATCHES {
+        let count = process_outbox_batch(pool, js, config).await?;
+        if count < config.effect_batch_size {
+            break;
+        }
+    }
+    Ok(())
 }
 
 async fn process_outbox_batch(
     pool: &PgPool,
     js: &jetstream::Context,
     config: &Config,
-) -> Result<()> {
+) -> Result<usize> {
     let claim = format!("{}-{}", config.worker_id, uuid_token());
-    let rows = claim_outbox_batch(pool, &claim, config.fetch_batch_size).await?;
-    process_claimed_rows(pool, js, config, &claim, rows).await
+    let rows = claim_outbox_batch(pool, &claim, config.effect_batch_size).await?;
+    let count = rows.len();
+    process_claimed_rows(pool, js, config, &claim, rows).await?;
+    Ok(count)
 }
 
 async fn process_claimed_rows(

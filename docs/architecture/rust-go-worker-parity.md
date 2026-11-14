@@ -19,3 +19,6 @@ This is a focused first parity increment, not a declaration of complete equivale
 - End-to-end Go/Rust differential fixtures and broker/database failure injection.
 
 CI and integration tests are required before production rollout.
+
+## Outbox parity
+Rust now uses an independent effect batch size (default 64) and 250ms poll, with up to 16 consecutive full batches per wake-up. Transient publishing errors are logged and retried on a future tick rather than terminating the worker's core task. Claims remain protected by PostgreSQL claim tokens and expiration.

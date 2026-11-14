@@ -426,7 +426,8 @@ mod deployment_routing_tests {
             max_delivery_attempts: 24,
             fetch_batch_size: 10,
             rulesets: vec![],
-            effect_poll_interval: Duration::from_secs(5),
+            effect_poll_interval: Duration::from_millis(250),
+            effect_batch_size: 64,
             scheduler_poll_interval: Duration::from_secs(5),
             scheduler_batch_size: 10,
         }
