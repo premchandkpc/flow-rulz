@@ -263,6 +263,9 @@ func (c *Consumer) ensureConsumerLocked(ctx context.Context, key consumerKey) er
 		return fmt.Errorf("create consumer for subject %q shard %d: %w", filterSubject, key.shard, err)
 	}
 	c.consumers[key] = durable
+	if c.handles == nil {
+		c.handles = make(map[string]jetstream.Consumer)
+	}
 	c.handles[durable] = handle
 	log.Printf("created durable consumer subject=%s ruleset=%q shard=%d durable=%s", key.baseSubject, key.ruleSet, key.shard, durable)
 	return nil
