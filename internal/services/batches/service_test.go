@@ -188,18 +188,14 @@ func TestBatchService_Accumulate(t *testing.T) {
 	batches := newMemBatches()
 	events := newMemEventProcessor()
 	clock := domain.SystemClock{}
-
 	cfg := domain.BatchConfig{
 		Mode:     domain.BatchModeAccumulate,
 		MaxBatch: 3,
 		Window:   0,
 	}
-
 	svc := NewServiceWithLeaseProvider(batches, events, clock, cfg, testLeaseProvider{}, "worker-1", 4096)
-
 	ctx := context.Background()
 	now := time.Now().UTC()
-
 	for i := 1; i <= 3; i++ {
 		id := "evt-" + string(rune('0'+i))
 		key := "tenant-1|" + id
@@ -213,7 +209,6 @@ func TestBatchService_Accumulate(t *testing.T) {
 			Payload:      []byte(`{"id": "` + id + `", "total": 100}`),
 		}
 	}
-
 	formed, err := svc.Tick(ctx)
 	if err != nil {
 		t.Fatalf("tick: %v", err)
@@ -221,7 +216,6 @@ func TestBatchService_Accumulate(t *testing.T) {
 	if formed != 1 {
 		t.Errorf("expected 1 batch formed, got %d", formed)
 	}
-
 	if len(events.envelopes) != 1 {
 		t.Fatalf("expected 1 envelope, got %d", len(events.envelopes))
 	}
@@ -235,7 +229,6 @@ func TestBatchService_Accumulate(t *testing.T) {
 	if env.Type != "order.created.batch" {
 		t.Errorf("expected batch rule set, got %s", env.Type)
 	}
-
 	var payload domain.BatchData
 	if err := json.Unmarshal(env.Data, &payload); err != nil {
 		t.Fatalf("unmarshal batch data: %v", err)
@@ -243,12 +236,10 @@ func TestBatchService_Accumulate(t *testing.T) {
 	if len(payload.Events) != 3 {
 		t.Errorf("expected 3 batch events, got %d", len(payload.Events))
 	}
-
 	expectedBatchID := domain.ComputeBatchID("tenant-1", "pk-1", "order.created", []string{"evt-1", "evt-2", "evt-3"})
 	if env.ID != expectedBatchID {
 		t.Errorf("batch ID mismatch: got %s, want %s", env.ID, expectedBatchID)
 	}
-
 	for _, id := range []string{"evt-1", "evt-2", "evt-3"} {
 		e := batches.entries["tenant-1|"+id]
 		if e.BatchID != expectedBatchID {
@@ -261,18 +252,14 @@ func TestBatchService_AccumulateBelowThreshold(t *testing.T) {
 	batches := newMemBatches()
 	events := newMemEventProcessor()
 	clock := domain.SystemClock{}
-
 	cfg := domain.BatchConfig{
 		Mode:     domain.BatchModeAccumulate,
 		MaxBatch: 5,
 		Window:   0,
 	}
-
 	svc := NewServiceWithLeaseProvider(batches, events, clock, cfg, testLeaseProvider{}, "worker-1", 4096)
-
 	ctx := context.Background()
 	now := time.Now().UTC()
-
 	for i := 1; i <= 2; i++ {
 		id := "evt-" + string(rune('0'+i))
 		batches.entries["tenant-1|"+id] = &domain.InboxEntry{
@@ -285,7 +272,6 @@ func TestBatchService_AccumulateBelowThreshold(t *testing.T) {
 			Payload:      []byte(`{"id": "` + id + `", "total": 100}`),
 		}
 	}
-
 	formed, err := svc.Tick(ctx)
 	if err != nil {
 		t.Fatalf("tick: %v", err)
@@ -302,18 +288,14 @@ func TestBatchService_Window(t *testing.T) {
 	batches := newMemBatches()
 	events := newMemEventProcessor()
 	clock := domain.SystemClock{}
-
 	cfg := domain.BatchConfig{
 		Mode:     domain.BatchModeWindow,
 		MaxBatch: 10,
 		Window:   5 * time.Second,
 	}
-
 	svc := NewServiceWithLeaseProvider(batches, events, clock, cfg, testLeaseProvider{}, "worker-1", 4096)
-
 	ctx := context.Background()
 	now := time.Now().UTC()
-
 	id := "evt-1"
 	batches.entries["tenant-1|"+id] = &domain.InboxEntry{
 		TenantID:     "tenant-1",
@@ -324,7 +306,6 @@ func TestBatchService_Window(t *testing.T) {
 		FirstSeenAt:  now.Add(-10 * time.Second),
 		Payload:      []byte(`{"id": "` + id + `", "total": 100}`),
 	}
-
 	formed, err := svc.Tick(ctx)
 	if err != nil {
 		t.Fatalf("tick: %v", err)
@@ -341,18 +322,14 @@ func TestBatchService_WindowNotElapsed(t *testing.T) {
 	batches := newMemBatches()
 	events := newMemEventProcessor()
 	clock := domain.SystemClock{}
-
 	cfg := domain.BatchConfig{
 		Mode:     domain.BatchModeWindow,
 		MaxBatch: 10,
 		Window:   5 * time.Second,
 	}
-
 	svc := NewServiceWithLeaseProvider(batches, events, clock, cfg, testLeaseProvider{}, "worker-1", 4096)
-
 	ctx := context.Background()
 	now := time.Now().UTC()
-
 	id := "evt-1"
 	batches.entries["tenant-1|"+id] = &domain.InboxEntry{
 		TenantID:     "tenant-1",
@@ -363,7 +340,6 @@ func TestBatchService_WindowNotElapsed(t *testing.T) {
 		FirstSeenAt:  now.Add(-1 * time.Second),
 		Payload:      []byte(`{"id": "` + id + `", "total": 100}`),
 	}
-
 	formed, err := svc.Tick(ctx)
 	if err != nil {
 		t.Fatalf("tick: %v", err)
@@ -377,18 +353,14 @@ func TestBatchService_NoneMode(t *testing.T) {
 	batches := newMemBatches()
 	events := newMemEventProcessor()
 	clock := domain.SystemClock{}
-
 	cfg := domain.BatchConfig{
 		Mode:     domain.BatchModeNone,
 		MaxBatch: 10,
 		Window:   5 * time.Second,
 	}
-
 	svc := NewServiceWithLeaseProvider(batches, events, clock, cfg, testLeaseProvider{}, "worker-1", 4096)
-
 	ctx := context.Background()
 	now := time.Now().UTC()
-
 	id := "evt-1"
 	batches.entries["tenant-1|"+id] = &domain.InboxEntry{
 		TenantID:     "tenant-1",
@@ -399,7 +371,6 @@ func TestBatchService_NoneMode(t *testing.T) {
 		FirstSeenAt:  now.Add(-10 * time.Second),
 		Payload:      []byte(`{"id": "` + id + `", "total": 100}`),
 	}
-
 	formed, err := svc.Tick(ctx)
 	if err != nil {
 		t.Fatalf("tick: %v", err)
@@ -479,7 +450,6 @@ func TestCreateBatchRequiresEveryRequestedEvent(t *testing.T) {
 		FirstSeenAt: now, Payload: []byte(`{"id":"evt-1"}`),
 	}
 	service := NewService(batches, events, domain.SystemClock{}, domain.BatchConfig{MaxBatch: 10})
-
 	_, err := service.CreateBatch(context.Background(), "tenant-1", "pk-1", "order.created", []string{"evt-1", "evt-missing"})
 	if err == nil {
 		t.Fatal("CreateBatch accepted a partial set of requested events")
@@ -527,7 +497,6 @@ func TestCreateBatchRequiresLeaseProvider(t *testing.T) {
 		FirstSeenAt: now, Payload: []byte(`{"id":"evt-1"}`),
 	}
 	service := NewService(batches, events, domain.SystemClock{}, domain.BatchConfig{MaxBatch: 10})
-
 	_, err := service.CreateBatch(context.Background(), "tenant-1", "pk-1", "order.created", []string{"evt-1"})
 	if err == nil {
 		t.Fatal("CreateBatch processed an event without shard lease context")
@@ -551,7 +520,6 @@ func TestCompleteBatchRejectsConflictingMembershipWithoutPartialWrites(t *testin
 		BatchID: "batch-1", TenantID: "tenant-1", PartitionKey: "pk-1",
 		RuleSet: "orders", Status: domain.BatchRunStatusCompleted, MemberCount: 2,
 	}
-
 	if err := batches.CompleteBatch(context.Background(), run, []string{"evt-1", "evt-2"}); err == nil {
 		t.Fatal("CompleteBatch accepted a member already assigned to another batch")
 	}

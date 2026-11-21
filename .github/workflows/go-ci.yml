@@ -80,6 +80,8 @@ jobs:
           echo "Validating Docker Compose configuration"
           cp .env.example .env
           docker compose config --quiet
+          docker compose --profile "*" config --quiet
+          COMPOSE_PROJECT_NAME=flow-rulz-direct docker compose --profile direct config --quiet worker-direct
 
       - name: Build root-module commands
         run: go build ./cmd/...
@@ -198,6 +200,8 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config --quiet
+          docker compose --profile "*" config --quiet
+          COMPOSE_PROJECT_NAME=flow-rulz-direct docker compose --profile direct config --quiet worker-direct
 
       - name: Build application images
         run: docker compose build api worker console

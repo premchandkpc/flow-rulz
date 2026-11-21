@@ -29,7 +29,7 @@ Services (one goroutine each in `backend/consumer`): fraud-screening, compliance
 ## Run
 
 ```sh
-docker compose -f docker-compose.yml up -d postgres nats redis api worker
+docker compose up -d postgres nats redis api worker
 (cd domains/banking && FLOWRULZ_API=http://localhost:18080 ./deploy.sh)   # contracts, rule sets, domain
 cd examples/banking
 FLOWRULZ_TRANSPORT=nats FLOWRULZ_TENANT_ID=development-tenant go run ./backend/consumer

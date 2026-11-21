@@ -111,7 +111,7 @@ This map explains responsibility; it is not a requirement to make the directory 
 | `go.mod`, `go.sum` | Root Go module and checksums |
 | `Makefile` | Build, test, lint, format, Compose, migrations and code generation |
 | `.env.example` | Configuration names and safe placeholders; never secrets |
-| `docker-compose.yml`, `docker-compose.override.yml` | Local development stack |
+| `docker-compose.yml` | Single local development manifest; optional `direct`, `rust`, `examples` and `tools` profiles |
 | `Dockerfile.api`, `Dockerfile.worker`, `Dockerfile.codegen` | Core service/tool images |
 | `Dockerfile.random-producer` | Opt-in example producer image |
 | `.github/workflows/` | CI definitions and verification gates |

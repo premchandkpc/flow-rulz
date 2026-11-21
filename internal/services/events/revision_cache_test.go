@@ -30,7 +30,6 @@ func TestImmutableRevisionCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	cache.put(second)
 	cache.get(revisionCacheKey{tenantScope: "tenant-a", ruleSet: "orders", revision: 1})
 	cache.put(third)
-
 	if _, ok := cache.get(revisionCacheKey{tenantScope: "tenant-a", ruleSet: "orders", revision: 2}); ok {
 		t.Fatal("least recently used revision 2 should have been evicted")
 	}

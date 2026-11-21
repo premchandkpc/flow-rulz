@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use async_nats::jetstream;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
-use tokio::time::{MissedTickBehavior, interval};
+use tokio::time::{Duration, MissedTickBehavior, interval, timeout};
 use tracing::warn;
 
 pub(super) async fn outbox_loop(
@@ -20,18 +20,34 @@ pub(super) async fn outbox_loop(
 
     loop {
         ticker.tick().await;
-        process_outbox_batch(&pool, &js, &config).await?;
+        if let Err(error) = drain_outbox(&pool, &js, &config).await {
+            warn!(error = %error, "outbox publish failed; retaining claims for retry");
+        }
     }
+}
+
+// Bound each burst so the worker checks shutdown and retries other tasks.
+async fn drain_outbox(pool: &PgPool, js: &jetstream::Context, config: &Config) -> Result<()> {
+    const MAX_CONSECUTIVE_BATCHES: usize = 16;
+    for _ in 0..MAX_CONSECUTIVE_BATCHES {
+        let count = process_outbox_batch(pool, js, config).await?;
+        if count < config.effect_batch_size {
+            break;
+        }
+    }
+    Ok(())
 }
 
 async fn process_outbox_batch(
     pool: &PgPool,
     js: &jetstream::Context,
     config: &Config,
-) -> Result<()> {
+) -> Result<usize> {
     let claim = format!("{}-{}", config.worker_id, uuid_token());
-    let rows = claim_outbox_batch(pool, &claim, config.fetch_batch_size).await?;
-    process_claimed_rows(pool, js, config, &claim, rows).await
+    let rows = claim_outbox_batch(pool, &claim, config.effect_batch_size).await?;
+    let count = rows.len();
+    process_claimed_rows(pool, js, config, &claim, rows).await?;
+    Ok(count)
 }
 
 async fn process_claimed_rows(
@@ -64,17 +80,28 @@ async fn claim_outbox_batch(
     claim: &str,
     batch_size: usize,
 ) -> Result<Vec<sqlx::postgres::PgRow>> {
+    let ttl_seconds = claim_ttl(batch_size).as_secs();
     sqlx::query(
         "WITH candidates AS ( \
            SELECT effect_id FROM outbox_effects \
            WHERE (status='pending' AND available_at<=NOW()) OR (status='claimed' AND claim_expires_at<NOW()) \
            ORDER BY available_at,created_at LIMIT $1 FOR UPDATE SKIP LOCKED \
          ) UPDATE outbox_effects o SET status='claimed',claimed_by=$2,claimed_at=NOW(), \
-           claim_expires_at=NOW()+INTERVAL '2 minutes',updated_at=NOW() \
+           claim_expires_at=NOW()+($3 * INTERVAL '1 second'),attempts=o.attempts+1,updated_at=NOW() \
          FROM candidates c WHERE o.effect_id=c.effect_id \
          RETURNING o.effect_id,o.execution_id,o.tenant_id,o.destination,o.name,o.payload,o.effect_type,o.attempts,o.max_attempts"
-    ).bind(i64::try_from(batch_size)?).bind(claim).fetch_all(pool).await.context("claim outbox effects")
+    ).bind(i64::try_from(batch_size)?).bind(claim).bind(i64::try_from(ttl_seconds)?).fetch_all(pool).await.context("claim outbox effects")
 }
+
+fn claim_ttl(batch_size: usize) -> Duration {
+    let sequential =
+        EFFECT_SEND_TIMEOUT.saturating_mul(u32::try_from(batch_size).unwrap_or(u32::MAX));
+    MINIMUM_CLAIM_TTL.max(sequential.saturating_add(EFFECT_SETTLEMENT_MARGIN))
+}
+
+const EFFECT_SEND_TIMEOUT: Duration = Duration::from_secs(10);
+const MINIMUM_CLAIM_TTL: Duration = Duration::from_secs(120);
+const EFFECT_SETTLEMENT_MARGIN: Duration = Duration::from_secs(30);
 
 fn decode_claimed_effect(row: &sqlx::postgres::PgRow) -> Result<ClaimedEffect> {
     Ok(ClaimedEffect {
@@ -98,10 +125,40 @@ async fn process_claimed_effect(
     row: sqlx::postgres::PgRow,
 ) -> Result<()> {
     let effect = decode_claimed_effect(&row)?;
-    match send_effect(pool, js, config, &effect).await {
-        Ok(()) => mark_effect_delivered(pool, claim, &effect.id).await,
-        Err(error) => record_effect_failure(pool, claim, &effect, &error.to_string()).await,
+    if attempts_exhausted_before_send(&effect) {
+        return quarantine_effect_atomically(
+            pool,
+            claim,
+            &effect,
+            effect.attempts,
+            "effect attempts exhausted before delivery",
+        )
+        .await;
     }
+    settle_send_result(
+        pool,
+        claim,
+        &effect,
+        timeout(EFFECT_SEND_TIMEOUT, send_effect(pool, js, config, &effect)).await,
+    )
+    .await
+}
+
+async fn settle_send_result(
+    pool: &PgPool,
+    claim: &str,
+    effect: &ClaimedEffect,
+    result: Result<Result<()>, tokio::time::error::Elapsed>,
+) -> Result<()> {
+    match result {
+        Err(_) => record_effect_failure(pool, claim, effect, "effect delivery timed out").await,
+        Ok(Ok(())) => mark_effect_delivered(pool, claim, &effect.id).await,
+        Ok(Err(error)) => record_effect_failure(pool, claim, effect, &error.to_string()).await,
+    }
+}
+
+fn attempts_exhausted_before_send(effect: &ClaimedEffect) -> bool {
+    effect.max_attempts > 0 && effect.attempts > effect.max_attempts
 }
 
 async fn mark_effect_delivered(pool: &PgPool, claim: &str, effect_id: &str) -> Result<()> {
@@ -121,11 +178,10 @@ async fn record_effect_failure(
     effect: &ClaimedEffect,
     error: &str,
 ) -> Result<()> {
-    let next_attempt = effect.attempts + 1;
-    if next_attempt >= effect.max_attempts {
-        quarantine_effect_atomically(pool, claim, effect, next_attempt, error).await
+    if effect.max_attempts > 0 && effect.attempts >= effect.max_attempts {
+        quarantine_effect_atomically(pool, claim, effect, effect.attempts, error).await
     } else {
-        schedule_effect_retry(pool, claim, &effect.id, next_attempt, error).await
+        schedule_effect_retry(pool, claim, &effect.id, effect.attempts, error).await
     }
 }
 
@@ -356,6 +412,19 @@ mod outbox_claim_tests {
     }
 
     #[test]
+    fn claim_ttl_covers_sequential_delivery_deadlines() {
+        assert_eq!(claim_ttl(1), MINIMUM_CLAIM_TTL);
+        assert_eq!(claim_ttl(20), Duration::from_secs(230));
+    }
+
+    #[test]
+    fn expired_final_claim_is_not_sent_again() {
+        let mut effect = test_effect();
+        effect.attempts = effect.max_attempts + 1;
+        assert!(attempts_exhausted_before_send(&effect));
+    }
+
+    #[test]
     fn effect_subject_validation_rejects_wildcards_and_invalid_tokens() {
         assert!(validate_subject_path("payments.authorize").is_ok());
         assert!(validate_subject_path("orders-v2.created").is_ok());
@@ -378,7 +447,16 @@ mod outbox_claim_tests {
 
     #[test]
     fn effect_message_contains_stable_idempotency_key_and_payload() {
-        let effect = ClaimedEffect {
+        let effect = test_effect();
+        let message = effect_message(&effect);
+        assert_eq!(message["id"], "effect-1");
+        assert_eq!(message["idempotency_key"], "effect-effect-1");
+        assert_eq!(message["payload"]["amount"], 42);
+        assert_eq!(message["effect_type"], "command");
+    }
+
+    fn test_effect() -> ClaimedEffect {
+        ClaimedEffect {
             id: "effect-1".into(),
             execution_id: "execution-1".into(),
             tenant_id: "tenant-a".into(),
@@ -388,11 +466,6 @@ mod outbox_claim_tests {
             effect_type: "command".into(),
             attempts: 0,
             max_attempts: 5,
-        };
-        let message = effect_message(&effect);
-        assert_eq!(message["id"], "effect-1");
-        assert_eq!(message["idempotency_key"], "effect-effect-1");
-        assert_eq!(message["payload"]["amount"], 42);
-        assert_eq!(message["effect_type"], "command");
+        }
     }
 }

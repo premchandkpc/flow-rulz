@@ -28,7 +28,7 @@
 
 # Docker/Compose
 /Dockerfile* @premchand
-/docker-compose*.yml @premchand
+/docker-compose.yml @premchand
 
 # Go modules
 /go.mod @premchand

@@ -35,9 +35,11 @@ pub(crate) struct Config {
     pub(crate) lease_renew_interval: Duration,
     pub(crate) ack_wait: Duration,
     pub(crate) retry_delay: Duration,
+    pub(crate) max_delivery_attempts: u64,
     pub(crate) fetch_batch_size: usize,
     pub(crate) rulesets: Vec<String>,
     pub(crate) effect_poll_interval: Duration,
+    pub(crate) effect_batch_size: usize,
     pub(crate) scheduler_poll_interval: Duration,
     pub(crate) scheduler_batch_size: i64,
 }
@@ -62,9 +64,11 @@ struct LeaseSettings {
 struct DeliverySettings {
     ack_wait: Duration,
     retry_delay: Duration,
+    max_delivery_attempts: u64,
     fetch_batch_size: usize,
     rulesets: Vec<String>,
     effect_poll_interval: Duration,
+    effect_batch_size: usize,
     scheduler_poll_interval: Duration,
     scheduler_batch_size: i64,
 }
@@ -89,9 +93,11 @@ impl Config {
             lease_renew_interval: leases.lease_renew_interval,
             ack_wait: delivery.ack_wait,
             retry_delay: delivery.retry_delay,
+            max_delivery_attempts: delivery.max_delivery_attempts,
             fetch_batch_size: delivery.fetch_batch_size,
             rulesets: delivery.rulesets,
             effect_poll_interval: delivery.effect_poll_interval,
+            effect_batch_size: delivery.effect_batch_size,
             scheduler_poll_interval: delivery.scheduler_poll_interval,
             scheduler_batch_size: delivery.scheduler_batch_size,
         };
@@ -167,12 +173,11 @@ fn load_delivery_settings() -> Result<DeliverySettings> {
     Ok(DeliverySettings {
         ack_wait: Duration::from_millis(parse_u64("NATS_ACK_WAIT_MS", 30_000)?),
         retry_delay: Duration::from_millis(parse_u64("EVENT_RETRY_DELAY_MS", 5_000)?),
+        max_delivery_attempts: parse_u64("EVENT_MAX_DELIVERY_ATTEMPTS", 24)?,
         fetch_batch_size: usize::try_from(parse_u64("FETCH_BATCH_SIZE", 100)?)?,
         rulesets,
-        effect_poll_interval: Duration::from_millis(parse_u64(
-            "EFFECT_PUBLISH_INTERVAL_MS",
-            5_000,
-        )?),
+        effect_poll_interval: Duration::from_millis(parse_u64("EFFECT_PUBLISH_INTERVAL_MS", 250)?),
+        effect_batch_size: usize::try_from(parse_u64("EFFECT_PUBLISH_BATCH_SIZE", 64)?)?,
         scheduler_poll_interval: Duration::from_millis(parse_u64("SCHEDULER_POLL_MS", 5_000)?),
         scheduler_batch_size: i64::try_from(parse_u64("SCHEDULER_BATCH_SIZE", 100)?)?,
     })
@@ -233,6 +238,7 @@ fn validate_delivery_settings(config: &Config) -> Result<()> {
         bail!("NATS_ACK_WAIT_MS, EVENT_RETRY_DELAY_MS and FETCH_BATCH_SIZE must be > 0");
     }
     if config.effect_poll_interval.is_zero()
+        || config.effect_batch_size == 0
         || config.scheduler_poll_interval.is_zero()
         || config.scheduler_batch_size <= 0
     {
@@ -289,9 +295,11 @@ mod tests {
             lease_renew_interval: Duration::from_secs(5),
             ack_wait: Duration::from_secs(30),
             retry_delay: Duration::from_secs(5),
+            max_delivery_attempts: 24,
             fetch_batch_size: 10,
             rulesets: vec!["orders-created".into()],
-            effect_poll_interval: Duration::from_secs(5),
+            effect_poll_interval: Duration::from_millis(250),
+            effect_batch_size: 64,
             scheduler_poll_interval: Duration::from_secs(5),
             scheduler_batch_size: 10,
         }

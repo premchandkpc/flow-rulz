@@ -33,7 +33,7 @@ For a minimal `A → broker → rules worker → broker → B` path, use
 [`WORKER_MODE=direct`](docs/direct-worker.md). It needs only NATS and local rule
 files, publishes results immediately, and ACKs after publication. Database,
 inbox/outbox, leases, scheduler and the API are absent from this mode. Outputs may
-repeat on retries. Start it with `docker compose -f docker-compose.direct.yml up --build`.
+repeat on retries. Start it with `COMPOSE_PROJECT_NAME=flow-rulz-direct docker compose --profile direct up --build worker-direct` (after copying `.env.example` to `.env`).
 The lifecycle below describes the default **durable** mode.
 
 1. A producer publishes an EventEnvelope to the NATS JetStream subject family events.shard.N. N is computed from tenant ID and partition key using the configured shard count. File-backed, limits-retention streams keep acknowledged messages available for replay until configured retention or storage limits remove them. Configure `NATS_STREAM_MAX_AGE`, `NATS_STREAM_MAX_BYTES`, and `NATS_STREAM_MAX_MSGS`; zero age and `-1` limits mean unlimited, which requires capacity monitoring.

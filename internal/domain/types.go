@@ -485,6 +485,7 @@ func (e *OutboxEffect) Claim(_ string, now time.Time) error {
 		return fmt.Errorf("cannot claim effect in state %s", e.Status)
 	}
 	e.Status = OutboxStatusClaimed
+	e.Attempts++
 	e.UpdatedAt = now
 	return nil
 }

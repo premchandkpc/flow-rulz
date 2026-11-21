@@ -21,7 +21,6 @@ func TestTargetOwnedShardsUsesConfiguredReplicaCount(t *testing.T) {
 		{name: "non-divisible shard count rounds up", numShards: 10, replicas: 4, wantPerNode: 3},
 		{name: "more replicas than shards still targets one lease", numShards: 1, replicas: 3, wantPerNode: 1},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			manager := NewLeaseManagerWithReplicaCountAndRenewInterval(
@@ -104,9 +103,7 @@ func TestRenewOwnedUsesBatchAndDropsLeasesMissingFromDatabaseResult(t *testing.T
 		1: {VirtualShard: 1, Owner: "worker-test", FencingToken: 7},
 		2: {VirtualShard: 2, Owner: "worker-test", FencingToken: 9},
 	}
-
 	manager.renewOwned(context.Background())
-
 	if repo.batchCalls != 1 || repo.renewCalls != 0 {
 		t.Fatalf("renew calls: batch=%d per-shard=%d, want batch=1 per-shard=0", repo.batchCalls, repo.renewCalls)
 	}
@@ -129,9 +126,7 @@ func TestRebalanceReleasesExcessLeasesWhenTargetShrinks(t *testing.T) {
 		2: {VirtualShard: 2, Owner: "worker-test", FencingToken: 1},
 		9: {VirtualShard: 9, Owner: "worker-test", FencingToken: 1},
 	}
-
 	manager.rebalanceIfNeeded(context.Background())
-
 	if len(repo.released) != 1 || repo.released[0] != 9 {
 		t.Fatalf("released shards = %v, want [9]", repo.released)
 	}
@@ -151,9 +146,7 @@ func TestRebalanceRetainsLeaseWhenReleaseFails(t *testing.T) {
 		2: {VirtualShard: 2, Owner: "worker-test", FencingToken: 1},
 		9: {VirtualShard: 9, Owner: "worker-test", FencingToken: 1},
 	}
-
 	manager.rebalanceIfNeeded(context.Background())
-
 	if !manager.IsOwner(9) {
 		t.Fatal("failed release must retain the local lease until ownership is relinquished")
 	}

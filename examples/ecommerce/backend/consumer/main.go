@@ -106,12 +106,10 @@ func handleOrderCreated(ctx context.Context, order *ordercreated.Created, envelo
 	fmt.Printf("   Items: %d\n", len(order.Items))
 	fmt.Printf("   Partition Key: %s\n", envelope.PartitionKey)
 	fmt.Printf("   Timestamp: %s\n", envelope.OccurredAt.Format(time.RFC3339))
-
 	// Business logic: Check if high value
 	if order.TotalAmount >= 50000 {
 		fmt.Printf("   ⚠️  HIGH VALUE ORDER - Will trigger fraud check after payment\n")
 	}
-
 	return nil
 }
 
@@ -124,12 +122,10 @@ func handlePaymentCompleted(ctx context.Context, payment *paymentcompleted.Compl
 	fmt.Printf("   Transaction ID: %s\n", payment.TransactionId)
 	fmt.Printf("   Completed At: %s\n", payment.CompletedAt)
 	fmt.Printf("   Partition Key: %s\n", envelope.PartitionKey)
-
 	// Business logic: High value triggers fraud check
 	if payment.Amount >= 50000 {
 		fmt.Printf("   ⚠️  HIGH VALUE PAYMENT - Fraud check will be triggered\n")
 	}
-
 	return nil
 }
 

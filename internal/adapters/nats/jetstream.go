@@ -49,6 +49,7 @@ type Consumer struct {
 	js          jetstream.JetStream
 	stream      string
 	consumers   map[consumerKey]string
+	handles     map[string]jetstream.Consumer
 	subjects    []string
 	ruleSets    []string
 	baseDurable string
@@ -203,7 +204,7 @@ func NewConsumer(ctx context.Context, cfg Config) (*Consumer, error) {
 		return nil, err
 	}
 	return &Consumer{
-		conn: conn, js: js, stream: cfg.Stream, consumers: make(map[consumerKey]string),
+		conn: conn, js: js, stream: cfg.Stream, consumers: make(map[consumerKey]string), handles: make(map[string]jetstream.Consumer),
 		subjects: cfg.Subjects, ruleSets: cfg.RuleSets, baseDurable: cfg.Consumer,
 		cfg: cfg, numShards: cfg.NumShards,
 	}, nil
@@ -257,16 +258,28 @@ func (c *Consumer) ensureConsumerLocked(ctx context.Context, key consumerKey) er
 		filterSubject = ruleSetSubject(key.baseSubject, key.ruleSet, key.shard)
 		durable = fmt.Sprintf("%s-%s-rs-%s-shard-%d", c.baseDurable, safeDurableToken(key.baseSubject), token[:32], key.shard)
 	}
-	_, err := c.js.CreateOrUpdateConsumer(ctx, c.cfg.Stream, jetstream.ConsumerConfig{
-		Durable: durable, AckPolicy: jetstream.AckExplicitPolicy, FilterSubject: filterSubject,
-		MaxDeliver: c.cfg.MaxDeliver, AckWait: c.cfg.AckWait,
-	})
+	handle, err := c.js.CreateOrUpdateConsumer(ctx, c.cfg.Stream, shardConsumerConfig(c.cfg, durable, filterSubject))
 	if err != nil {
 		return fmt.Errorf("create consumer for subject %q shard %d: %w", filterSubject, key.shard, err)
 	}
 	c.consumers[key] = durable
+	if c.handles == nil {
+		c.handles = make(map[string]jetstream.Consumer)
+	}
+	c.handles[durable] = handle
 	log.Printf("created durable consumer subject=%s ruleset=%q shard=%d durable=%s", key.baseSubject, key.ruleSet, key.shard, durable)
 	return nil
+}
+
+// shardConsumerConfig enforces per-shard head-of-line ordering even during
+// delayed redelivery. Parallelism remains available across distinct shards.
+func shardConsumerConfig(cfg Config, durable, subject string) jetstream.ConsumerConfig {
+	return jetstream.ConsumerConfig{
+		Durable: durable, FilterSubject: subject,
+		AckPolicy:  jetstream.AckExplicitPolicy,
+		MaxDeliver: cfg.MaxDeliver, AckWait: cfg.AckWait,
+		MaxAckPending: 1,
+	}
 }
 
 // EnsureShardConsumer ensures durable consumers exist for the given shard.
@@ -317,6 +330,7 @@ func (c *Consumer) RemoveShardConsumer(ctx context.Context, shard uint32) error 
 		c.mu.Lock()
 		if c.consumers[key] == durable {
 			delete(c.consumers, key)
+			delete(c.handles, durable)
 		}
 		c.mu.Unlock()
 	}
@@ -432,8 +446,20 @@ func (c *Consumer) fetchSelectedConsumers(
 	return collected
 }
 
+// cachedConsumer avoids an API lookup on every empty-shard fetch while keeping
+// compatibility with consumers supplied outside the normal bootstrap path.
+func (c *Consumer) cachedConsumer(ctx context.Context, durable string) (jetstream.Consumer, error) {
+	c.mu.RLock()
+	handle := c.handles[durable]
+	c.mu.RUnlock()
+	if handle != nil {
+		return handle, nil
+	}
+	return c.js.Consumer(ctx, c.stream, durable)
+}
+
 func (c *Consumer) fetchFromConsumer(ctx context.Context, durable string, budget int) shardFetchResult {
-	consumer, err := c.js.Consumer(ctx, c.stream, durable)
+	consumer, err := c.cachedConsumer(ctx, durable)
 	if err != nil {
 		return shardFetchResult{err: fmt.Errorf("get consumer %q: %w", durable, err)}
 	}

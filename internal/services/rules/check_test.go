@@ -19,7 +19,6 @@ const checkSource = `{"rule_set":"order.created","revision":3,"mode":"all_matche
 
 func TestCheckRule(t *testing.T) {
 	svc := &Service{compiler: rulesengine.NewCompiler(rulesengine.DefaultLimits()), clock: fixedClock{}}
-
 	t.Run("invalid source reports the compile error", func(t *testing.T) {
 		got := svc.CheckRule(context.Background(), "t", "", []byte(`{"rule_set":"x","revision":0,"rules":[]}`), nil)
 		if got.Valid || got.Error == "" {

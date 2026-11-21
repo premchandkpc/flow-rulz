@@ -18,12 +18,17 @@ func (s *Service) CheckRule(_ context.Context, tenantScope, eventType string, so
 	if err != nil {
 		return &ports.RuleCheckResult{Error: err.Error()}
 	}
+	result := compiledCheckResult(revision, source)
+	if len(sampleData) != 0 {
+		s.evaluateSample(result, revision, tenantScope, eventType, sampleData)
+	}
+	return result
+}
+
+func compiledCheckResult(revision *domain.RuleRevision, source []byte) *ports.RuleCheckResult {
 	result := &ports.RuleCheckResult{
-		Valid:       true,
-		Revision:    revision.Revision,
-		MatchMode:   string(revision.MatchMode),
-		ContentHash: revision.ContentHash,
-		RuleCount:   len(revision.Compiled),
+		Valid: true, Revision: revision.Revision, MatchMode: string(revision.MatchMode),
+		ContentHash: revision.ContentHash, RuleCount: len(revision.Compiled),
 	}
 	var meta struct {
 		RuleSet string `json:"rule_set"`
@@ -31,25 +36,21 @@ func (s *Service) CheckRule(_ context.Context, tenantScope, eventType string, so
 	if json.Unmarshal(source, &meta) == nil {
 		result.RuleSet = meta.RuleSet
 	}
-	if len(sampleData) == 0 {
-		return result
-	}
+	return result
+}
+
+func (s *Service) evaluateSample(result *ports.RuleCheckResult, revision *domain.RuleRevision, tenant, eventType string, data json.RawMessage) {
 	if eventType == "" {
 		eventType = result.RuleSet
 	}
 	event := &domain.EventEnvelope{
-		ID:           "check-event",
-		Type:         eventType,
-		TenantID:     tenantScope,
-		PartitionKey: "check",
-		OccurredAt:   s.clock.Now(),
-		Data:         sampleData,
+		ID: "check-event", Type: eventType, TenantID: tenant,
+		PartitionKey: "check", OccurredAt: s.clock.Now(), Data: data,
 	}
 	decision, err := rulesengine.NewEvaluator(s.clock).Evaluate(revision, event, nil)
 	if err != nil {
 		result.EvalError = err.Error()
-		return result
+		return
 	}
 	result.Decision = decision
-	return result
 }

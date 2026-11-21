@@ -32,13 +32,13 @@ help:
 	@echo "Run targets:"
 	@echo "  run-api         Run API server"
 	@echo "  run-worker      Run worker"
-	@echo "  run-all         Run API, worker, and dependencies via docker-compose"
+	@echo "  run-all         Run API, worker, and dependencies via docker compose"
 	@echo ""
 	@echo "Docker targets:"
 	@echo "  docker-build    Build Docker images"
-	@echo "  docker-up       Start all services with docker-compose"
+	@echo "  docker-up       Start all services with docker compose"
 	@echo "  docker-down     Stop all services"
-	@echo "  docker-logs     View docker-compose logs"
+	@echo "  docker-logs     View docker compose logs"
 	@echo ""
 	@echo "Database:"
 	@echo "  migrate-up      Run database migrations"
@@ -96,7 +96,7 @@ run-worker: build-worker
 	@echo "Starting worker..."
 	$(WORKER_BINARY)
 
-# Run with docker-compose
+# Run with docker compose
 run-all: docker-up
 	@echo "Services started. HTTP API at http://localhost:8080"
 	@echo "Run 'make docker-logs' to view logs"
@@ -169,18 +169,18 @@ generate-domain:
 # Docker targets
 docker-build:
 	@echo "Building Docker images..."
-	docker-compose build
+	docker compose build
 
 docker-up:
 	@echo "Starting services..."
-	docker-compose up -d
+	docker compose up -d
 
 docker-down:
 	@echo "Stopping services..."
-	docker-compose down
+	docker compose down
 
 docker-logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 # Database migrations
 migrate-up:

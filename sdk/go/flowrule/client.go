@@ -369,7 +369,6 @@ func WithEnvelopeOptions(opts ...EnvelopeOption) SendOption {
 func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
 	if c.closed {
 		return nil
 	}
@@ -377,7 +376,6 @@ func (c *Client) Close() error {
 	if c.lifecycleClose != nil {
 		c.lifecycleClose()
 	}
-
 	if c.transport != nil {
 		return c.transport.Close()
 	}

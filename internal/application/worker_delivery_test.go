@@ -41,7 +41,6 @@ func TestProcessDeliveryObservesProcessingAndSettlementSeparately(t *testing.T) 
 	ackErr := errors.New("ack failed")
 	retryErr := errors.New("retry failed")
 	quarantineErr := errors.New("quarantine failed")
-
 	type observation struct {
 		stage string
 		err   error

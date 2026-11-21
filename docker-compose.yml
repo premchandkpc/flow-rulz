@@ -9,7 +9,7 @@ services:
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ${POSTGRES_DATA_SOURCE:-./data/postgres}:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-flow-rulz}"]
       interval: 5s
@@ -26,7 +26,7 @@ services:
       - "127.0.0.1:${NATS_PORT:-4222}:4222"
       - "127.0.0.1:${NATS_MONITOR_PORT:-8222}:8222"
     volumes:
-      - nats_data:/data
+      - ${NATS_DATA_SOURCE:-./data/nats}:/data
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8222/healthz >/dev/null"]
       interval: 10s
@@ -44,7 +44,7 @@ services:
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
-      - redis_data:/data
+      - ${REDIS_DATA_SOURCE:-./data/redis}:/data
     healthcheck:
       test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi | grep -q PONG"]
       interval: 5s
@@ -224,8 +224,63 @@ services:
     environment:
       GENERATION_OUTPUT_DIR: /generated
     volumes:
+      - .:/workspace
+      - ./examples:/examples
       - ./generated:/generated
     profiles: [tools]
+    networks: [flow-rulz]
+
+
+  migrate:
+    image: golang:1.26-alpine
+    working_dir: /app
+    env_file: .env
+    volumes:
+      - .:/app
+    command: ["sh", "-c", "apk add --no-cache git && go run ./cmd/migrate up"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/flow-rulz?sslmode=disable}
+      MIGRATIONS_DIR: /app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: [tools]
+    networks: [flow-rulz]
+
+  # Explicitly target worker-direct to start only this independent NATS pipeline.
+  nats-direct:
+    profiles: [direct]
+    image: nats:2.11-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "127.0.0.1:${NATS_PORT:-4222}:4222"
+    volumes:
+      - direct_nats:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8222/healthz >/dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    networks: [flow-rulz]
+
+  worker-direct:
+    profiles: [direct]
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      WORKER_MODE: direct
+      WORKER_RULES_DIR: /rules
+      WORKER_INPUT_SUBJECT: events.shard.*
+      NATS_URL: nats://nats-direct:4222
+      NATS_STREAM: flowrulz-direct
+      NATS_CONSUMER: flowrulz-direct-worker
+      NUM_SHARDS: 16
+    volumes:
+      - ./examples/direct-worker/rules:/rules:ro
+    depends_on:
+      nats-direct:
+        condition: service_healthy
     networks: [flow-rulz]
 
 networks:
@@ -236,5 +291,6 @@ volumes:
   postgres_data:
   nats_data:
   redis_data:
+  direct_nats:
   loki_data:
   promtail_positions:

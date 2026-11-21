@@ -15,7 +15,22 @@ Start the minimal local stack (do not use the regular Compose stack at the same
 time on port 4222):
 
 ```sh
-docker compose -f docker-compose.direct.yml up --build
+cp .env.example .env
+COMPOSE_PROJECT_NAME=flow-rulz-direct docker compose --profile direct up --build worker-direct
+```
+
+The single `docker-compose.yml` owns both topologies. Target `worker-direct`
+explicitly: it starts only that service and its `nats-direct` dependency. Enabling
+`--profile direct` without a service target also selects the regular stack.
+The direct worker uses fixed sample settings (16 shards and `flowrulz-direct`)
+and does not load the durable worker's `.env` configuration. Its NATS state stays
+in the named `flow-rulz-direct_direct_nats` volume when using the project name above.
+
+If upgrading from the old separate direct Compose manifest, stop its containers
+before starting the renamed services; retain the existing broker volume:
+
+```sh
+COMPOSE_PROJECT_NAME=flow-rulz-direct docker compose --profile direct down --remove-orphans
 ```
 
 Or start only a JetStream-enabled NATS server and run the worker locally:

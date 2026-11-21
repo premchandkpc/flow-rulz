@@ -89,9 +89,7 @@ func TestTickSettlesWithTheUniqueClaimToken(t *testing.T) {
 	}}
 	publisher := &schedulerTestPublisher{}
 	s := NewScheduler(repo, publisher, schedulerTestClock{now: now}, time.Second, 10, 64)
-
 	s.tick(context.Background())
-
 	if repo.claimant == "" || repo.claimant == "scheduler" {
 		t.Fatalf("claimant = %q, want a unique per-tick token", repo.claimant)
 	}
@@ -111,9 +109,7 @@ func TestTickSchedulesRetryForPublishFailure(t *testing.T) {
 	}}
 	publisher := &schedulerTestPublisher{publishErr: errors.New("broker unavailable")}
 	s := NewScheduler(repo, publisher, schedulerTestClock{now: now}, time.Second, 10, 64)
-
 	s.tick(context.Background())
-
 	if repo.retryBy != repo.claimant {
 		t.Fatalf("retry scheduled by %q, claimed by %q", repo.retryBy, repo.claimant)
 	}
@@ -137,9 +133,7 @@ func TestTickMarksEventFailedAfterRetryLimit(t *testing.T) {
 	}}
 	publisher := &schedulerTestPublisher{publishErr: errors.New("permanent publish failure")}
 	s := NewScheduler(repo, publisher, schedulerTestClock{now: now}, time.Second, 10, 64)
-
 	s.tick(context.Background())
-
 	if repo.failedBy != repo.claimant {
 		t.Fatalf("failed by %q, claimed by %q", repo.failedBy, repo.claimant)
 	}

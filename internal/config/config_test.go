@@ -27,6 +27,7 @@ func validWorkerConfigForTest() WorkerConfig {
 	worker.LeaseRenewalIntervalMS = 1
 	worker.NATSAckWaitMS = 1500
 	worker.NATSMaxDeliver = -1
+	worker.MaxDeliveryAttempts = 24
 	worker.HotKeyThreshold = 1
 	worker.HotKeyCheckIntervalMS = 2500
 	return worker

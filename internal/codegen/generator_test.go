@@ -1,6 +1,8 @@
 package codegen
 
 import (
+	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
@@ -21,12 +23,17 @@ func TestGenerateGoIncludesTypedClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateGo() error = %v", err)
 	}
-	if len(files) != 2 {
-		t.Fatalf("GenerateGo() returned %d files, want contract and typed client", len(files))
-	}
+	assertGeneratedFileCount(t, files, 2)
 	assertGeneratedFilesParse(t, files)
 	assertGeneratedContractFields(t, filepath.Join(outputDir, TargetGo, "created.go"))
 	assertGeneratedTypedClient(t, filepath.Join(outputDir, TargetGo, "created_client.go"))
+}
+
+func assertGeneratedFileCount(t *testing.T, files []string, want int) {
+	t.Helper()
+	if len(files) != want {
+		t.Fatalf("GenerateGo() returned %d files, want %d", len(files), want)
+	}
 }
 
 func TestToGoIdentifier(t *testing.T) {
@@ -180,7 +187,17 @@ func generateMethods(generator *Generator) map[string]func(string) error {
 
 // parseGeneratedGoFile parses a generated Go file reporting all errors.
 func parseGeneratedGoFile(path string) error {
-	_, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.AllErrors)
+	positions := token.NewFileSet()
+	file, err := parser.ParseFile(positions, path, nil, parser.AllErrors)
+	if err != nil {
+		return err
+	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		if isFunction(node) && positions.Position(node.End()).Line-positions.Position(node.Pos()).Line+1 > 15 {
+			err = fmt.Errorf("generated function at %s exceeds 15 lines", positions.Position(node.Pos()))
+		}
+		return true
+	})
 	return err
 }
 
@@ -227,7 +244,7 @@ func assertGeneratedTypedClient(t *testing.T, path string) {
 		"func (c *Client) SendToRuleSet(",
 		"func (c *Client) SubscribeRuleSet(",
 		"opts ...flowrulz.SendOption",
-		"c.client.Subscribe(ctx, ruleSet",
+		"flowrulz.SubscribeTyped(ctx, c.client, ruleSet",
 	} {
 		if !strings.Contains(content, expected) {
 			t.Errorf("generated client does not contain %q", expected)
@@ -240,7 +257,7 @@ func assertGeneratedTypedClient(t *testing.T, path string) {
 func assertNestedTypeContract(t *testing.T, outputDir string) {
 	t.Helper()
 	content := readGeneratedFile(t, filepath.Join(outputDir, TargetGo, "created.go"))
-	for _, expected := range []string{
+	assertContainsAll(t, content, []string{
 		"Items []Item `json:\"items,omitempty\"`",
 		"ShippingAddress ShippingAddress `json:\"shipping_address,omitempty\"`",
 		"Tags []string `json:\"tags,omitempty\"`",
@@ -248,9 +265,23 @@ func assertNestedTypeContract(t *testing.T, outputDir string) {
 		"ProductId string `json:\"product_id,omitempty\"`",
 		"Quantity int64 `json:\"quantity,omitempty\"`",
 		"type ShippingAddress struct",
-	} {
+	})
+}
+
+func assertContainsAll(t *testing.T, content string, expectedValues []string) {
+	t.Helper()
+	for _, expected := range expectedValues {
 		if !strings.Contains(content, expected) {
 			t.Errorf("generated contract missing %q:\n%s", expected, content)
 		}
+	}
+}
+
+func isFunction(node ast.Node) bool {
+	switch node.(type) {
+	case *ast.FuncDecl, *ast.FuncLit:
+		return true
+	default:
+		return false
 	}
 }

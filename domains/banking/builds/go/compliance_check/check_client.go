@@ -4,8 +4,6 @@ package compliance_check
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	flowrulz "github.com/flowrulz/flow-rulz-sdk/go/flowrulz"
 )
@@ -43,20 +41,8 @@ func (c *Client) Subscribe(ctx context.Context, handler func(context.Context, *C
 
 // SubscribeRuleSet receives live events for the supplied rule set.
 func (c *Client) SubscribeRuleSet(ctx context.Context, ruleSet string, handler func(context.Context, *Check, *flowrulz.Envelope) error) error {
-	if c == nil || c.client == nil {
+	if c == nil {
 		return flowrulz.ErrInvalidArgument("client is required")
 	}
-	if handler == nil {
-		return flowrulz.ErrInvalidArgument("event handler is required")
-	}
-	return c.client.Subscribe(ctx, ruleSet, func(ctx context.Context, envelope *flowrulz.Envelope) error {
-		if envelope == nil {
-			return flowrulz.ErrInvalidArgument("event envelope is required")
-		}
-		var payload Check
-		if err := json.Unmarshal(envelope.Data, &payload); err != nil {
-			return fmt.Errorf("decode %s payload: %w", envelope.Type, err)
-		}
-		return handler(ctx, &payload, envelope)
-	})
+	return flowrulz.SubscribeTyped(ctx, c.client, ruleSet, handler)
 }

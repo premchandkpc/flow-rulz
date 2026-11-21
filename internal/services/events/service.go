@@ -23,14 +23,7 @@ type Service struct {
 }
 
 // NewService constructs the event-processing service.
-func NewService(
-	compiler ports.RuleCompiler,
-	evaluator ports.RuleEvaluator,
-	quarantine ports.QuarantineRepository,
-	clock ports.Clock,
-	beginTx ports.TransactionManager,
-	newRepos ports.EventTxRepositoryFactory,
-) *Service {
+func NewService(compiler ports.RuleCompiler, evaluator ports.RuleEvaluator, quarantine ports.QuarantineRepository, clock ports.Clock, beginTx ports.TransactionManager, newRepos ports.EventTxRepositoryFactory) *Service {
 	return &Service{
 		compiler: compiler, evaluator: evaluator, quarantine: quarantine,
 		clock: clock, beginTx: beginTx, newRepos: newRepos,
@@ -69,6 +62,10 @@ func (s *Service) validateEventContract(ctx context.Context, envelope *domain.Ev
 	if err != nil {
 		return err
 	}
+	return validateResolvedContract(schema, envelope)
+}
+
+func validateResolvedContract(schema *domain.ContractSchema, envelope *domain.EventEnvelope) error {
 	if schema.Deprecated {
 		return fmt.Errorf("event contract %s@%s is deprecated", schema.Name, schema.Version)
 	}
@@ -111,11 +108,8 @@ func validateEventPayload(schema *domain.ContractSchema, envelope *domain.EventE
 
 // QuarantineEvent records a failed event for later inspection.
 func (s *Service) QuarantineEvent(ctx context.Context, sourceID string, eventID string, tenantID string, errClass domain.ErrorClass, errMsg string) error {
-	rawID := fmt.Sprintf("event-quarantine|%d:%s|%d:%s|%d:%s|%s",
-		len(tenantID), tenantID, len(sourceID), sourceID, len(eventID), eventID, errClass)
-	quarantineID := domain.ComputeSourceHash([]byte(rawID))
 	return s.quarantine.Save(ctx, &domain.QuarantineEntry{
-		ID:         quarantineID,
+		ID:         eventQuarantineID(tenantID, sourceID, eventID, errClass),
 		SourceType: "event",
 		SourceID:   sourceID,
 		EventID:    eventID,
@@ -125,4 +119,10 @@ func (s *Service) QuarantineEvent(ctx context.Context, sourceID string, eventID 
 		Error:      errMsg,
 		CreatedAt:  s.clock.Now(),
 	})
+}
+
+func eventQuarantineID(tenantID, sourceID, eventID string, errClass domain.ErrorClass) string {
+	rawID := fmt.Sprintf("event-quarantine|%d:%s|%d:%s|%d:%s|%s",
+		len(tenantID), tenantID, len(sourceID), sourceID, len(eventID), eventID, errClass)
+	return domain.ComputeSourceHash([]byte(rawID))
 }
