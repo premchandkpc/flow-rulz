@@ -30,6 +30,11 @@ This directory is the canonical home for human-maintained project documentation.
 | [sdk/](sdk/) | SDK and load-generator guides | [Random load generator](sdk/go/random-loadgen.md) |
 | [console/](console/README.md) | Web operations console | [Console guide](console/README.md) |
 
+## Current review and prioritized work
+
+- [Holistic product, commercial, security and engineering review (2026-11-22)](reports/2026-11-22-holistic-review.md)
+- [Prioritized TODO and acceptance criteria](TODO.md)
+
 ## Current implementation guides
 
 - API and configuration: [API](api.md), [Domain](domain.md), [Domain packages](domain/packages.md)
