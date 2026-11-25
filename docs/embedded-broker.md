@@ -272,25 +272,25 @@ child-event processing, consumer ACKs and cross-tenant ACK rejection. Stop clien
 and the broker before reverting deployment configuration. Keep snapshots for recovery, and
 expect duplicate handling when replaying inputs into another runtime.
 
-### Agentic triage consumer
+### Native agentic rule processing (Go broker worker)
 
-With the HTTP broker running, start a trusted, chat-completions-compatible model
-server. Run this Python 3 consumer once per delivery (an empty poll exits cleanly).
+Set both `BROKER_AGENT_URL` (trusted chat-completions endpoint) and
+`BROKER_AGENT_MODEL` in the worker environment. A rule can then select event
+fields using the normal child-event template syntax:
 
-```sh
-python3 examples/agent-worker/worker.py --tenant demo --group triage-v1 \
-  --topic commands.b.handle --output triage.results --model local-model
+```json
+{"emit_event":{"type":"agent.triaged","partition_key_policy":"inherit","data":{"amount":"{{$.amount}}"}}}
 ```
 
-The default model endpoint is http://127.0.0.1:8080/v1/chat/completions.
-Choosing another endpoint with `--model-url` shares field names and requested
-field values with that endpoint. The model may inspect a top-level payload field
-or return a clear/review recommendation. Three inspection turns exhaust its
-budget and produce review. Malformed replies and network failures leave the
-delivery available after lease expiry. Configure the lease to cover model and
-broker latency. Monitor repeated failures before rerunning a poison delivery.
+The Go worker runs the model loop inline before publishing this child. Only
+the selected field names and requested values reach the configured endpoint.
+The model can read fields and choose clear or review. Three consecutive reads
+produce review. The worker adds `data.decision` and routes the child normally.
+Define a local ruleset named `agent.triaged` to handle the result. Reserve
+`decision` for the worker. With both settings unset, ordinary emit_event
+semantics apply. Rust, durable and direct modes do not implement this feature.
 
-The consumer appends its recommendation before acknowledging. A crash between
-those operations can produce multiple recommendations, potentially different,
-with the same result_id. Downstream consumers should atomically record the first
-result_id with any effect. The ID assumes the same broker log and consumer group.
+Model latency consumes the parent delivery deadline and delays other work.
+A model or publication failure follows the existing delivery retry path.
+Replay can repeat inference and produce a different decision for the same
+stable child ID. Deduplicate downstream effects using that identity.
