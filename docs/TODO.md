@@ -4,7 +4,7 @@
 
 ## P0: safety and correctness
 
-- [ ] **SEC-01** Audit actual API identity middleware and every global/tenant route; reconcile stale `SECURITY.md` against code. Acceptance: spoofed proxy headers, unauthenticated direct access and cross-tenant read/write/replay denied in automated tests.
+- [ ] **SEC-01** Source-review of `internal/auth`, `internal/adapters/http/router.go`, and `internal/adapters/http/middleware/middleware.go` completed; stale `SECURITY.md` corrected in PR (see commit history). **Still open:** audit every global/tenant route and test spoofed proxy headers, unauthenticated direct access and cross-tenant read/write/replay denial. Documentation correction is not security certification.
 - [ ] **SEC-02** Enforce authenticated producer tenant and partition identity at broker boundary with NATS subject ACLs. Acceptance: tenant A cannot publish/consume tenant B subjects or forge envelope identity.
 - [ ] **REL-01** Add real PostgreSQL+NATS crash/ACK/commit/outbox recovery tests (not mocks). Acceptance: all ten scenarios in review correctness matrix recorded with reproducible commands and logs.
 - [ ] **ROUTE-01** Implement service-scoped runtime routing and pinned rule revisions or reject unsupported deployment configurations consistently. Acceptance: targeted events only evaluated by assigned service/revision; upgrade compatibility tests.
