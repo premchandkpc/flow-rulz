@@ -271,3 +271,26 @@ tests cover all nine HTTP/TCP/NATS ingress-to-peer-output combinations, includin
 child-event processing, consumer ACKs and cross-tenant ACK rejection. Stop clients
 and the broker before reverting deployment configuration. Keep snapshots for recovery, and
 expect duplicate handling when replaying inputs into another runtime.
+
+### Agentic triage consumer
+
+With the HTTP broker running, start a trusted, chat-completions-compatible model
+server. Run this Python 3 consumer once per delivery (an empty poll exits cleanly).
+
+```sh
+python3 examples/agent-worker/worker.py --tenant demo --group triage-v1 \
+  --topic commands.b.handle --output triage.results --model local-model
+```
+
+The default model endpoint is http://127.0.0.1:8080/v1/chat/completions.
+Choosing another endpoint with `--model-url` shares field names and requested
+field values with that endpoint. The model may inspect a top-level payload field
+or return a clear/review recommendation. Three inspection turns exhaust its
+budget and produce review. Malformed replies and network failures leave the
+delivery available after lease expiry. Configure the lease to cover model and
+broker latency. Monitor repeated failures before rerunning a poison delivery.
+
+The consumer appends its recommendation before acknowledging. A crash between
+those operations can produce multiple recommendations, potentially different,
+with the same result_id. Downstream consumers should atomically record the first
+result_id with any effect. The ID assumes the same broker log and consumer group.
