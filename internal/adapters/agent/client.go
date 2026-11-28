@@ -69,6 +69,9 @@ func (c *Client) turn(ctx context.Context, history []message) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if len(body) > 65536 {
+		return "", errors.New("agent request exceeds 64 KiB")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", err
