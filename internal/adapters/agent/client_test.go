@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -62,6 +63,21 @@ func TestDecideCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if decision, err := c.Decide(ctx, nil); err == nil || decision != "" {
+		t.Fatalf("decision=%q error=%v", decision, err)
+	}
+}
+
+func TestDecideRejectsOversizedRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("oversized request reached model")
+	}))
+	defer server.Close()
+	c, err := New(server.URL, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := map[string]json.RawMessage{strings.Repeat("x", 65536): json.RawMessage("42")}
+	if decision, err := c.Decide(context.Background(), fields); err == nil || decision != "" {
 		t.Fatalf("decision=%q error=%v", decision, err)
 	}
 }
