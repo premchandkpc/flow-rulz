@@ -48,7 +48,11 @@ func runBroker(ctx context.Context, cfg *config.Config) (runErr error) {
 		return err
 	}
 	defer func() { runErr = errors.Join(runErr, publisher.Close()) }()
-	sender := svceffects.NewRouterWithConfig(publisher, effects.NewTopicDestination(publisher), "events", cfg.Worker.NumShards)
+	router := svceffects.NewRouterWithConfig(publisher, effects.NewTopicDestination(publisher), "events", cfg.Worker.NumShards)
+	sender, err := brokerAgent(router)
+	if err != nil {
+		return err
+	}
 	worker, err := application.NewDirectWorker(consumer, rules.NewEvaluator(domain.SystemClock{}), sender, revisions, cfg.EventRetryDelay(), ackWait/2)
 	if err != nil {
 		return err

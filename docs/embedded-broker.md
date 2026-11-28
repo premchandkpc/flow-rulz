@@ -279,3 +279,26 @@ tests cover all nine HTTP/TCP/NATS ingress-to-peer-output combinations, includin
 child-event processing, consumer ACKs and cross-tenant ACK rejection. Stop clients
 and the broker before reverting deployment configuration. Keep snapshots for recovery, and
 expect duplicate handling when replaying inputs into another runtime.
+
+### Native agentic rule processing (Go broker worker)
+
+Set both `BROKER_AGENT_URL` (trusted chat-completions endpoint) and
+`BROKER_AGENT_MODEL` in the worker environment. A rule can then select event
+fields using the normal child-event template syntax:
+
+```json
+{"emit_event":{"type":"agent.triaged","partition_key_policy":"inherit","data":{"amount":"{{$.amount}}"}}}
+```
+
+The Go worker runs the model loop inline before publishing this child. Only
+the selected field names and requested values reach the configured endpoint.
+The model can read fields and choose clear or review. Three consecutive reads
+produce review. The worker adds `data.decision` and routes the child normally.
+Define a local ruleset named `agent.triaged` to handle the result. Reserve
+`decision` for the worker. With both settings unset, ordinary emit_event
+semantics apply. Rust, durable and direct modes do not implement this feature.
+
+Model latency consumes the parent delivery deadline and delays other work.
+A model or publication failure follows the existing delivery retry path.
+Replay can repeat inference and produce a different decision for the same
+stable child ID. Deduplicate downstream effects using that identity.
