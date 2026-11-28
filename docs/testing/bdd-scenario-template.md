@@ -1,10 +1,18 @@
+---
+title: "BDD scenarios: <feature>"
+type: template
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # BDD scenarios: <feature>
 
-- **Spec / acceptance IDs:** 
-- **Implementation path:** 
-- **Test path:** 
+- **Spec / acceptance IDs:**
+- **Implementation path:**
+- **Test path:**
 - **Status:** Proposed | Automated | Verified | Partial | Gap | Skipped
-- **Last verified commit:** 
+- **Last verified commit:**
 - **Infrastructure:** unit fake | PostgreSQL | NATS JetStream | full stack
 
 ## Scenario: <observable outcome>

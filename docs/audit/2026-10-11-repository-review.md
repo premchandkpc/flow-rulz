@@ -1,3 +1,11 @@
+---
+title: Repository review — 2026-10-11
+type: report
+status: historical
+owner: premchandkpc
+last_verified: never
+---
+
 # Repository review — 2026-10-11
 
 ## Scope and baseline

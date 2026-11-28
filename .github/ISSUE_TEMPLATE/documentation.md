@@ -24,7 +24,8 @@ Where is the documentation issue?
 - [ ] API documentation (OpenAPI/Swagger)
 - [ ] Code comments/godoc
 - [ ] Architecture docs (`docs/architecture/`)
-- [ ] Operations docs (`docs/operations/`)
+- [ ] Doc standards or templates (`docs/STANDARDS.md`, `docs/templates/`)
+- [ ] Operations docs (`docs/operations.md`)
 - [ ] Migration guides
 - [ ] Domain contract docs (`domains/*/contracts/`)
 - [ ] SDK docs (`sdk/`)

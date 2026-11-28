@@ -1,3 +1,11 @@
+---
+title: Durable event transport decoupling
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Durable event transport decoupling
 
 The durable effect router and scheduler publish domain envelopes through `ports.EnvelopePublisher`. The NATS adapter validates, serializes, and selects the virtual shard. The composition root still owns connection lifecycle.

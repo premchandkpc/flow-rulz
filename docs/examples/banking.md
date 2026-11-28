@@ -1,10 +1,18 @@
+---
+title: Banking Example
+type: example
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Banking Example
 
 Banking is a **domain**; this folder holds the **services** that work inside it. The domain specification (contracts, rule sets, workflow, generated Go types) lives in [`domains/banking/`](../../domains/banking). The services here import `domains/banking/builds/go` and `sdk/go/flowrulz`.
 
 ## Flow
 
-```
+```text
 transaction.initiated (rule set, all_matches)
   ├─ fraud_screen ............ → fraud.screening_requested   (fraud-screening service)
   ├─ high_value_compliance ... → compliance.check            (compliance service)

@@ -1,3 +1,11 @@
+---
+title: Specifications
+type: index
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Specifications
 
 A specification defines required behavior, boundaries and acceptance criteria. It should be reviewable before implementation and testable afterwards. It is not proof that the behavior already exists.
@@ -14,3 +22,7 @@ Reviewers should understand the problem, affected trust boundaries, canonical co
 
 ## Lifecycle
 Draft → review domain/security/compatibility → approve → implement against acceptance criteria → verify exact commit → update status and residual gaps. Keep intended behavior distinct from verified behavior.
+
+## Current specs
+- [Cross-cutting invariants](invariants.md)
+- [Outbox claim and delivery safety](outbox-claim-delivery-safety.md) (plan: [outbox plan](../plans/outbox-claim-delivery-safety.md))

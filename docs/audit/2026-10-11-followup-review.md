@@ -1,7 +1,14 @@
+---
+title: Follow-up repository review — 2026-10-11
+type: report
+status: historical
+owner: premchandkpc
+last_verified: never
+---
+
 # Follow-up repository review — 2026-10-11
 
 > **Status update (2026-10-11, after the original review below):** `main` now includes JWT validation and scope middleware in `internal/auth`. The redesigned remediation makes validated JWT tenant claims authoritative and rejects conflicting caller-supplied tenant values; production tenant extraction retains a fail-closed trusted-proxy fallback. Findings below that state no JWT/auth code exists are historical findings from the earlier reviewed revision, not current-state claims. This update does not clear the remaining release gates: required-auth deployment configuration, complete per-resource authorization audit, cross-tenant negative tests, CodeQL review, and live PostgreSQL/Mongo/NATS failure testing.
-
 
 ## Scope and baseline
 

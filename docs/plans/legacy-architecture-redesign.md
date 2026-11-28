@@ -1,3 +1,11 @@
+---
+title: Legacy FlowRulz Architecture Redesign Plan
+type: plan
+status: historical
+owner: premchandkpc
+last_verified: never
+---
+
 # Legacy FlowRulz Architecture Redesign Plan
 
 > **Status: historical draft.** This plan is preserved for context, not as a current task list. Several paths and checkboxes no longer match the repository. Verify every item against `../../AGENTS.md`, `../architecture/map.md`, source code and CI before acting on it.
@@ -86,7 +94,7 @@
 
 ## Dependencies & Order
 
-```
+```text
 Phase 1.1 (NATS adapter) → Phase 1.2 (Codegen) → Phase 1.3 (Auth) → Phase 1.4 (Fencing)
                                                       ↓
 Phase 2.1 (Sharding) ← Phase 2.2 (Config) ← Phase 2.3 (Contracts) ← Phase 2.4 (Scheduler)

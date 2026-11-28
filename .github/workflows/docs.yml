@@ -1,0 +1,39 @@
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "scripts/check_docs.py"
+      - ".markdownlint-cli2.yaml"
+      - ".github/workflows/docs.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "docs/**"
+      - "scripts/check_docs.py"
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Links, front matter, orphans, lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check docs (links, anchors, front matter, orphans, Mermaid types)
+        run: python3 -I scripts/check_docs.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Lint Markdown
+        run: npx --yes markdownlint-cli2@0.18.1

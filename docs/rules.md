@@ -1,4 +1,14 @@
+---
+title: Rules
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Rules
+
+> **Scope:** field-level rule reference (JSON shape, operators, actions). Authoring practice: [rules/README.md](rules/README.md). Revision storage and assignment: [ruleset.md](ruleset.md).
 
 ## Rule Shape
 
@@ -256,7 +266,7 @@ data-path-derived keys are planned routing policies, not implicit behavior.
 
 Evaluates rules in priority order (highest first). Stops at the first matching rule.
 
-```
+```text
 Rule A (priority=100): no match  → continue
 Rule B (priority=50):  match     → STOP, emit effects
 Rule C (priority=10):  never evaluated
@@ -279,7 +289,7 @@ Rule C (priority=10):  never evaluated
 
 Evaluates all rules. Collects all matched effects.
 
-```
+```text
 Rule A (priority=100): match → emit effect A
 Rule B (priority=50):  match → emit effect B
 Rule C (priority=10):  match → emit effect C
@@ -346,7 +356,7 @@ This ensures:
 
 ## Rule Deployment Lifecycle
 
-```
+```text
 1. POST /v1/rules/{ruleSet}/revisions
    → Compiler.Compile(source)
    → Validates: schema, limits, duplicate IDs, priorities
@@ -390,7 +400,6 @@ Useful for:
 - Debugging why a rule did/didn't match
 - Audit trails
 - Dashboard visualization
-
 
 ## Durable scheduled events
 

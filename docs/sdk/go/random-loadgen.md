@@ -1,3 +1,11 @@
+---
+title: Random multi-client load generator
+type: guide
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Random multi-client load generator
 
 This command sends a bounded stream of randomized events through the public Go SDK transport and starts one live observer per simulated tenant. It is intended for local development and smoke testing, not a benchmark or a durable-consumer correctness test.

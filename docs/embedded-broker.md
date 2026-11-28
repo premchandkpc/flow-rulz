@@ -1,3 +1,11 @@
+---
+title: Worker-hosted broker
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Worker-hosted broker
 
 Both Go and Rust expose protocol v1 in `WORKER_MODE=broker`. See the

@@ -1,3 +1,11 @@
+---
+title: Operations and Troubleshooting
+type: guide
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Operations and Troubleshooting
 
 This guide describes the current implementation. It does not certify the service as production-ready.

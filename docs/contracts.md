@@ -1,4 +1,14 @@
+---
+title: Multi-contract model and implementation status
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Multi-contract model and implementation status
+
+> **Scope:** multi-contract design model and what is implemented vs not. Field-level reference: [contract.md](contract.md).
 
 ## Identity and immutability
 

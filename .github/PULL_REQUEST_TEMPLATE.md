@@ -95,6 +95,7 @@ make ci
 - [ ] Traces cross async boundaries where supported
 
 ### Documentation
+- [ ] `make docs-check` passes; docs follow `docs/STANDARDS.md` (front matter honest, claims labeled)
 - [ ] README.md updated if user-facing behavior changed
 - [ ] AGENTS.md updated if architecture/ownership changed
 - [ ] API schemas updated if contracts changed

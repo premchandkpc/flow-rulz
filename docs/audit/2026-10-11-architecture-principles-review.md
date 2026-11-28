@@ -1,3 +1,11 @@
+---
+title: Architecture and code-quality review — 2026-10-11
+type: report
+status: historical
+owner: premchandkpc
+last_verified: never
+---
+
 # Architecture and code-quality review — 2026-10-11
 
 ## Scope and status

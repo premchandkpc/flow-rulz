@@ -1,4 +1,4 @@
-.PHONY: generate-domain help build build-api build-worker build-codegen build-random-producer test test-unit test-examples test-integration lint vet fmt check-fmt generate clean run-api run-worker run-all docker-build docker-up docker-down docker-logs migrate-up deps tools verify-generated ci release
+.PHONY: docs-check generate-domain help build build-api build-worker build-codegen build-random-producer test test-unit test-examples test-integration lint vet fmt check-fmt generate clean run-api run-worker run-all docker-build docker-up docker-down docker-logs migrate-up deps tools verify-generated ci release
 
 # Default target
 help:
@@ -221,7 +221,11 @@ check-fmt:
 	@files="$$(git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 gofmt -l)" || exit $$?; \
 	if [ -n "$$files" ]; then printf "%s\n" "$$files"; gofmt -d $$files; exit 1; fi
 
-ci: deps check-fmt vet lint test verify-generated
+# Documentation checks: links, anchors, front matter, orphans, Mermaid types (see docs/STANDARDS.md)
+docs-check:
+	@python3 -I scripts/check_docs.py
+
+ci: deps check-fmt vet lint test verify-generated docs-check
 	@echo "CI pipeline passed!"
 
 # Release

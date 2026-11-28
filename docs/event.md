@@ -1,3 +1,11 @@
+---
+title: Events
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Events
 
 An event is a runtime fact, not configuration. The event envelope separates stable envelope fields from extensible runtime metadata.

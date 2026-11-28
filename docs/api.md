@@ -1,3 +1,11 @@
+---
+title: HTTP API
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # HTTP API
 
 The API has two distinct responsibilities: global control-plane configuration and runtime/event operations. A Domain configuration request must not include event identity fields.

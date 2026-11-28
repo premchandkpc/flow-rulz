@@ -1,3 +1,11 @@
+---
+title: Rule authoring and lifecycle
+type: index
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Rule authoring and lifecycle
 
 This section explains rule design and review. The existing [rules reference](../rules.md) remains the field-level source for JSON shape, operators, predicate grammar and actions. The [ruleset guide](../ruleset.md) covers revision storage and assignment.

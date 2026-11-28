@@ -1,3 +1,11 @@
+---
+title: Testing and verification
+type: index
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Testing and verification
 
 This area explains what each test layer proves. A passing unit test does not prove PostgreSQL transaction semantics, NATS redelivery or distributed lease correctness unless those systems are exercised.

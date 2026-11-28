@@ -1,3 +1,11 @@
+---
+title: FlowRulz Phase 1 (P0) Implementation Plan
+type: plan
+status: historical
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz Phase 1 (P0) Implementation Plan
 
 ## Overview
@@ -367,7 +375,7 @@ func (d *DB) RunMigrations(ctx context.Context) error {
 
 ## Priority Order & Dependencies
 
-```
+```text
 P0-1 (Persist InputContract) ──┐
                                ├──→ P0-2 (Enforce at Worker) ──→ P0-3 (Bindings)
 P0-5 (Migration Tracking) ─────┘           │

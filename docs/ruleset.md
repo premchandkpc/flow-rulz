@@ -1,3 +1,11 @@
+---
+title: Rulesets
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Rulesets
 
 A **ruleset** is an immutable, versioned collection of rules. A Service references a ruleset by `ruleset_id` and `revision`; it does not copy rule logic into the Service definition.

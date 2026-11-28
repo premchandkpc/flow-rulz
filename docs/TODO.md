@@ -1,3 +1,11 @@
+---
+title: FlowRulz prioritized engineering and product TODO
+type: plan
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz prioritized engineering and product TODO
 
 **Updated:** 2026-11-22. **Baseline:** `3d706259`. This is the single actionable queue for the [holistic review](reports/2026-11-22-holistic-review.md). Items are **open**, not implemented. Link PR, test evidence and commit before checking a box. P0 blocks production claims; P1 blocks broad adoption; P2 improves usability. Do not split every checkbox into a service or abstraction.

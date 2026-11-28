@@ -1,3 +1,11 @@
+---
+title: FlowRulz domain model
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz domain model
 
 This is the conceptual model. Exact fields and constraints are defined by source, SQL migrations, JSON Schemas and [implementation guides](../README.md).

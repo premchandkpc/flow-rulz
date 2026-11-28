@@ -1,3 +1,11 @@
+---
+title: Cross-cutting FlowRulz invariants
+type: spec
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Cross-cutting FlowRulz invariants
 
 **Status:** Engineering constraints, not proof of complete enforcement. Confirm source and test coverage for the exact release.

@@ -1,3 +1,11 @@
+---
+title: Rule lifecycle
+type: guide
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Rule lifecycle
 
 This is a conceptual lifecycle, not a claim every step is automated. Confirm the supported API and storage behavior before using it as a runbook.

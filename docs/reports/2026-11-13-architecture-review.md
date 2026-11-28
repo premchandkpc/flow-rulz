@@ -1,3 +1,11 @@
+---
+title: FlowRulz architecture and business-fit review
+type: report
+status: historical
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz architecture and business-fit review
 
 Reviewed PR #35 at `a4395b4` and its surrounding repository. This report describes the durable Go path unless a different mode is named. Code, tests, and migration history take precedence over earlier design proposals.

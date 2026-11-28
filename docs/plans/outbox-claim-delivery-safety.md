@@ -1,3 +1,11 @@
+---
+title: "Change plan: outbox claim and delivery safety"
+type: plan
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Change plan: outbox claim and delivery safety
 
 - **Status:** Complete

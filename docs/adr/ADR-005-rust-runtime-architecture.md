@@ -1,3 +1,11 @@
+---
+title: "ADR-005: Rust runtime and FlowRulZ-owned log"
+type: adr
+status: proposed
+owner: premchandkpc
+last_verified: never
+---
+
 # ADR-005: Rust runtime and FlowRulZ-owned log
 
 Status: Proposed. Date: 2026-10-14.

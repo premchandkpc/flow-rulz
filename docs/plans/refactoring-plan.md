@@ -1,3 +1,11 @@
+---
+title: "FlowRulz Refactoring Plan: SOLID, Hexagonal, DDD, Loose Coupling"
+type: plan
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz Refactoring Plan: SOLID, Hexagonal, DDD, Loose Coupling
 
 ## Phase 1: Method Decomposition (Critical - Week 1)
@@ -48,7 +56,7 @@
 - [ ] Add `EnvelopeValidator` port
 
 ### 2.2 Multi-Ruleset Consumer Support
-- [ ] Implement `NATSRulesetConsumer` 
+- [ ] Implement `NATSRulesetConsumer`
 - [ ] Implement `ConsumerRegistry` with multi-ruleset support
 - [ ] Update `Worker` to use `ConsumerRegistry`
 

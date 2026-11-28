@@ -1,3 +1,11 @@
+---
+title: Rule authoring standard
+type: guide
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Rule authoring standard
 
 Exact JSON fields and supported operators are defined by the [rules reference](../rules.md) and validated by the current implementation.
