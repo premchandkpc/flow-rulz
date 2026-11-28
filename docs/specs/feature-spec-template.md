@@ -1,3 +1,11 @@
+---
+title: "Feature specification: <feature-name>"
+type: template
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Feature specification: <feature-name>
 
 - **Status:** Draft | In review | Approved | Implemented | Verified | Superseded

@@ -1,0 +1,24 @@
+# Markdown lint for docs. Mechanical doc rules live in scripts/check_docs.py.
+config:
+  default: true
+  MD013: false   # line length: prose paragraphs are single lines in this repo
+  MD024: { siblings_only: true }
+  MD033: false   # inline HTML allowed (badges, <details>)
+  MD036: false   # bold-as-heading appears in older docs
+  MD025: { front_matter_title: "" }
+  MD041: false   # front matter precedes the H1
+  MD060: false
+  # Blank-line spacing rules disabled: legacy docs are compact and readable; avoids mass-reformat churn.
+  MD048: false   # ~~~ and ``` fences both valid
+  MD029: false
+  MD022: false
+  MD031: false
+  MD032: false
+  MD058: false
+globs:
+  - "docs/**/*.md"
+  - "README.md"
+  - "AGENTS.md"
+  - "CLAUDE.md"
+ignores:
+  - "docs/templates/**"

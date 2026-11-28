@@ -1,3 +1,11 @@
+---
+title: Current architecture
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Current architecture
 
 The detailed current-state topology and file map live in [map.md](map.md). This document summarizes the package boundaries and transactional invariants, and deliberately distinguishes implementation from planned work.

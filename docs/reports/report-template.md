@@ -1,11 +1,19 @@
+---
+title: <Report title>
+type: template
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # <Report title>
 
 - **Report ID:** <stable identifier>
 - **Date:** YYYY-MM-DD
-- **Author / owner:** 
+- **Author / owner:**
 - **Source commit:** <full SHA>
-- **Related PR / issue / incident:** 
-- **Scope and environment:** 
+- **Related PR / issue / incident:**
+- **Scope and environment:**
 - **Status:** Draft | Reviewed | Remediation in progress | Closed | Superseded
 
 ## Executive summary

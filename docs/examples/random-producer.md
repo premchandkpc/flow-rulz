@@ -1,3 +1,11 @@
+---
+title: Random Producer Example
+type: example
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Random Producer Example
 
 This example generates domain-shaped FlowRulz events using the existing e-commerce, banking, and food-delivery contracts, then publishes them to the same NATS JetStream subject family used by the worker. It is deliberately located under `examples/`: it drives realistic input traffic through the existing example workflows, rather than inventing a separate random message schema. It is not part of API/worker startup or a replacement for consumer-side end-to-end tests.

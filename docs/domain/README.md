@@ -1,3 +1,11 @@
+---
+title: Domain model and contracts
+type: index
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Domain model and contracts
 
 This section describes concepts and event identity. Field-level truth remains in schemas, migrations and existing implementation guides; avoid copying API field lists into competing documents.

@@ -1,3 +1,11 @@
+---
+title: Workers
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Workers
 
 Workers are generic execution runtimes. They understand event envelopes, contracts, immutable ruleset revisions, execution records, and generic effects. They must not contain business-specific order, payment, or receiver logic.

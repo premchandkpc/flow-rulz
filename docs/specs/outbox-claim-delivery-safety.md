@@ -1,9 +1,17 @@
+---
+title: "Feature specification: outbox claim and delivery safety"
+type: spec
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Feature specification: outbox claim and delivery safety
 
 - **Status:** Implemented
 - **Owner:** FlowRulz runtime
 - **Created / reviewed:** 2026-11-14 / 2026-11-14
-- **Issue / PR:** https://github.com/premchandkpc/flow-rulz/pull/39
+- **Issue / PR:** <https://github.com/premchandkpc/flow-rulz/pull/39>
 - **Related plan:** [Outbox claim delivery plan](../plans/outbox-claim-delivery-safety.md)
 - **Current-behavior source and SHA:** `internal/services/effects`, `internal/adapters/{postgres,mongo}/outbox.go`, `6d454dd`
 

@@ -1,4 +1,14 @@
+---
+title: Change and test checklist
+type: guide
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Change and test checklist
+
+> **Scope:** per-change checklist. Strategy and evidence by layer: [testing/README.md](testing/README.md).
 
 Use this checklist whenever changing a Domain, Service assignment, ruleset, contract, event envelope, API route, or worker.
 

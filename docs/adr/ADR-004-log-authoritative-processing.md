@@ -1,3 +1,11 @@
+---
+title: "ADR-004: Log-authoritative event processing"
+type: adr
+status: proposed
+owner: premchandkpc
+last_verified: never
+---
+
 # ADR-004: Log-authoritative event processing
 
 - Status: Proposed

@@ -1,3 +1,11 @@
+---
+title: Event contract and identity
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Event contract and identity
 
 The event envelope is the runtime boundary between producers and workers. The canonical definition is the shared EventEnvelope type, event schema and validation code. This page explains semantics but does not replace the schema.

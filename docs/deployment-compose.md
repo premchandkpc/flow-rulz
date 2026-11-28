@@ -1,3 +1,11 @@
+---
+title: Docker Compose deployment
+type: guide
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Docker Compose deployment
 
 `docker-compose.yml` is the single Compose manifest, including optional `direct`,
@@ -17,7 +25,7 @@ docker compose ps
 docker compose ps worker
 ```
 
-Open **http://localhost:3000**. The UI's default settings use same-origin paths:
+Open **<http://localhost:3000>**. The UI's default settings use same-origin paths:
 - `/api` proxies to `api:8080`
 - `/worker-metrics/metrics` proxies to `worker:9090/metrics`
 - `/loki` is the base path for Loki's query API, backed by `loki:3100`

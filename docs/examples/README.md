@@ -1,3 +1,11 @@
+---
+title: FlowRulz Examples
+type: index
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz Examples
 
 This directory contains example applications built on top of the FlowRulz event-driven business runtime platform.
@@ -86,7 +94,7 @@ Example producers use the generated typed `Send` method. Consumers use the gener
 
 ## Domain-aware load simulation
 
-The opt-in [`random-producer`](random-producer/README.md) can seed the existing e-commerce, banking, and food-delivery flows with contract-shaped initial events. Deploy the relevant example contracts, rules, and workflow first, then run `docker compose --profile examples run --rm random-producer`. By default it cycles across all three domains under `RANDOM_PRODUCER_TENANT_ID=acme-corp`; the number of simulated business clients is separate from the FlowRulz tenant. A JetStream publish ACK only confirms broker acceptance, not completion by a worker.
+The opt-in [`random-producer`](../../examples/random-producer/) can seed the existing e-commerce, banking, and food-delivery flows with contract-shaped initial events. Deploy the relevant example contracts, rules, and workflow first, then run `docker compose --profile examples run --rm random-producer`. By default it cycles across all three domains under `RANDOM_PRODUCER_TENANT_ID=acme-corp`; the number of simulated business clients is separate from the FlowRulz tenant. A JetStream publish ACK only confirms broker acceptance, not completion by a worker.
 
 ## Code Generation
 
@@ -155,7 +163,7 @@ Generating a Go target also emits a typed client with default-rule-set and expli
 
 ## Learn More
 
-- [FlowRulz Architecture](../docs/architecture/map.md)
-- [API Documentation](../docs/)
-- [Rule Schema](../api/rule-schema.json)
-- [Event Envelope Schema](../api/envelope-schema.json)
+- [FlowRulz Architecture](../architecture/map.md)
+- [API Documentation](../README.md)
+- [Rule Schema](../../contracts/schemas/rule-set.schema.json)
+- [Event Envelope Schema](../../contracts/schemas/event-envelope.schema.json)

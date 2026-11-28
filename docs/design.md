@@ -1,3 +1,11 @@
+---
+title: Design
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Design
 
 ## High-level Design
@@ -6,7 +14,7 @@ FlowRulz provides **transactional event deduplication and at-least-once effect d
 
 ### Core Guarantee
 
-```
+```text
 At-least-once broker delivery
         │
         ▼
@@ -50,7 +58,7 @@ At-least-once broker delivery
 
 ACID applies inside SQL, not across SQL + broker + HTTP. The transaction boundary is intentionally narrow:
 
-```
+```text
 BEGIN
   ┌─────────────────────────────────────────────────────────┐
   │ 1. inbox insert (dedup check)                          │
@@ -97,7 +105,7 @@ State transitions are enforced at the domain layer. Invalid transitions return e
 
 #### Execution
 
-```
+```text
                       ┌──────────────┐
                       │   pending    │
                       └──────┬───────┘
@@ -117,7 +125,7 @@ exec.Quarantine(now, msg) // pending → quarantined
 
 #### OutboxEffect
 
-```
+```text
         ┌──────────┐
         │ pending  │◄─────────────────┐
         └────┬─────┘                  │
@@ -144,7 +152,7 @@ effect.Quarantine(now, msg)  // claimed → quarantined
 
 #### InboxEntry
 
-```
+```text
 ┌────────────┐     ┌──────────┐
 │ processing │────>│ committed│
 └────────────┘     └──────────┘
@@ -290,7 +298,7 @@ CREATE INDEX idx_quarantine_created ON quarantine (created_at);
 
 Effect IDs are deterministic and are sent as idempotency keys to destinations:
 
-```
+```text
 effect_id = sha256(tenant_id + "|" + event_id + "|" + rule_set + "|" + revision + "|" + rule_id + "|" + action_index)
 ```
 
@@ -298,7 +306,7 @@ This formula is intended to make effect IDs stable for the same event tenant, ev
 
 ### Decision Hash
 
-```
+```text
 decision_hash = sha256(rule_set + revision + sorted(matched_rule_ids) + event_hash + sorted(effect_ids))
 ```
 
@@ -311,7 +319,7 @@ Stable across identical inputs. Used for:
 
 **Virtual Shards**: 4096 fixed shards mapped to physical workers.
 
-```
+```text
 shard = fnv32a(tenant_id + ":" + partition_key) % 4096
 ```
 

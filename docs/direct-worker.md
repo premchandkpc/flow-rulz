@@ -1,3 +1,11 @@
+---
+title: Direct rule worker
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Direct rule worker
 
 For producers and consumers connecting to FlowRulz's own broker, use

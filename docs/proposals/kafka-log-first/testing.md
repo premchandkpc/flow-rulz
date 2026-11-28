@@ -1,3 +1,11 @@
+---
+title: Kafka log-first proposal test matrix
+type: proposal
+status: proposed
+owner: premchandkpc
+last_verified: never
+---
+
 # Kafka log-first proposal test matrix
 
 This directory is a client-neutral design/reference implementation. It is not a production Kafka adapter. Tests here prove the reference contracts and failure behavior; they do not prove broker-level transactions, consumer-group rebalance behavior, or exactly-once delivery to external systems.
@@ -9,7 +17,7 @@ This directory is a client-neutral design/reference implementation. It is not a 
 | Domain Service deployment API | Valid immutable ruleset pinning; duplicate service IDs/names; invalid identifiers and revisions; empty/oversized assignments; invalid worker profiles; missing or cross-tenant revisions; lookup errors; monotonic revision changes; explicit deactivation before removal |
 | HTTP control plane | Deployment JSON decode/response; tenant context required; malformed request rejected before calling the use case |
 | PostgreSQL adapter | JSONB deployment serialization; empty deployments encoded as an array; JSONB readback; malformed persisted JSON; database error wrapping |
-| MongoDB adapter | BSON deployment round-trip and tenant-scoped index definitions
+| MongoDB adapter | BSON deployment round-trip and tenant-scoped index definitions |
 | Contract bindings | Multiple rulesets may independently bind to the same immutable contract; exact contract version/hash matching |
 | Go worker configuration | Service ID and deployment revision must be configured together |
 | Go worker routing | Wrong service/revision rejected before evaluation; effects/audits must stay within the input event's tenant and identity |

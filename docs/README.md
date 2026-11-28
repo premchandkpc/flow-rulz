@@ -1,4 +1,14 @@
+---
+title: FlowRulz documentation index
+type: index
+status: current
+owner: premchandkpc
+last_verified: 2026-11-27 @ 285a8c0
+---
+
 # FlowRulz documentation index
+
+**Writing or changing docs? Read [STANDARDS.md](STANDARDS.md) first, then run `make docs-check`.**
 
 This directory is the canonical home for human-maintained project documentation. Use the categories below to find the source of truth instead of scattering new Markdown files across the repository.
 
@@ -21,14 +31,15 @@ This directory is the canonical home for human-maintained project documentation.
 | [rules/](rules/README.md) | Rule structure, semantics, authoring, lifecycle | [Authoring standard](rules/rule-authoring-standard.md) |
 | [testing/](testing/README.md) | Test strategy, BDD scenarios, verification evidence | [Test strategy](testing/test-strategy.md) |
 | [reports/](reports/README.md) | Dated findings, risks, audit reports | [Risk register](reports/risk-register.md) |
-| [architecture/](architecture/overview.md) | Runtime boundaries, data flow, reliability | [Architecture map](architecture/map.md) |
-| [adr/](adr/) | Accepted architecture decisions | [ADR directory](adr/) |
-| [audit/](audit/) | Historical repository and architecture reviews | [Audit reports](audit/) |
+| [architecture/](architecture/README.md) | Runtime boundaries, data flow, reliability | [Architecture map](architecture/map.md) |
+| [adr/](adr/README.md) | Architecture decisions | [ADR index](adr/README.md) |
+| [audit/](audit/README.md) | October 2026 review snapshots (historical) | [Audit index](audit/README.md) |
 | [security/](security/) | Security findings and remediation context | [CodeQL alert 24](security/codeql-alert-24.md) |
 | [examples/](examples/README.md) | Data fixtures and sample applications | [Examples index](examples/README.md) |
-| [proposals/](proposals/) | Proposed, non-shipped architecture and experiments | [Kafka log-first proposal](proposals/kafka-log-first-data-plane.md) |
+| [proposals/](proposals/kafka-log-first/README.md) | Proposed, non-shipped architecture and experiments | [Kafka log-first proposal](proposals/kafka-log-first-data-plane.md) |
 | [sdk/](sdk/) | SDK and load-generator guides | [Random load generator](sdk/go/random-loadgen.md) |
 | [console/](console/README.md) | Web operations console | [Console guide](console/README.md) |
+| [templates/](templates/README.md) | Copy-and-fill doc templates | [Templates](templates/README.md) |
 
 ## Current review and prioritized work
 
@@ -43,11 +54,12 @@ This directory is the canonical home for human-maintained project documentation.
 - Runtime: [Workers](worker.md), [Delivery reliability](architecture/delivery-reliability.md)
 - Operations: [Operations](operations.md), [Compose deployment](deployment-compose.md)
 - Verification: [Testing checklist](testing.md), [Test strategy](testing/test-strategy.md), [Verification matrix](testing/verification-matrix.md)
+- Architecture detail: [Event transport decoupling](architecture/event-transport-decoupling.md), [Rust/Go parity](architecture/rust-go-worker-parity.md), [Worker review remediation](architecture/worker-review-remediation.md)
 - Planning: [Implementation plan](IMPLEMENTATION_PLAN.md), [Refactoring plan](plans/refactoring-plan.md), [Legacy architecture redesign](plans/legacy-architecture-redesign.md), [Roadmap](roadmap.md)
 - Examples: [Data fixtures](examples/data-fixtures.md), [Banking](examples/banking.md), [E-commerce](examples/ecommerce.md), [Food delivery](examples/food-delivery.md), [Random producer](examples/random-producer.md)
 - Other tools: [Random load generator](sdk/go/random-loadgen.md), [Web console](console/README.md)
-- History and direction: [Future architecture](future-architecture.md), [Audit reports](audit/), [Security policy](../SECURITY.md)
-- [Kafka log-first proposal](proposals/kafka-log-first-data-plane.md) is a design proposal, not current runtime transport. Supporting experiments and their test limitations are documented under [proposals/kafka-log-first/](proposals/kafka-log-first/).
+- History and direction: [Future architecture](future-architecture.md), [Design notes](design.md), [Audit reports](audit/README.md), [Security policy](../SECURITY.md)
+- [Kafka log-first proposal](proposals/kafka-log-first-data-plane.md) is a design proposal, not current runtime transport. Supporting experiments and their test limitations are documented under [proposals/kafka-log-first/](proposals/kafka-log-first/README.md) and its [testing notes](proposals/kafka-log-first/testing.md).
 
 ## Documentation contract
 
@@ -58,7 +70,8 @@ This directory is the canonical home for human-maintained project documentation.
 5. Preserve dated audits as historical snapshots; add follow-up reports instead of rewriting history.
 6. Record commit SHA, exact commands, environment, exit status, and skipped tests.
 7. Keep canonical field definitions in schemas and implementation guides; link to them instead of creating competing copies.
-8. Keep new human-maintained documentation in `docs/`. The root `README.md`, `AGENTS.md`, and `SECURITY.md` are intentional discovery/tooling exceptions. GitHub templates and agent skill files stay in their required `.github/` and `.opencode/` locations.
+8. Follow [STANDARDS.md](STANDARDS.md): front matter, claim labels, one canonical home per topic. `make docs-check` enforces the mechanical rules.
+9. Keep new human-maintained documentation in `docs/`. The root `README.md`, `AGENTS.md`, and `SECURITY.md` are intentional discovery/tooling exceptions. GitHub templates and agent skill files stay in their required `.github/` and `.opencode/` locations.
 
 ## Change workflow
 

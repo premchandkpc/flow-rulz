@@ -1,3 +1,11 @@
+---
+title: "ADR-001: Separate control plane from event data plane"
+type: adr
+status: accepted
+owner: premchandkpc
+last_verified: never
+---
+
 # ADR-001: Separate control plane from event data plane
 
 - Status: Accepted

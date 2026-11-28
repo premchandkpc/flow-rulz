@@ -1,3 +1,11 @@
+---
+title: Engineering plans
+type: index
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Engineering plans
 
 Plans define how an approved change will be delivered. They expose dependencies, ownership, sequence, verification and rollback. The linked spec owns requirements; a plan should not quietly redefine them.
@@ -18,3 +26,7 @@ Plans define how an approved change will be delivered. They expose dependencies,
 7. Record blocked work, decisions and residual risks.
 
 Use explicit statuses. Mark a step complete only when its exit evidence exists. A completed plan references the final PR-head SHA and CI run, not an earlier local commit.
+
+## Current plans
+- [Outbox claim and delivery safety](outbox-claim-delivery-safety.md)
+- [Refactoring plan](refactoring-plan.md)

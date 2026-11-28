@@ -1,3 +1,11 @@
+---
+title: FlowRulz engineering risk register
+type: report
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz engineering risk register
 
 **Purpose:** track risk areas needing evidence. These rows are not assertions that every item is a confirmed defect. Assign severity only after examining source, tests and deployment configuration.

@@ -1,3 +1,11 @@
+---
+title: "ADR-003: Durable event log and disposable runtime cache"
+type: adr
+status: accepted
+owner: premchandkpc
+last_verified: never
+---
+
 # ADR-003: Durable event log and disposable runtime cache
 
 - Status: Accepted

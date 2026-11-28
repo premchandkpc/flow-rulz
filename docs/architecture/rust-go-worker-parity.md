@@ -1,3 +1,11 @@
+---
+title: Rust/Go worker feature-parity status
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Rust/Go worker feature-parity status
 
 This is a focused first parity increment, not a declaration of complete equivalence.

@@ -1,3 +1,11 @@
+---
+title: Kafka/Redpanda log-first data-plane proposal
+type: proposal
+status: proposed
+owner: premchandkpc
+last_verified: never
+---
+
 # Kafka/Redpanda log-first data-plane proposal
 
 **Status:** proposal only. The current production path remains NATS JetStream + PostgreSQL until the migration gates below pass. This document does not claim the Kafka implementation exists.
@@ -311,7 +319,6 @@ Set bounded retry attempts and a DLQ policy. Alert on sustained consumer lag, sc
 - **Remove PostgreSQL but keep NATS:** not recommended as a shortcut. JetStream does not provide Kafka-style transactional consume-transform-produce plus consumer offset commit semantics, so the application would need to rebuild dedupe, ownership, and atomic publication behavior.
 
 **Recommendation:** treat Kafka/Redpanda as a deliberate v2 architecture proposal, not an immediate replacement. First decide whether eliminating the PostgreSQL hot-path round trip is worth the broker migration and new activation/read-model complexity. Prove it with a narrow vertical slice before rewriting the repository.
-
 
 ## Application-owned log storage port and future extraction
 

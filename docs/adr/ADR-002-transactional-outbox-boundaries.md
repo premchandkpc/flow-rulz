@@ -1,3 +1,11 @@
+---
+title: "ADR-002: Transactional outbox persistence boundaries"
+type: adr
+status: accepted
+owner: premchandkpc
+last_verified: never
+---
+
 # ADR-002: Transactional outbox persistence boundaries
 
 - Status: Accepted

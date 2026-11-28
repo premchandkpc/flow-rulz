@@ -1,3 +1,11 @@
+---
+title: "ADR-006: Global Domain and ruleset configuration"
+type: adr
+status: accepted
+owner: premchandkpc
+last_verified: never
+---
+
 # ADR-006: Global Domain and ruleset configuration
 
 - **Status:** Accepted for the configuration model; deployment reconciliation remains incomplete.
@@ -17,7 +25,7 @@ A Domain request contains \`name\` and \`services[]\`. A Service contains its lo
 
 Each event carries \`tenant_id\` and \`partition_key\`. Runtime processing uses this pair for stable shard routing and uses event tenant identity for event-level deduplication, execution records, and effect isolation. It does not use the event tenant to choose a separate copy of global ruleset configuration.
 
-The existing SQL column named \`tenant_scope\` is retained as a storage compatibility detail and uses the fixed internal value \`__domain_configuration__\` for global ruleset configuration. The value is hidden from public rule revision and activation responses.
+The existing SQL column named \`tenant_scope\` is retained as a storage compatibility detail and uses the fixed internal value \`**domain_configuration**\` for global ruleset configuration. The value is hidden from public rule revision and activation responses.
 
 Generic subscriber registrations remain separate from execution Services nested under a Domain. Do not merge subscriber fan-out into rule evaluation.
 

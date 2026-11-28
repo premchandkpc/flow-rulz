@@ -1,3 +1,11 @@
+---
+title: Delivery Reliability Contract
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Delivery Reliability Contract
 
 ## Current guarantee

@@ -1,3 +1,11 @@
+---
+title: FlowRulz holistic product and engineering review (2026-11-22)
+type: report
+status: historical
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz holistic product and engineering review (2026-11-22)
 
 **Baseline:** main at `3d7062590e9fa7ad228dc0f6cd619786d6a6f727`. **Method:** documentation, CI definition, merged PR #39 and architecture review inspection; **not** a full code audit, running test report, penetration test, or customer validation. Any finding without a reproduction is a **verification gap**, not a confirmed bug. Refer to [tracked actions](../TODO.md).

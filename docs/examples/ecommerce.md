@@ -1,10 +1,18 @@
+---
+title: E-commerce Example
+type: example
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # E-commerce Example
 
 This example demonstrates how to use FlowRulz to model an e-commerce order processing workflow using rules and child events instead of building separate microservices.
 
 ## Architecture
 
-```
+```text
 OrderCreated
      │
      ▼
@@ -141,13 +149,13 @@ The generated types allow type-safe event handling in your application:
 ```go
 // Generated Go type
 type OrderCreated struct {
-	OrderID      string  `json:"order_id" validate:"required"`
-	CustomerID   string  `json:"customer_id" validate:"required"`
-	TotalAmount  float64 `json:"total_amount" validate:"required"`
-	Currency     string  `json:"currency"`
-	Items        []OrderItem `json:"items" validate:"required"`
-	ShippingAddress Address `json:"shipping_address" validate:"required"`
-	CreatedAt    time.Time `json:"created_at" validate:"required"`
+ OrderID      string  `json:"order_id" validate:"required"`
+ CustomerID   string  `json:"customer_id" validate:"required"`
+ TotalAmount  float64 `json:"total_amount" validate:"required"`
+ Currency     string  `json:"currency"`
+ Items        []OrderItem `json:"items" validate:"required"`
+ ShippingAddress Address `json:"shipping_address" validate:"required"`
+ CreatedAt    time.Time `json:"created_at" validate:"required"`
 }
 
 // Usage in your application

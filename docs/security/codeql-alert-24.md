@@ -1,3 +1,11 @@
+---
+title: "CodeQL alert 24: MongoDB workflow-definition filter"
+type: report
+status: historical
+owner: premchandkpc
+last_verified: never
+---
+
 # CodeQL alert 24: MongoDB workflow-definition filter
 
 ## Finding

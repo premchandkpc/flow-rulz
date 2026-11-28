@@ -1,3 +1,11 @@
+---
+title: Rust worker service (experimental)
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Rust worker service (experimental)
 
 ## Broker mode with optional transports

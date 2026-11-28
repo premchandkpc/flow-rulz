@@ -1,10 +1,18 @@
+---
+title: Food Delivery Example
+type: example
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Food Delivery Example
 
 This example demonstrates a food delivery order flow with restaurant acceptance, food preparation, driver assignment, and delivery.
 
 ## Architecture
 
-```
+```text
 OrderPlaced
       │
       ▼

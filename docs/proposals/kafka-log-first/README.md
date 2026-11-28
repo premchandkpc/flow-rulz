@@ -1,3 +1,11 @@
+---
+title: FlowRulz log-first proposal skeleton
+type: index
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz log-first proposal skeleton
 
 This directory is a **reference sketch**, not the current FlowRulz runtime and not a production-ready broker/storage adapter.

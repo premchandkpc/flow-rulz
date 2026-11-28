@@ -1,4 +1,14 @@
+---
+title: Contracts
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Contracts
+
+> **Scope:** field-level reference for the contract registry (identity, document shape, compatibility). Design intent and implementation status: [contracts.md](contracts.md). Concepts: [domain/event-contract.md](domain/event-contract.md).
 
 A **contract** defines the payload shape for a named message version. Its identity is `name + version`; `schema_hash` identifies the exact semantic schema.
 

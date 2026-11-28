@@ -1,3 +1,11 @@
+---
+title: FlowRulz verification matrix
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz verification matrix
 
 This is a checklist, not a claim every row is covered. Replace status only after inspecting the actual test and recording evidence for the exact commit.

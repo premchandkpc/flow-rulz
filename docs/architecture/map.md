@@ -1,3 +1,11 @@
+---
+title: FlowRulz Architecture Map
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # FlowRulz Architecture Map
 
 This is a source-backed map of the current implementation, not a target-state promise. Runtime code and tests take precedence over diagrams, roadmaps, and dated audit snapshots.
@@ -223,7 +231,7 @@ Rules:
 | P1 | Batch execution passes a zero fencing token and bypasses the key queue | BATCH_MODE is rejected unless none; integrate batch work with lease fencing and key ordering before enabling |
 | P1 | Mongo adapters previously treated JSON bytes as bson.Raw | JSON payloads/source/context now use BSON binary bytes; keep BSON round-trip tests for each JSON-backed field |
 | P1 | Scheduled SQL claim fields did not exist in migration 011 | Migrations 015/016 add claim and retry fields; expired claims can be reclaimed and settlement is claimant/expiry fenced |
-| P2 | Scheduled event publishing retries with bounded exponential backoff and a terminal attempt limit; validate recovery and adapter parity |
+| P2 | Scheduled event publishing retries with bounded exponential backoff and a terminal attempt limit; validate recovery and adapter parity |  |
 | P2 | Complete tenant-scoped read/write coverage is not proven | Continue cross-tenant negative tests and resource-level authorization review |
 | P1 | Transaction context/fencing leaks into the ports; adapter parity is not fully proven | Validate transaction port methods and add SQL/Mongo atomicity and repository conformance tests |
 | P1 | Contract tests are in-memory-only | Reuse suites against actual SQL and Mongo adapters and test transaction/unique-key semantics |

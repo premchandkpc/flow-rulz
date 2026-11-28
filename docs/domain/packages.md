@@ -1,3 +1,11 @@
+---
+title: Domain configuration examples
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Domain configuration examples
 
 Each directory is an example Domain configuration package. A Domain contains execution Services, and each Service pins one or more immutable ruleset revisions. Runtime events provide their own `tenant_id` and `partition_key`; neither belongs in these configuration files.

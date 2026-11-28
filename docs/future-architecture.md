@@ -1,3 +1,11 @@
+---
+title: Target Business Event Runtime
+type: proposal
+status: proposed
+owner: premchandkpc
+last_verified: never
+---
+
 # Target Business Event Runtime
 
 FlowRulz is intentionally evolving as **one deployable application with clear internal modules**, rather than a collection of microservices. This is a target design: it labels proposed capabilities rather than presenting them as current production guarantees.

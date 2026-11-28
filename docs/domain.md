@@ -1,4 +1,14 @@
+---
+title: Domain configuration
+type: reference
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Domain configuration
+
+> **Scope:** Domain/Service configuration reference and API. Concepts and identity: [domain/README.md](domain/README.md).
 
 ## Purpose
 

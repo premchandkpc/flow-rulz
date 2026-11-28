@@ -115,10 +115,10 @@ This map explains responsibility; it is not a requirement to make the directory 
 | `Dockerfile.api`, `Dockerfile.worker`, `Dockerfile.codegen` | Core service/tool images |
 | `Dockerfile.random-producer` | Opt-in example producer image |
 | `.github/workflows/` | CI definitions and verification gates |
-| `api/` | Public JSON schemas; verify runtime validation actually uses them |
+| `contracts/schemas/` | Public JSON schemas; verify runtime validation actually uses them |
 | `migrations/` | Ordered schema changes; applied migrations are immutable |
 | `terraform/` | AWS infrastructure as code (VPC, EKS, RDS, ElastiCache, NATS, app, observability); see `terraform/README.md` |
-| `docs/` | Architecture, operations, diagrams, plans and dated audits |
+| `docs/` | Architecture, operations, diagrams, plans and dated audits. Writing rules: `docs/STANDARDS.md`; check with `make docs-check` |
 
 ### Entrypoints and core packages
 
@@ -368,8 +368,7 @@ Every completion report must state:
 - [ ] Dead code removed safely; no secrets, generated artifacts or unrelated churn.
 - [ ] Remaining risks and unsupported behavior stated honestly.
 
-For documentation-only changes, verify file paths, commands/flags, links, consistency with source, and actionable, non-contradictory instructions. Runtime tests do not validate documentation.
-
+For documentation-only changes, verify file paths, commands/flags, links, consistency with source, and actionable, non-contradictory instructions. Runtime tests do not validate documentation. Follow `docs/STANDARDS.md` and run `make docs-check`.
 
 ---
 

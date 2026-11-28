@@ -1,10 +1,18 @@
+---
+title: "Change plan: <change-name>"
+type: template
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # Change plan: <change-name>
 
 - **Status:** Draft | Ready | In progress | Blocked | Complete
-- **Owner:** 
-- **Issue / PR / branch:** 
-- **Spec:** 
-- **Baseline SHA:** 
+- **Owner:**
+- **Issue / PR / branch:**
+- **Spec:**
+- **Baseline SHA:**
 - **Target SHA:** <fill during verification>
 - **Last updated:** YYYY-MM-DD
 
@@ -19,9 +27,9 @@ Describe responsibilities, dependency direction, interfaces, transaction boundar
 
 ## 4. Scope and ownership
 ### In scope
-- 
+-
 ### Out of scope
-- 
+-
 | Area | Files/packages | Owner | Notes |
 |---|---|---|---|
 | Domain/service | | | |

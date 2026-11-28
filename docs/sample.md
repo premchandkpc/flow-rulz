@@ -1,3 +1,11 @@
+---
+title: End-to-end sample
+type: example
+status: current
+owner: premchandkpc
+last_verified: never
+---
+
 # End-to-end sample
 
 Use the JSON files in [data/examples](../data/examples/) in this order:
