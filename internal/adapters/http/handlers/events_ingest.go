@@ -71,6 +71,11 @@ func (h *EventIngestionHandler) PublishEvent(w http.ResponseWriter, r *http.Requ
 	}
 
 	event := buildEventEnvelope(request, eventType, tenantID)
+	if event.HasDeploymentTarget() {
+		// Workers hold targeted events unacknowledged, which would stall every tenant on the shard.
+		responses.WriteError(w, http.StatusBadRequest, "service-targeted events are not supported", responses.CodeValidationFailed)
+		return
+	}
 	if request.Contract != nil {
 		if h.contracts == nil {
 			responses.WriteError(w, http.StatusServiceUnavailable, "contract registry is not configured", responses.CodeInternalError)

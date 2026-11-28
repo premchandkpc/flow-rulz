@@ -67,7 +67,7 @@ func (s *Service) validateEventContract(ctx context.Context, envelope *domain.Ev
 
 func validateResolvedContract(schema *domain.ContractSchema, envelope *domain.EventEnvelope) error {
 	if schema.Deprecated {
-		return fmt.Errorf("event contract %s@%s is deprecated", schema.Name, schema.Version)
+		return fmt.Errorf("%w: contract %s@%s is deprecated", domain.ErrEventContractViolation, schema.Name, schema.Version)
 	}
 	if err := schema.NormalizeAndValidate(); err != nil {
 		return fmt.Errorf("invalid event contract: %w", err)
@@ -86,7 +86,7 @@ func (s *Service) resolveEventContractSchema(ctx context.Context, envelope *doma
 		return nil, fmt.Errorf("resolve event contract: %w", err)
 	}
 	if schema == nil {
-		return nil, fmt.Errorf("event contract %s@%s not found", envelope.Contract.Name, envelope.Contract.Version)
+		return nil, fmt.Errorf("%w: contract %s@%s not found", domain.ErrEventContractViolation, envelope.Contract.Name, envelope.Contract.Version)
 	}
 	return schema, nil
 }
@@ -95,13 +95,13 @@ func (s *Service) resolveEventContractSchema(ctx context.Context, envelope *doma
 // conformance of the envelope against the resolved contract schema.
 func validateEventPayload(schema *domain.ContractSchema, envelope *domain.EventEnvelope) error {
 	if envelope.Contract.SchemaHash == "" || envelope.Contract.SchemaHash != schema.SchemaHash {
-		return fmt.Errorf("event contract schema hash mismatch for %s@%s", schema.Name, schema.Version)
+		return fmt.Errorf("%w: schema hash mismatch for %s@%s", domain.ErrEventContractViolation, schema.Name, schema.Version)
 	}
 	if schema.Kind != domain.ContractKindEvent {
-		return fmt.Errorf("contract %s@%s is not an event contract", schema.Name, schema.Version)
+		return fmt.Errorf("%w: contract %s@%s is not an event contract", domain.ErrEventContractViolation, schema.Name, schema.Version)
 	}
 	if err := schema.ValidatePayload(envelope.Data); err != nil {
-		return fmt.Errorf("event payload violates contract %s@%s: %w", schema.Name, schema.Version, err)
+		return fmt.Errorf("%w: payload violates contract %s@%s: %w", domain.ErrEventContractViolation, schema.Name, schema.Version, err)
 	}
 	return nil
 }

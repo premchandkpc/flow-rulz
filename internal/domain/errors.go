@@ -102,6 +102,9 @@ var (
 	ErrContractMismatch = errors.New("event contract mismatch")
 	// ErrContractReferenced indicates a contract cannot be deleted because it is referenced.
 	ErrContractReferenced = errors.New("contract is referenced and cannot be deleted")
+	// ErrEventContractViolation indicates an event does not satisfy the contract it declares.
+	// It is permanent: redelivery cannot make the same event valid.
+	ErrEventContractViolation = errors.New("event violates its declared contract")
 
 	// ErrWorkflowNotFound indicates a workflow was not found.
 	ErrWorkflowNotFound = errors.New("workflow not found")
@@ -220,6 +223,7 @@ func isEventEnvelopeError(err error) bool {
 		errors.Is(err, ErrTenantIDRequired) ||
 		errors.Is(err, ErrPartitionKeyRequired) ||
 		errors.Is(err, ErrOccurredAtRequired) ||
+		errors.Is(err, ErrEventContractViolation) ||
 		errors.Is(err, ErrInvalidEventEnvelope)
 }
 

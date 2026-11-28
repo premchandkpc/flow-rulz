@@ -18,6 +18,8 @@ func TestIsPermanentClassifiesDeterministicEvaluationFailures(t *testing.T) {
 		{name: "invalid fact path", err: ErrInvalidFactPath, want: true},
 		{name: "evaluation timeout is quarantined", err: ErrEvaluationTimeout, want: true},
 		{name: "database error remains retryable", err: ErrDatabaseError, want: false},
+		{name: "event contract violation", err: ErrEventContractViolation, want: true},
+		{name: "wrapped event contract violation", err: fmt.Errorf("process: %w", ErrEventContractViolation), want: true},
 	}
 
 	for _, tt := range tests {
