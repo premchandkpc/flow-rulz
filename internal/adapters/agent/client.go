@@ -14,6 +14,7 @@ import (
 	"time"
 )
 
+// Client executes bounded model-assisted triage requests.
 type Client struct {
 	endpoint, model string
 	http            *http.Client
@@ -23,6 +24,7 @@ type message struct {
 	Content string `json:"content"`
 }
 
+// New constructs a client for a trusted chat-completions endpoint.
 func New(endpoint, model string) (*Client, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Fragment != "" || model == "" {
@@ -81,7 +83,7 @@ func (c *Client) turn(ctx context.Context, history []message) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("agent HTTP status %d", resp.StatusCode)
 	}
