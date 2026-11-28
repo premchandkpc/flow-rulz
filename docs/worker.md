@@ -14,7 +14,13 @@ Workers are generic execution runtimes. They understand event envelopes, contrac
 
 The control plane can describe Domain/Service deployments and pinned ruleset revisions, but the current durable worker does not enforce those assignments or isolate service pools. `FLOW_SERVICE_ID` and a nonzero `FLOW_DEPLOYMENT_REVISION` therefore cause worker startup to fail until service-specific routing and ownership are implemented.
 
-Events carrying `flow.service_id` or `flow.deployment_revision` headers, or `target_service_id` or `deployment_revision` metadata, are not processed by the current workers. Durable and direct workers retry those deliveries instead of acknowledging them. Worker-hosted broker publish endpoints reject them; previously retained targeted events remain retryable. Monitor pending deliveries and do not publish service-targeted events until the feature is implemented.
+Events carrying `flow.service_id` or `flow.deployment_revision` headers, or `target_service_id` or `deployment_revision` metadata, are not processed by the current workers. Durable and direct workers retry those deliveries instead of acknowledging them. The HTTP ingest endpoint `POST /v1/events/{eventType}` and worker-hosted broker publish endpoints reject them with a validation error; previously retained targeted events remain retryable. Monitor pending deliveries and do not publish service-targeted events until the feature is implemented.
+
+Blast radius (durable mode, by code reading, Unverified end-to-end): each shard's JetStream consumer allows one unacknowledged message (`MaxAckPending: 1`), so a held targeted event stalls that shard for every tenant mapped to it until it is removed.
+
+## Quarantine limits
+
+Contract violations (deprecated contract, schema-hash mismatch, wrong contract kind, payload failing the schema) are permanent and are quarantined after the first delivery. A quarantine entry stores the error and a `jetstream:flowrulz` reference, not the event payload. `Replay` only updates the entry's `updated_at`; it does not re-publish the event (Implemented, see `internal/adapters/postgres/quarantine.go`). Recover a quarantined event by re-publishing it from the producer.
 
 ## Processing guarantees
 

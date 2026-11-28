@@ -156,3 +156,51 @@ func TestEventIngestionRejectsMissingOrInvalidMetaIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestEventIngestionRejectsServiceTargetedEvents(t *testing.T) {
+	tests := []struct {
+		name    string
+		meta    map[string]any
+		headers map[string]string
+	}{
+		{name: "target service header", headers: map[string]string{"flow.service_id": "svc-1"}},
+		{name: "deployment revision header", headers: map[string]string{"flow.deployment_revision": "3"}},
+		{name: "target service meta", meta: map[string]any{"target_service_id": "svc-1"}},
+		{name: "deployment revision meta", meta: map[string]any{"deployment_revision": "3"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("APP_ENV", "development")
+			publisher := &capturePublisher{}
+			handler := NewEventIngestionHandler(publisher, 32)
+			mux := http.NewServeMux()
+			handler.RegisterRoutes(mux)
+			server := middleware.TenantExtractor(mux)
+
+			meta := map[string]any{"tenant_id": "tenant-a", "partition_key": "order-1"}
+			for k, v := range tt.meta {
+				meta[k] = v
+			}
+			body, err := json.Marshal(map[string]any{
+				"id": "evt-target", "type": "order.created", "meta": meta,
+				"occurred_at": time.Now().UTC(), "data": json.RawMessage(`{"order_id":"order-1"}`),
+				"headers": tt.headers,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/v1/events/order.created", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Tenant-ID", "tenant-a")
+			rec := httptest.NewRecorder()
+			server.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+			}
+			if publisher.calls != 0 {
+				t.Fatalf("publisher calls = %d, want 0", publisher.calls)
+			}
+		})
+	}
+}

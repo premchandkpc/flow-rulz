@@ -62,7 +62,8 @@ func (s *Service) Delete(ctx context.Context, tenantID, id string) error {
 	return s.repo.Delete(ctx, tenantID, id)
 }
 
-// ReplayAndDelete replays and then deletes (for cleanup after successful replay)
+// ReplayAndDelete marks the entry replayed and then deletes it. Replay does not
+// re-publish the event, so deleting here discards the only record of the failure.
 func (s *Service) ReplayAndDelete(ctx context.Context, tenantID, id string) error {
 	if err := s.Replay(ctx, tenantID, id); err != nil {
 		return fmt.Errorf("replay: %w", err)
