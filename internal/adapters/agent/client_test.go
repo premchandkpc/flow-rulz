@@ -35,7 +35,9 @@ func TestDecide(t *testing.T) {
 				if calls == 1 && body.Messages[len(body.Messages)-1].Content != "42" {
 					t.Error("missing selected value")
 				}
-				fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, tc.actions[calls])
+				if _, err := fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, tc.actions[calls]); err != nil {
+					t.Error(err)
+				}
 				calls++
 			}))
 			defer server.Close()
@@ -52,7 +54,7 @@ func TestDecide(t *testing.T) {
 }
 
 func TestDecideCanceledContext(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("canceled context must not reach model")
 	}))
 	defer server.Close()
@@ -68,7 +70,7 @@ func TestDecideCanceledContext(t *testing.T) {
 }
 
 func TestDecideRejectsOversizedRequest(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("oversized request reached model")
 	}))
 	defer server.Close()
