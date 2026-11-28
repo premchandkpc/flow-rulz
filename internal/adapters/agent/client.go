@@ -33,6 +33,8 @@ func New(endpoint, model string) (*Client, error) {
 
 // Decide lets the model inspect selected fields within the caller's delivery deadline.
 func (c *Client) Decide(ctx context.Context, fields map[string]json.RawMessage) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	keys := make([]string, 0, len(fields))
 	for key := range fields {
 		keys = append(keys, key)
