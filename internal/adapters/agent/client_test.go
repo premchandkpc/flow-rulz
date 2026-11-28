@@ -49,3 +49,19 @@ func TestDecide(t *testing.T) {
 		})
 	}
 }
+
+func TestDecideCanceledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("canceled context must not reach model")
+	}))
+	defer server.Close()
+	c, err := New(server.URL, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if decision, err := c.Decide(ctx, nil); err == nil || decision != "" {
+		t.Fatalf("decision=%q error=%v", decision, err)
+	}
+}
