@@ -11,6 +11,7 @@ last_verified: never
 Reports are dated evidence snapshots: what was inspected, at which commit, what was observed and what remains uncertain. A report is not a substitute for a spec, plan, issue or test.
 
 ## Documents
+- [Functional review of main, 2026-11-28](2026-11-28-main-functional-review.md): ranked functional defects in the durable worker's failure-settlement and quarantine path.
 - [Report template](report-template.md): architecture/security review, incident analysis, PR review or release-readiness assessment.
 - [Risk register](risk-register.md): cross-cutting risk areas, evidence and owners.
 - [Historical audits](../audit/): preserve as snapshots; revalidate findings against current code before treating them as current.
