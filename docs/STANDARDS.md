@@ -220,4 +220,4 @@ Tracked here so it is visible, not hidden.
 - Overlapping pairs remain: `contract.md` / `contracts.md`, `rules.md` / `rules/`, `domain.md` / `domain/`, `testing.md` / `testing/`. Each now states its scope and links the other. Consolidation is a follow-up that needs the inbound links and the AGENTS.md map updated together.
 - `docs/audit/` and `docs/reports/` both hold dated reviews. New ones go in `docs/reports/`.
 - `docs/IMPLEMENTATION_PLAN.md`, `docs/design.md` and `docs/roadmap.md` are old and need a status decision (verify, mark historical, or fold into `docs/TODO.md`).
-- `.opencode/skills/` describes Rust VM work (continuations, work-stealing, bytecode versioning). Confirm whether that is still the direction; if not, retire it.
+- The 14 Rust VM agent skills formerly in `.opencode/` targeted code that never existed. They are archived in [rust-vm-agent-skills-archive.md](proposals/rust-vm-agent-skills-archive.md); if the VM is ever revived, write fresh skills against real paths.
