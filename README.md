@@ -165,7 +165,7 @@ runtime data are excluded from formatting.
 - examples contains banking, e-commerce, and food-delivery contracts, rules, workflows, and sample applications. Typed domain code lives in `domains/<domain>/builds/go` (separate Go modules) and is produced by `make generate-domain DOMAIN=<domain>` from the contracts stored in the database; example services import it from there and the SDK from `sdk/go/flowrule`.
 - migrations contains numbered PostgreSQL migrations.
 - All human-maintained engineering documentation is organized under [`docs/`](docs/README.md), including specifications, plans, domain references, testing, reports, examples, and operations.
-- `README.md`, `AGENTS.md`, and `SECURITY.md` stay at the repository root because GitHub and engineering tools expect them there. Tool-specific templates and skills remain under `.github/` and `.opencode/`.
+- `README.md`, `AGENTS.md`, and `SECURITY.md` stay at the repository root because GitHub and engineering tools expect them there. Tool-specific templates and skills remain under `.github/` and `.claude/`.
 - AGENTS.md is the engineering guide and source-backed file map.
 - [Architecture map](docs/architecture/map.md) describes runtime data flow, package boundaries, and known gaps.
 
