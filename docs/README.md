@@ -58,7 +58,7 @@ This directory is the canonical home for human-maintained project documentation.
 - Planning: [Implementation plan](IMPLEMENTATION_PLAN.md), [Refactoring plan](plans/refactoring-plan.md), [Legacy architecture redesign](plans/legacy-architecture-redesign.md), [Roadmap](roadmap.md)
 - Examples: [Data fixtures](examples/data-fixtures.md), [Banking](examples/banking.md), [E-commerce](examples/ecommerce.md), [Food delivery](examples/food-delivery.md), [Random producer](examples/random-producer.md)
 - Other tools: [Random load generator](sdk/go/random-loadgen.md), [Web console](console/README.md)
-- History and direction: [Future architecture](future-architecture.md), [Design notes](design.md), [Audit reports](audit/README.md), [Security policy](../SECURITY.md)
+- History and direction: [Future architecture](future-architecture.md), [Design notes](design.md), [Archived Rust VM agent skills](proposals/rust-vm-agent-skills-archive.md), [Audit reports](audit/README.md), [Security policy](../SECURITY.md)
 - [Kafka log-first proposal](proposals/kafka-log-first-data-plane.md) is a design proposal, not current runtime transport. Supporting experiments and their test limitations are documented under [proposals/kafka-log-first/](proposals/kafka-log-first/README.md) and its [testing notes](proposals/kafka-log-first/testing.md).
 
 ## Documentation contract
@@ -71,7 +71,7 @@ This directory is the canonical home for human-maintained project documentation.
 6. Record commit SHA, exact commands, environment, exit status, and skipped tests.
 7. Keep canonical field definitions in schemas and implementation guides; link to them instead of creating competing copies.
 8. Follow [STANDARDS.md](STANDARDS.md): front matter, claim labels, one canonical home per topic. `make docs-check` enforces the mechanical rules.
-9. Keep new human-maintained documentation in `docs/`. The root `README.md`, `AGENTS.md`, and `SECURITY.md` are intentional discovery/tooling exceptions. GitHub templates and agent skill files stay in their required `.github/` and `.opencode/` locations.
+9. Keep new human-maintained documentation in `docs/`. The root `README.md`, `AGENTS.md`, and `SECURITY.md` are intentional discovery/tooling exceptions. GitHub templates and agent skill files stay in their required `.github/` and `.claude/` locations.
 
 ## Change workflow
 

@@ -45,16 +45,37 @@
 
 FlowRulz is a Go event-driven rules runtime. The root Go module contains the API, worker and CLI tools. SDKs and domain examples have nested Go modules and require separate checks.
 
-### Event lifecycle
+### Worker modes
 
-The Rust broker path selects `WORKER_MODE=broker` in `rust-worker/src/main.rs`.
-Its `broker_config.rs` validates optional transports, `broker_runtime.rs` composes
-them, `runtime/broker.rs` owns retained state, and `application/broker.rs` owns
-operation and rule-processing policy. Adapters implement the shared protocol v1
-from `ports/broker.rs`. Local rules reuse `engine/rules.rs` via `engine/local.rs`.
-`rust-worker/tests/broker_protocol.py` tests real-process transport combinations,
-Go/Rust interoperability and forced-kill snapshot recovery. Keep these broker
-checks distinct from unverified PostgreSQL-runtime parity and cluster failover.
+`WORKER_MODE` selects one of three modes (`internal/config/config.go` rejects anything else). Name the mode in every claim about delivery, ordering or recovery; guarantees do not transfer between modes.
+
+| Mode | `WORKER_MODE` | State and transport | Guarantees | Detail |
+|---|---|---|---|---|
+| Durable (default) | `durable` | PostgreSQL inbox, executions and outbox; NATS JetStream; shard leases with fencing; per-key queue | At-least-once. Inbox deduplication and the transactional outbox protect state transitions. Not exactly-once external effects. | The lifecycle below |
+| Direct | `direct` | Local JSON rules and a shared NATS consumer. No database, inbox/outbox, leases, scheduler or per-key queue. | Publishes before ACK and can repeat outputs. | `docs/direct-worker.md` |
+| Broker | `broker` | Worker-hosted broker plus local-rule worker in one process; memory or file persistence; HTTP, TCP and NATS ingress | Single-instance, at-least-once. No database transactional outbox or cluster failover. | `docs/embedded-broker.md` |
+
+### Event lifecycle (durable mode, default)
+
+1. A producer creates the shared `internal/domain.EventEnvelope` and publishes to the NATS JetStream subject family `events.shard.N`.
+2. Shard selection uses the shared tenant/partition-key algorithm and configured shard count. Never implement a competing hash or routing scheme.
+3. Workers acquire shard leases and fencing tokens, then consume only the shards they own.
+4. A bounded per-key queue preserves ordering for the same partition key while limiting global work.
+5. Event processing validates the envelope and fencing token, deduplicates through the inbox, loads the active rule revision, evaluates the rule and writes execution/outbox state in the appropriate transaction.
+6. ACK only after successful durable processing. If the durable outcome is unknown, do not ACK as though processing succeeded.
+7. The outbox publisher routes emitted child events back to `events.shard.N`; generic emit effects publish to `effects.<topic>`, command effects publish to `commands.<destination>.<name>`, and tenant-service fan-out uses a unique `services.<tenant-hash>.<service-hash>` subject.
+8. The scheduler publishes due events through the same subject family. The existence of batch APIs does not prove that batch worker execution is supported.
+
+### Direct mode
+
+Opt-in `WORKER_MODE=direct` uses local JSON rules and a shared NATS consumer without database, inbox/outbox,
+leases, scheduler or per-key queue. It publishes before ACK and can repeat outputs.
+See `docs/direct-worker.md`; do not apply durable-mode guarantees to direct mode.
+`cmd/worker/direct.go` owns direct composition/file loading,
+`internal/application/direct.go` owns evaluation and settlement, and
+`internal/adapters/nats/direct.go` owns shared broker consumption.
+
+### Broker mode
 
 Opt-in `WORKER_MODE=broker` hosts the broker and local-rule worker inside one
 process. `internal/runtime/broker` owns retained topic partitions, group offsets,
@@ -71,22 +92,16 @@ through `ports.BrokerCaller`; core services must not import transport clients.
 single-instance, at-least-once and memory/file persistence limits. Do not apply
 database transactional-outbox or cluster-failover guarantees to this mode.
 
-This lifecycle describes the default `WORKER_MODE=durable`. Opt-in `direct` mode
-uses local JSON rules and a shared NATS consumer without database, inbox/outbox,
-leases, scheduler or per-key queue. It publishes before ACK and can repeat outputs.
-See `docs/direct-worker.md`; do not apply durable-mode guarantees to direct mode.
-`cmd/worker/direct.go` owns direct composition/file loading,
-`internal/application/direct.go` owns evaluation and settlement, and
-`internal/adapters/nats/direct.go` owns shared broker consumption.
+### Rust broker path
 
-1. A producer creates the shared `internal/domain.EventEnvelope` and publishes to the NATS JetStream subject family `events.shard.N`.
-2. Shard selection uses the shared tenant/partition-key algorithm and configured shard count. Never implement a competing hash or routing scheme.
-3. Workers acquire shard leases and fencing tokens, then consume only the shards they own.
-4. A bounded per-key queue preserves ordering for the same partition key while limiting global work.
-5. Event processing validates the envelope and fencing token, deduplicates through the inbox, loads the active rule revision, evaluates the rule and writes execution/outbox state in the appropriate transaction.
-6. ACK only after successful durable processing. If the durable outcome is unknown, do not ACK as though processing succeeded.
-7. The outbox publisher routes emitted child events back to `events.shard.N`; generic emit effects publish to `effects.<topic>`, command effects publish to `commands.<destination>.<name>`, and tenant-service fan-out uses a unique `services.<tenant-hash>.<service-hash>` subject.
-8. The scheduler publishes due events through the same subject family. The existence of batch APIs does not prove that batch worker execution is supported.
+The Rust broker path selects `WORKER_MODE=broker` in `rust-worker/src/main.rs`.
+Its `broker_config.rs` validates optional transports, `broker_runtime.rs` composes
+them, `runtime/broker.rs` owns retained state, and `application/broker.rs` owns
+operation and rule-processing policy. Adapters implement the shared protocol v1
+from `ports/broker.rs`. Local rules reuse `engine/rules.rs` via `engine/local.rs`.
+`rust-worker/tests/broker_protocol.py` tests real-process transport combinations,
+Go/Rust interoperability and forced-kill snapshot recovery. Keep these broker
+checks distinct from unverified PostgreSQL-runtime parity and cluster failover.
 
 ### Distributed-systems guarantees
 
@@ -113,6 +128,7 @@ This map explains responsibility; it is not a requirement to make the directory 
 | `.env.example` | Configuration names and safe placeholders; never secrets |
 | `docker-compose.yml` | Single local development manifest; optional `direct`, `rust`, `examples` and `tools` profiles |
 | `Dockerfile.api`, `Dockerfile.worker`, `Dockerfile.codegen` | Core service/tool images |
+| `Dockerfile.worker-rust`, `Dockerfile.console` | Opt-in Rust worker and web console images |
 | `Dockerfile.random-producer` | Opt-in example producer image |
 | `.github/workflows/` | CI definitions and verification gates |
 | `contracts/schemas/` | Public JSON schemas; verify runtime validation actually uses them |
@@ -137,11 +153,15 @@ This map explains responsibility; it is not a requirement to make the directory 
 | `internal/services/workflow/` | Workflow instance orchestration and state transitions |
 | `internal/services/batches/` | Batch use cases; verify worker support separately |
 | `internal/services/quarantine/` | Quarantine use cases |
+| `internal/services/domainservices/` | Domain configuration and Service ruleset assignments |
+| `internal/services/broker/` | Shared broker operation and authentication policy |
+| `internal/runtime/broker/` | Retained topic partitions, group offsets, capacity and receipt fencing for broker mode |
 | `internal/application/` | Worker orchestration and lifecycle coordination |
 | `internal/runtime/keyqueue/` | Bounded work and per-key serialization |
 | `internal/runtime/shard/` | Lease ownership and fencing tokens |
 | `internal/runtime/scheduler/` | Scheduled-event claiming and publishing |
 | `internal/config/` | Central configuration parsing and validation |
+| `internal/auth/` | Authentication token validation, auth errors and HTTP auth middleware |
 | `internal/storage/` | Storage selection, repository composition and lifecycle |
 | `internal/codegen/` | Code-generation logic and templates |
 | `internal/observability/` | Logging, metrics, tracing and lifecycle |
@@ -154,12 +174,19 @@ This map explains responsibility; it is not a requirement to make the directory 
 | `internal/adapters/nats/` | NATS/JetStream connection, subject mapping, message conversion and ACK/NAK |
 | `internal/adapters/postgres/` | SQL repositories, transactions and driver-specific behavior |
 | `internal/adapters/mongo/` | Mongo repositories, BSON conversion, indexes and driver-specific behavior |
-| `internal/adapters/cache/` | Cache implementation |
+| `internal/adapters/redis/` | Redis cache, lock and rate-limiter adapters |
+| `internal/adapters/memory/` | In-memory adapters for tests and local development |
+| `internal/adapters/brokerstore/` | Local-disk persistence for the embedded broker |
+| `internal/adapters/embedded/` | Connects the rule worker to the in-process broker |
+| `internal/adapters/remote/` | Publishes worker outputs through a selected broker protocol client |
+| `internal/adapters/tcp/` | Framed JSON broker protocol over TCP |
 | `internal/adapters/effects/` | External effect delivery and development/test destinations |
 | `sdk/go/`, `sdk/go/flowrule/` | Separate Go SDK modules |
 | `domains/<domain>/` (`banking`, `ecommerce`, `food-delivery`) | Domain specification: `contracts/`, `rules/`, `workflows/` YAML, `deploy.sh`, and generated per-language code in `builds/<lang>/` (currently `builds/go`, a separate Go module) |
 | `examples/ecommerce/`, `examples/banking/`, `examples/food-delivery/` | Sample producer/consumer services that import `domains/<domain>/builds/go` and `sdk/go/flowrule` |
 | `examples/random-producer/` | Opt-in producer using existing domain contracts |
+| `rust-worker/` | Opt-in experimental Rust worker; see `docs/rust-worker.md` |
+| `web/console/` | React operations console; see `docs/console/README.md` |
 | `tests/` | Root test suites; inspect whether each uses mocks, in-memory storage or live services |
 
 Keep vendor types inside adapters. NATS library imports belong in the NATS adapter; services/runtime should depend on transport-neutral ports, not NATS messages, JetStream consumers, SQL rows, Mongo sessions or concrete drivers. Generated consumer code must not import inaccessible server `internal/` packages.
@@ -296,6 +323,8 @@ When their code or shared contracts are affected:
 (cd examples/food-delivery && go test -race -count=1 ./...)
 ```
 
+Generated domain modules (`domains/<domain>/builds/go`, three of them) are separate Go modules too. CI only builds them (`make verify-generated`); it does not run their tests.
+
 ### Useful Make targets
 
 - `make build`: build API, worker and codegen binaries into `bin/`.
@@ -305,6 +334,9 @@ When their code or shared contracts are affected:
 - `make test`: combined test target; verify the current Makefile.
 - `make fmt` / `make check-fmt`: format or verify Go formatting.
 - `make lint` / `make vet`: lint and static analysis.
+- `make verify-generated`: build each `domains/*/builds/go` module.
+- `make docs-check`: documentation links, front matter, orphans and Mermaid types (see `docs/STANDARDS.md`).
+- `make ci`: deps, format check, vet, lint, tests, generated-code build and docs check.
 - `make docker-up` / `make docker-down`: local Compose stack.
 - `make migrate-up`: apply pending migrations.
 - `make generate`: codegen from a registered contract; requires `CONTRACT`, `CONTRACT_VERSION`, `TARGET` and `OUTPUT_DIR`.
@@ -771,6 +803,8 @@ Before calling a change complete, review:
 - Use repository tools and actual source as evidence; do not invent file paths, flags, APIs, CI results or runtime capabilities.
 - Prefer small, sequential commits/edits when the remote branch is being updated through APIs. Re-fetch the current file/branch state before a subsequent write to avoid stale-content overwrites.
 - Do not claim a push, merge, deployment or successful test unless the corresponding operation/result is confirmed.
+- State which worker mode (durable, direct or broker) a change or claim applies to. Do not carry guarantees from one mode to another.
+- For documentation work use the project skills in `.claude/skills/` (`write-doc`, `write-adr`, `verify-doc`) and follow `docs/STANDARDS.md`.
 - Do not merge a pull request unless explicitly authorized and required checks are green. A request to fix code is not automatically permission to merge.
 - Never delete substantial documentation or code to make a patch look cleaner. Preserve existing intent, improve organization, add missing detail and clearly justify necessary removals.
 - When asked to “fix all,” work through the identified issues systematically, verify each fix, and report what remains blocked rather than implying that unverified work is complete.
